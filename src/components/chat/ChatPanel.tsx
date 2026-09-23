@@ -620,7 +620,7 @@ export default function ChatPanel({
           display: flex;
           flex-direction: column;
           height: 100%;
-          gap: 12px;
+          gap: 8px;
           overflow: hidden;
         }
 
@@ -628,7 +628,7 @@ export default function ChatPanel({
         .view-toggle-bar {
           display: flex;
           gap: 2px;
-          background: rgba(0,0,0,0.2);
+          background: var(--bg-base);
           border: 1px solid var(--border-subtle);
           border-radius: var(--radius-md);
           padding: 3px;
@@ -653,10 +653,10 @@ export default function ChatPanel({
         }
         .view-tab:hover {
           color: var(--text-secondary);
-          background: rgba(255,255,255,0.03);
+          background: var(--bg-hover);
         }
         .view-tab--active {
-          background: rgba(255,255,255,0.06) !important;
+          background: var(--bg-hover) !important;
           color: var(--text-primary) !important;
           box-shadow: 0 1px 4px rgba(0,0,0,0.3);
         }
@@ -736,12 +736,10 @@ export default function ChatPanel({
 
         /* Top Agent Status Widget */
         .agent-status-card {
-          background: rgba(18, 18, 23, 0.45);
-          backdrop-filter: blur(20px);
-          -webkit-backdrop-filter: blur(20px);
+          background: var(--bg-surface);
           border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-lg);
-          padding: 16px;
+          border-radius: var(--radius-sm);
+          padding: 12px;
           display: flex;
           flex-direction: column;
           gap: 14px;

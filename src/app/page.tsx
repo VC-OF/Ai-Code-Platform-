@@ -465,24 +465,24 @@ export default function App() {
           display: flex;
           flex-direction: column;
           overflow: hidden;
-          padding: 16px 8px 16px 16px;
+          padding: 12px 0 12px 12px;
         }
 
         .workspace-column-middle {
           flex: 1;
           display: flex;
           flex-direction: column;
-          gap: 16px;
+          gap: 0;
           min-width: 0;
           overflow: hidden;
-          padding: 16px 8px;
+          padding: 12px 0;
         }
 
         .workspace-column-right {
           width: 260px;
           flex-shrink: 0;
           height: 100%;
-          padding: 16px 16px 16px 8px;
+          padding: 12px 12px 12px 0;
         }
 
         /* Editor / Workspace pane */
@@ -491,7 +491,7 @@ export default function App() {
           display: flex;
           flex-direction: column;
           border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-lg);
+          border-radius: var(--radius-sm);
           overflow: hidden;
           background: var(--bg-deep);
         }
@@ -505,13 +505,13 @@ export default function App() {
         .app-footer {
           height: 60px;
           border-top: 1px solid var(--border-subtle);
-          background: rgba(18, 18, 23, 0.45);
+          background: var(--bg-surface);
           backdrop-filter: blur(20px);
           -webkit-backdrop-filter: blur(20px);
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 0 24px;
+          padding: 0 16px;
           flex-shrink: 0;
         }
 
@@ -558,23 +558,23 @@ export default function App() {
         }
 
         .footer-btn--execute {
-          background: #ffffff;
-          color: #000000;
+          background: var(--brand);
+          color: #fffaf7;
           border: none;
         }
 
         .footer-btn--execute:hover {
-          background: rgba(255, 255, 255, 0.85);
+          background: var(--brand-dim);
         }
 
         .footer-btn--ghost {
-          background: rgba(255, 255, 255, 0.03);
+          background: var(--bg-elevated);
           border-color: var(--border-subtle);
           color: var(--text-primary);
         }
 
         .footer-btn--ghost:hover {
-          background: rgba(255, 255, 255, 0.06);
+          background: var(--bg-hover);
           border-color: var(--border-base);
         }
 

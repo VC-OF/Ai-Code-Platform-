@@ -154,13 +154,13 @@ export default function Sidebar({
           flex-shrink: 0;
           display: flex;
           flex-direction: column;
-          background: rgba(18, 18, 23, 0.45);
+          background: var(--bg-surface);
           backdrop-filter: blur(20px);
           -webkit-backdrop-filter: blur(20px);
           border-right: 1px solid var(--border-subtle);
           width: var(--sidebar-width);
           overflow: hidden;
-          padding: 16px;
+          padding: 12px;
           height: 100%;
         }
 
@@ -171,10 +171,10 @@ export default function Sidebar({
 
         .sidebar-new-btn {
           width: 100%;
-          background: #ffffff;
+          background: var(--brand);
           border: none;
           border-radius: var(--radius-md);
-          color: #000000;
+          color: #fffaf7;
           font-family: var(--font-sans);
           font-weight: 500;
           font-size: 12.5px;
@@ -188,7 +188,7 @@ export default function Sidebar({
         }
 
         .sidebar-new-btn:hover {
-          background: rgba(255, 255, 255, 0.85);
+          background: var(--brand-dim);
         }
 
         .sidebar-new-btn:active {

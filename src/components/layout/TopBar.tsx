@@ -177,7 +177,7 @@ export default function TopBar({
           align-items: center;
           justify-content: space-between;
           padding: 0 24px;
-          background: color-mix(in srgb, var(--bg-surface) 82%, transparent);
+          background: var(--bg-surface);
           backdrop-filter: blur(20px);
           -webkit-backdrop-filter: blur(20px);
           border-bottom: 1px solid var(--border-subtle);
@@ -195,15 +195,15 @@ export default function TopBar({
           width: 28px;
           height: 28px;
           border-radius: var(--radius-sm);
-          background: #ffffff;
+          background: var(--brand);
           display: flex;
           align-items: center;
           justify-content: center;
-          box-shadow: 0 2px 8px rgba(255, 255, 255, 0.2);
+          box-shadow: none;
         }
 
         .model-select {
-          background: var(--bg-elevated);
+          background: var(--bg-base);
           color: var(--text-primary);
           border-color: var(--border-base);
         }

@@ -59,7 +59,7 @@ export default function TabBar({
           align-items: center;
           justify-content: space-between;
           padding: 0 16px;
-          background: rgba(18, 18, 23, 0.45);
+          background: var(--bg-surface);
           backdrop-filter: blur(20px);
           -webkit-backdrop-filter: blur(20px);
           border-bottom: 1px solid var(--border-subtle);
@@ -69,10 +69,10 @@ export default function TabBar({
         .tabbar-tabs {
           display: flex;
           align-items: center;
-          background: rgba(0, 0, 0, 0.2);
+          background: var(--bg-base);
           padding: 2px;
           border-radius: var(--radius-md);
-          border: 1px solid rgba(255, 255, 255, 0.03);
+          border: 1px solid var(--border-subtle);
         }
 
         .tabbar-tab {
@@ -96,8 +96,8 @@ export default function TabBar({
         }
 
         .tabbar-tab--active {
-          color: #ffffff !important;
-          background: rgba(255, 255, 255, 0.08) !important;
+          color: var(--text-primary) !important;
+          background: var(--bg-hover) !important;
           box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
         }
 

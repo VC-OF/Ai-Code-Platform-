@@ -13,11 +13,7 @@ html, body, #__next {
 }
 
 body {
-  background:
-    radial-gradient(1200px 800px at 15% -10%, var(--brand-glow), transparent 50%),
-    radial-gradient(1000px 700px at 85% 15%, var(--cyan-soft), transparent 45%),
-    radial-gradient(800px 600px at 50% 90%, var(--accent-soft), transparent 45%),
-    var(--bg-base);
+  background: var(--bg-base);
   color:       var(--text-primary);
   font-family: var(--font-sans);
   font-size:   var(--text-base);
@@ -109,6 +105,10 @@ body {
   backdrop-filter: blur(20px) saturate(190%);
   -webkit-backdrop-filter: blur(20px) saturate(190%);
   border: 1px solid var(--border-base);
+}
+
+button, input, textarea, select {
+  font-family: inherit;
 }
 
 .border-subtle { border-color: var(--border-subtle); }
