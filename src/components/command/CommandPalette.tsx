@@ -218,8 +218,8 @@ export default function CommandPalette() {
         .palette-backdrop {
           position: fixed;
           inset: 0;
-          background: rgba(0, 0, 0, 0.6);
-          backdrop-filter: blur(4px);
+          background: rgba(40, 32, 28, 0.18);
+          backdrop-filter: blur(2px);
           z-index: 998;
         }
 
@@ -229,9 +229,9 @@ export default function CommandPalette() {
           left: 50%;
           transform: translateX(-50%);
           width: min(640px, calc(100vw - 32px));
-          background: var(--bg-elevated);
+          background: var(--bg-surface);
           border: 1px solid var(--border-strong);
-          border-radius: var(--radius-xl);
+          border-radius: var(--radius-md);
           box-shadow: var(--shadow-lg), 0 0 0 1px var(--border-subtle);
           z-index: 999;
           overflow: hidden;
