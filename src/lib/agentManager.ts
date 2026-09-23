@@ -224,6 +224,23 @@ class AgentManager {
 
         const newMessages = lastMsg ? [{ role: lastMsg.role, content: convertToLLMContent(lastMsg.content) } as LLMMessage] : [];
 
+        // Persist the user's prompt before the background turn starts so a
+        // browser refresh can restore the active request even before the
+        // agent has produced its final checkpoint.
+        if (lastMsg?.role === 'user') {
+          messageDb.insert({
+            id: crypto.randomUUID(),
+            project_id: projectId,
+            role: 'user',
+            content: lastMsg.content,
+            tool_calls: null,
+            tool_call_id: null,
+            tool_name: null,
+            turn_index: turnIndex,
+            tokens_used: null,
+          });
+        }
+
         const finalModel = requestedModel || getModel();
 
         // ask_user: the loop blocks here until /api/chat/input delivers an
@@ -273,7 +290,7 @@ class AgentManager {
           messages: [...history, ...newMessages],
           // History rows already live in the DB — only the new message(s)
           // and whatever the loop appends should be persisted this turn
-          persistedCount: history.length,
+          persistedCount: history.length + newMessages.length,
           llmConfig: { model: finalModel },
           tools: [
             ...(TOOL_SCHEMAS as unknown as LLMTool[]),
