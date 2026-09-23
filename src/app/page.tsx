@@ -14,6 +14,7 @@ import MobileLayout     from '@/components/mobile/MobileLayout';
 import FileExplorer     from '@/components/FileExplorer';
 import CompletionDialog from '@/components/CompletionDialog';
 import ToolModal        from '@/components/ToolModal';
+import PublicApiGallery from '@/components/PublicApiGallery';
 import { useIsMobile }  from '@/hooks/useMobile';
 import { useGlobalKeyboard, useShortcuts } from '@/hooks/useKeyboard';
 import { useAppCommands } from '@/components/command/useAppCommands';
@@ -785,6 +786,7 @@ function WelcomeScreen({
             </div>
           )}
         </div>
+        <PublicApiGallery />
       </div>
 
       <style jsx>{`
@@ -802,11 +804,12 @@ function WelcomeScreen({
           align-items: center;
           gap: 24px;
           width: 100%;
-          max-width: 440px;
+          max-width: 980px;
         }
 
         .welcome-card {
           width: 100%;
+          max-width: 440px;
           border-radius: var(--radius-xl);
           border: 1px solid rgba(255, 255, 255, 0.08);
           background: rgba(18, 18, 23, 0.65);

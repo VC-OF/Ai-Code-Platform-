@@ -1,0 +1,2205 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Public APIs Explorer - 1,885+ Free APIs Catalog</title>
+  <meta name="description" content="Discover, search, filter, and test over 1,885 free public APIs across 53 categories for developers and builders.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --bg-primary: #f4f7fb;
+      --bg-secondary: #ffffff;
+      --bg-card: #ffffff;
+      --bg-card-hover: #ffffff;
+      --border-color: #dbe4ef;
+      --border-glow: rgba(37, 99, 235, 0.3);
+
+      --text-main: #152238;
+      --text-muted: #52647a;
+      --text-dim: #7890a8;
+
+      --accent-indigo: #2563eb;
+      --accent-purple: #0f766e;
+      --accent-pink: #ec4899;
+      --accent-cyan: #06b6d4;
+      --accent-emerald: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-rose: #f43f5e;
+      
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --radius-full: 9999px;
+      
+      --shadow-sm: 0 2px 8px rgba(30, 64, 92, 0.06);
+      --shadow-md: 0 12px 30px -12px rgba(30, 64, 92, 0.18);
+      --shadow-glow: 0 10px 28px rgba(37, 99, 235, 0.1);
+      
+      --transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    [data-theme="light"] {
+      --bg-primary: #f4f7fb;
+      --bg-secondary: #ffffff;
+      --bg-card: #ffffff;
+      --bg-card-hover: #ffffff;
+      --border-color: #dbe4ef;
+      --border-glow: rgba(37, 99, 235, 0.3);
+      --text-main: #152238;
+      --text-muted: #52647a;
+      --text-dim: #7890a8;
+      --shadow-sm: 0 2px 8px rgba(30, 64, 92, 0.06);
+      --shadow-md: 0 12px 30px -12px rgba(30, 64, 92, 0.18);
+      --shadow-glow: 0 10px 28px rgba(37, 99, 235, 0.1);
+    }
+
+    [data-theme="dark"] {
+      --bg-primary: #0a0d14;
+      --bg-secondary: #111622;
+      --bg-card: rgba(19, 25, 38, 0.75);
+      --bg-card-hover: rgba(27, 36, 54, 0.9);
+      --border-color: rgba(255, 255, 255, 0.08);
+      --border-glow: rgba(99, 102, 241, 0.35);
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --accent-indigo: #6366f1;
+      --accent-purple: #8b5cf6;
+      --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.25);
+      --shadow-md: 0 8px 24px -4px rgba(0, 0, 0, 0.35);
+      --shadow-glow: 0 0 25px rgba(99, 102, 241, 0.25);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background-color: var(--bg-primary);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+      line-height: 1.5;
+      background-image:
+        linear-gradient(rgba(37, 99, 235, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(37, 99, 235, 0.035) 1px, transparent 1px),
+        radial-gradient(circle at 15% 0%, rgba(14, 165, 233, 0.1), transparent 34%);
+      background-size: 32px 32px, 32px 32px, auto;
+      background-attachment: fixed;
+    }
+
+    [data-theme="dark"] body {
+      background-image:
+        radial-gradient(circle at 15% 10%, rgba(99, 102, 241, 0.12) 0%, transparent 40%),
+        radial-gradient(circle at 85% 25%, rgba(139, 92, 246, 0.1) 0%, transparent 45%),
+        radial-gradient(circle at 50% 80%, rgba(236, 72, 153, 0.06) 0%, transparent 50%);
+      background-size: auto;
+    }
+
+    /* Layout Containers */
+    .container {
+      width: 100%;
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Header Nav */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: rgba(255, 255, 255, 0.9);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border-color);
+      transition: var(--transition);
+    }
+
+    [data-theme="light"] header {
+      background: rgba(255, 255, 255, 0.85);
+    }
+
+    [data-theme="dark"] header {
+      background: rgba(10, 13, 20, 0.85);
+    }
+
+    .nav-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 72px;
+      gap: 16px;
+    }
+
+    .logo-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .logo-badge {
+      width: 42px;
+      height: 42px;
+      border-radius: var(--radius-md);
+      background: linear-gradient(135deg, #6366f1, #a855f7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+      color: white;
+    }
+
+    .brand-title {
+      font-family: 'Outfit', sans-serif;
+      font-weight: 700;
+      font-size: 1.25rem;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand-badge {
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: var(--radius-full);
+      background: rgba(99, 102, 241, 0.15);
+      color: #818cf8;
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 8px 14px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      border: 1px solid var(--border-color);
+      background: var(--bg-secondary);
+      color: var(--text-main);
+      transition: var(--transition);
+      text-decoration: none;
+      user-select: none;
+    }
+
+    .btn:hover {
+      border-color: rgba(255, 255, 255, 0.2);
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent-indigo), var(--accent-purple));
+      border: none;
+      color: white;
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+    }
+
+    .btn-primary:hover {
+      box-shadow: 0 6px 18px rgba(99, 102, 241, 0.5);
+      transform: translateY(-1px);
+    }
+
+    .btn-icon {
+      width: 40px;
+      height: 40px;
+      padding: 0;
+      border-radius: var(--radius-sm);
+    }
+
+    /* Hero & Stats */
+    .hero-section {
+      padding: 48px 0 24px;
+      text-align: center;
+    }
+
+    .hero-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      border-radius: var(--radius-full);
+      background: rgba(99, 102, 241, 0.1);
+      border: 1px solid rgba(99, 102, 241, 0.25);
+      color: #a5b4fc;
+      font-size: 0.825rem;
+      font-weight: 500;
+      margin-bottom: 20px;
+    }
+
+    .hero-title {
+      font-family: 'Outfit', sans-serif;
+      font-size: 2.75rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+      margin-bottom: 14px;
+      background: linear-gradient(135deg, #152238 30%, #2563eb 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    [data-theme="light"] .hero-title {
+      background: linear-gradient(135deg, #152238 30%, #2563eb 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    [data-theme="dark"] .hero-title {
+      background: linear-gradient(135deg, #ffffff 40%, #94a3b8 100%);
+    }
+
+    .hero-subtitle {
+      font-size: 1.1rem;
+      color: var(--text-muted);
+      max-width: 650px;
+      margin: 0 auto 32px;
+      font-weight: 400;
+    }
+
+    /* Stats Grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 40px;
+    }
+
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 16px 20px;
+      text-align: left;
+      backdrop-filter: blur(8px);
+      transition: var(--transition);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .stat-card:hover {
+      border-color: rgba(99, 102, 241, 0.4);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .stat-card::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 4px;
+      height: 100%;
+      background: var(--stat-color, var(--accent-indigo));
+    }
+
+    .stat-val {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.85rem;
+      font-weight: 700;
+      color: var(--text-main);
+      line-height: 1.2;
+    }
+
+    .stat-label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-top: 4px;
+    }
+
+    /* Search & Filter Bar Container */
+    .controls-wrapper {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      margin-bottom: 28px;
+      box-shadow: var(--shadow-md);
+    }
+
+    .search-row {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+      position: relative;
+    }
+
+    .search-input-wrap {
+      flex: 1;
+      position: relative;
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 16px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-dim);
+      pointer-events: none;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 14px 44px 14px 48px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      color: var(--text-main);
+      font-size: 1rem;
+      font-family: inherit;
+      outline: none;
+      transition: var(--transition);
+    }
+
+    .search-input:focus {
+      border-color: var(--accent-indigo);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+    }
+
+    .search-clear-btn {
+      position: absolute;
+      right: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      cursor: pointer;
+      display: none;
+      font-size: 1.1rem;
+      padding: 4px;
+    }
+
+    .search-clear-btn:hover {
+      color: var(--text-main);
+    }
+
+    /* Filter Chips & Selects Row */
+    .filters-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .filter-select {
+      background: var(--bg-primary);
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      padding: 8px 12px;
+      font-size: 0.85rem;
+      font-family: inherit;
+      outline: none;
+      cursor: pointer;
+      min-width: 130px;
+    }
+
+    .filter-select:focus {
+      border-color: var(--accent-indigo);
+    }
+
+    .chip-group {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .filter-chip {
+      padding: 6px 12px;
+      border-radius: var(--radius-full);
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      font-size: 0.825rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: var(--transition);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      user-select: none;
+    }
+
+    .filter-chip:hover {
+      border-color: rgba(255, 255, 255, 0.25);
+      color: var(--text-main);
+    }
+
+    .filter-chip.active {
+      background: rgba(99, 102, 241, 0.15);
+      border-color: var(--accent-indigo);
+      color: #a5b4fc;
+      font-weight: 600;
+    }
+
+    .layout-toggle-group {
+      margin-left: auto;
+      display: flex;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      background: var(--bg-primary);
+      overflow: hidden;
+    }
+
+    .layout-btn {
+      background: none;
+      border: none;
+      padding: 8px 12px;
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: var(--transition);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .layout-btn.active {
+      background: rgba(99, 102, 241, 0.2);
+      color: var(--accent-indigo);
+    }
+
+    /* Category Pill Carousel */
+    .categories-bar-wrapper {
+      position: relative;
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .categories-scroll {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 6px;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+    }
+
+    .categories-scroll::-webkit-scrollbar {
+      height: 5px;
+    }
+
+    .categories-scroll::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 4px;
+    }
+
+    .cat-btn {
+      white-space: nowrap;
+      padding: 6px 14px;
+      border-radius: var(--radius-full);
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: var(--transition);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .cat-btn:hover {
+      border-color: rgba(99, 102, 241, 0.35);
+      color: var(--text-main);
+    }
+
+    .cat-btn.active {
+      background: linear-gradient(135deg, var(--accent-indigo), var(--accent-purple));
+      border-color: transparent;
+      color: white;
+      box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+    }
+
+    .cat-count {
+      font-size: 0.7rem;
+      opacity: 0.75;
+      background: rgba(0, 0, 0, 0.2);
+      padding: 1px 6px;
+      border-radius: var(--radius-full);
+    }
+
+    /* Results Header */
+    .results-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 18px;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+
+    .results-count b {
+      color: var(--text-main);
+    }
+
+    /* API Cards Grid */
+    .apis-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 20px;
+      margin-bottom: 40px;
+    }
+
+    .api-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: var(--transition);
+      backdrop-filter: blur(8px);
+      position: relative;
+    }
+
+    .api-card:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-glow);
+      transform: translateY(-3px);
+      box-shadow: var(--shadow-md), var(--shadow-glow);
+    }
+
+    .card-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .api-name {
+      font-family: 'Outfit', sans-serif;
+      font-weight: 700;
+      font-size: 1.15rem;
+      color: var(--text-main);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      word-break: break-word;
+      transition: color 0.15s ease;
+    }
+
+    .api-name:hover {
+      color: var(--accent-indigo);
+    }
+
+    .fav-star-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--text-dim);
+      font-size: 1.15rem;
+      padding: 4px;
+      transition: var(--transition);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .fav-star-btn:hover {
+      color: #fbbf24;
+      transform: scale(1.15);
+    }
+
+    .fav-star-btn.starred {
+      color: #fbbf24;
+    }
+
+    .category-badge {
+      display: inline-block;
+      font-size: 0.725rem;
+      font-weight: 600;
+      color: #818cf8;
+      background: rgba(99, 102, 241, 0.12);
+      border: 1px solid rgba(99, 102, 241, 0.25);
+      border-radius: var(--radius-full);
+      padding: 2px 10px;
+      margin-bottom: 12px;
+      cursor: pointer;
+      transition: var(--transition);
+      width: fit-content;
+    }
+
+    .category-badge:hover {
+      background: rgba(99, 102, 241, 0.25);
+      border-color: var(--accent-indigo);
+    }
+
+    .api-desc {
+      font-size: 0.885rem;
+      color: var(--text-muted);
+      margin-bottom: 18px;
+      line-height: 1.55;
+      flex-grow: 1;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .meta-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 16px;
+      font-size: 0.725rem;
+      font-weight: 600;
+    }
+
+    .badge {
+      padding: 3px 8px;
+      border-radius: var(--radius-sm);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .badge-auth-no {
+      background: rgba(16, 185, 129, 0.12);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    .badge-auth-key {
+      background: rgba(245, 158, 11, 0.12);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+
+    .badge-auth-oauth {
+      background: rgba(139, 92, 246, 0.12);
+      color: #a78bfa;
+      border: 1px solid rgba(139, 92, 246, 0.3);
+    }
+
+    .badge-https-yes {
+      background: rgba(6, 182, 212, 0.12);
+      color: #22d3ee;
+      border: 1px solid rgba(6, 182, 212, 0.3);
+    }
+
+    .badge-https-no {
+      background: rgba(244, 63, 94, 0.12);
+      color: #fb7185;
+      border: 1px solid rgba(244, 63, 94, 0.3);
+    }
+
+    .badge-cors-yes {
+      background: rgba(99, 102, 241, 0.12);
+      color: #818cf8;
+      border: 1px solid rgba(99, 102, 241, 0.3);
+    }
+
+    .badge-cors-other {
+      background: rgba(148, 163, 184, 0.12);
+      color: #94a3b8;
+      border: 1px solid rgba(148, 163, 184, 0.25);
+    }
+
+    .card-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .card-actions-left {
+      display: flex;
+      gap: 6px;
+    }
+
+    .action-sm {
+      padding: 6px 10px;
+      font-size: 0.775rem;
+      border-radius: var(--radius-sm);
+    }
+
+    /* Table View Styles */
+    .apis-table-wrapper {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      overflow-x: auto;
+      margin-bottom: 40px;
+      display: none;
+    }
+
+    .apis-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.885rem;
+    }
+
+    .apis-table th {
+      background: var(--bg-secondary);
+      padding: 14px 16px;
+      color: var(--text-dim);
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 0.75rem;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .apis-table td {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border-color);
+      color: var(--text-muted);
+    }
+
+    .apis-table tr:hover td {
+      background: var(--bg-card-hover);
+    }
+
+    .apis-table .tbl-title {
+      font-weight: 600;
+      color: var(--text-main);
+      text-decoration: none;
+    }
+
+    .apis-table .tbl-title:hover {
+      color: var(--accent-indigo);
+    }
+
+    /* Pagination */
+    .pagination-bar {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 60px;
+    }
+
+    .page-btn {
+      min-width: 38px;
+      height: 38px;
+      padding: 0 10px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      font-size: 0.875rem;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: var(--transition);
+    }
+
+    .page-btn:hover:not(:disabled) {
+      border-color: var(--accent-indigo);
+      color: var(--accent-indigo);
+    }
+
+    .page-btn.active {
+      background: var(--accent-indigo);
+      border-color: var(--accent-indigo);
+      color: white;
+    }
+
+    .page-btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+
+    /* Modal Backdrop & Dialog */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(8px);
+      z-index: 100;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      animation: fadeIn 0.2s ease-out;
+    }
+
+    .modal-dialog {
+      background: var(--bg-secondary);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: var(--radius-lg);
+      width: 100%;
+      max-width: 720px;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .modal-header {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .modal-title {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.35rem;
+      font-weight: 700;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      font-size: 1.4rem;
+      cursor: pointer;
+      padding: 4px;
+    }
+
+    .modal-close:hover {
+      color: var(--text-main);
+    }
+
+    .modal-body {
+      padding: 24px;
+    }
+
+    .snippet-tabs {
+      display: flex;
+      gap: 8px;
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: 16px;
+    }
+
+    .snippet-tab {
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      padding: 8px 14px;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+
+    .snippet-tab.active {
+      color: var(--accent-indigo);
+      border-bottom-color: var(--accent-indigo);
+    }
+
+    .code-preview-wrap {
+      position: relative;
+      background: #06080d;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      color: #e2e8f0;
+      overflow-x: auto;
+    }
+
+    .copy-snippet-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      padding: 4px 10px;
+      font-size: 0.75rem;
+    }
+
+    .modal-footer {
+      padding: 16px 24px;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+    }
+
+    /* Live Tester Box */
+    .live-tester-box {
+      margin-top: 20px;
+      padding: 16px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+    }
+
+    .tester-response {
+      margin-top: 12px;
+      max-height: 200px;
+      overflow-y: auto;
+      background: #06080d;
+      padding: 10px;
+      border-radius: var(--radius-sm);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.775rem;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    /* Toast Notification */
+    .toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .toast {
+      background: #1e293b;
+      color: white;
+      padding: 12px 20px;
+      border-radius: var(--radius-md);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+      border-left: 4px solid var(--accent-indigo);
+      font-size: 0.875rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      animation: slideInRight 0.25s ease-out;
+    }
+
+    /* Empty State */
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      grid-column: 1 / -1;
+    }
+
+    .empty-icon {
+      font-size: 3rem;
+      margin-bottom: 12px;
+      opacity: 0.6;
+    }
+
+    .empty-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .empty-desc {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+
+    /* Footer */
+    footer {
+      margin-top: auto;
+      border-top: 1px solid var(--border-color);
+      padding: 32px 0;
+      background: var(--bg-secondary);
+      font-size: 0.85rem;
+      color: var(--text-dim);
+      text-align: center;
+    }
+
+    footer a {
+      color: var(--accent-indigo);
+      text-decoration: none;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes slideInRight {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+
+    @media (max-width: 768px) {
+      .container {
+        padding: 0 16px;
+      }
+      .hero-title {
+        font-size: 2rem;
+      }
+      .hero-section {
+        padding-top: 32px;
+      }
+      .hero-subtitle {
+        font-size: 0.98rem;
+      }
+      .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+      }
+      .stat-card {
+        padding: 14px;
+      }
+      .stat-val {
+        font-size: 1.5rem;
+      }
+      .filters-row {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .layout-toggle-group {
+        margin-left: 0;
+        justify-content: center;
+      }
+      .apis-grid {
+        grid-template-columns: 1fr;
+      }
+      .nav-inner {
+        height: auto;
+        padding: 12px 0;
+        flex-wrap: wrap;
+      }
+      .brand-badge,
+      #btn-surprise {
+        display: none;
+      }
+      .nav-actions {
+        gap: 6px;
+      }
+      .controls-wrapper {
+        padding: 14px;
+      }
+      .results-bar {
+        align-items: flex-start;
+        gap: 12px;
+        flex-direction: column;
+      }
+    }
+
+    [data-theme="light"] .hero-pill {
+      background: #eaf2ff;
+      border-color: #c9dcff;
+      color: #1d4ed8;
+    }
+
+    [data-theme="light"] .brand-badge {
+      background: #eaf2ff;
+      color: #1d4ed8;
+      border-color: #c9dcff;
+    }
+
+    [data-theme="light"] .btn:hover,
+    [data-theme="light"] .filter-chip:hover {
+      border-color: #93c5fd;
+    }
+
+    [data-theme="light"] .filter-chip.active,
+    [data-theme="light"] .layout-btn.active {
+      background: #eaf2ff;
+      border-color: #60a5fa;
+      color: #1d4ed8;
+    }
+
+    [data-theme="light"] .cat-btn.active,
+    [data-theme="light"] .btn-primary {
+      background: linear-gradient(135deg, #2563eb, #0f766e);
+    }
+
+    [data-theme="light"] .category-badge,
+    [data-theme="light"] .badge-cors-yes {
+      color: #1d4ed8;
+      background: #eaf2ff;
+      border-color: #c9dcff;
+    }
+
+    [data-theme="light"] .badge-auth-no {
+      color: #047857;
+      background: #ecfdf5;
+      border-color: #a7f3d0;
+    }
+
+    [data-theme="light"] .badge-auth-key {
+      color: #b45309;
+      background: #fffbeb;
+      border-color: #fde68a;
+    }
+
+    [data-theme="light"] .badge-auth-oauth {
+      color: #7e22ce;
+      background: #faf5ff;
+      border-color: #e9d5ff;
+    }
+
+    [data-theme="light"] .badge-https-yes {
+      color: #0e7490;
+      background: #ecfeff;
+      border-color: #a5f3fc;
+    }
+
+    [data-theme="light"] .badge-https-no {
+      color: #be123c;
+      background: #fff1f2;
+      border-color: #fecdd3;
+    }
+
+    [data-theme="light"] .badge-cors-other {
+      color: #52647a;
+      background: #f1f5f9;
+      border-color: #cbd5e1;
+    }
+
+    [data-theme="light"] .code-preview-wrap,
+    [data-theme="light"] .tester-response {
+      background: #132238;
+      border-color: #243b53;
+    }
+
+    [data-theme="light"] .modal-overlay {
+      background: rgba(21, 34, 56, 0.42);
+    }
+
+    [data-theme="light"] .toast {
+      background: #152238;
+    }
+
+    .search-input::placeholder {
+      color: #91a4b8;
+    }
+
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    a:focus-visible {
+      outline: 3px solid rgba(37, 99, 235, 0.28);
+      outline-offset: 2px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navigation -->
+  <header>
+    <div class="container nav-inner">
+      <a href="#" class="logo-group" onclick="resetAllFilters(); return false;">
+        <div class="logo-badge">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="2" y1="12" x2="22" y2="12"></line>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+          </svg>
+        </div>
+        <div>
+          <div class="brand-title">
+            Public APIs Hub
+            <span class="brand-badge">2026 Edition</span>
+          </div>
+        </div>
+      </a>
+
+      <div class="nav-actions">
+        <button class="btn" id="btn-surprise" onclick="showRandomApi()" title="Surprise Me with a Random API">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
+            <path d="M16 8h.01"></path>
+            <path d="M8 8h.01"></path>
+            <path d="M8 16h.01"></path>
+            <path d="M16 16h.01"></path>
+            <path d="M12 12h.01"></path>
+          </svg>
+          Surprise Me
+        </button>
+
+        <button class="btn" id="btn-favs-view" onclick="toggleFavoritesOnly()" title="View Starred APIs">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+          </svg>
+          <span id="fav-count-badge">Favorites (0)</span>
+        </button>
+
+        <button class="btn btn-icon" id="btn-export" onclick="exportData('csv')" title="Export filtered APIs as CSV">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+        </button>
+
+        <button class="btn btn-icon" id="btn-theme" onclick="toggleTheme()" title="Toggle Dark/Light Mode">
+          <svg id="theme-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Hero -->
+  <main class="container">
+    <section class="hero-section">
+      <div class="hero-pill">
+        <span>✨ The Ultimate Free API Index</span>
+        <span>•</span>
+        <span>1,885+ APIs</span>
+      </div>
+      <h1 class="hero-title">Explore, Filter & Build With Public APIs</h1>
+      <p class="hero-subtitle">
+        A beautifully curated catalog of free REST APIs for developers, hobbyists, and AI agents. Filter by authentication, CORS, and categories.
+      </p>
+
+      <!-- Stats Bar -->
+      <div class="stats-grid">
+        <div class="stat-card" style="--stat-color: #6366f1;">
+          <div class="stat-val" id="stat-total">1,885</div>
+          <div class="stat-label">Total APIs Available</div>
+        </div>
+        <div class="stat-card" style="--stat-color: #10b981;">
+          <div class="stat-val" id="stat-no-auth">1,027</div>
+          <div class="stat-label">100% Free & No Auth</div>
+        </div>
+        <div class="stat-card" style="--stat-color: #8b5cf6;">
+          <div class="stat-val" id="stat-categories">53</div>
+          <div class="stat-label">Unique Categories</div>
+        </div>
+        <div class="stat-card" style="--stat-color: #06b6d4;">
+          <div class="stat-val" id="stat-https">97%</div>
+          <div class="stat-label">HTTPS Enabled</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Controls Wrapper -->
+    <div class="controls-wrapper">
+      <!-- Search Input -->
+      <div class="search-row">
+        <div class="search-input-wrap">
+          <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input 
+            type="text" 
+            id="search-input" 
+            class="search-input" 
+            placeholder="Search 1,885+ APIs by name, description, category, or keyword... (Press '/' to focus)" 
+            autocomplete="off"
+            oninput="handleSearchInput(this.value)"
+          >
+          <button class="search-clear-btn" id="search-clear" onclick="clearSearch()" title="Clear search">✕</button>
+        </div>
+      </div>
+
+      <!-- Filters Row -->
+      <div class="filters-row">
+        <!-- Auth Filter Chips -->
+        <div class="chip-group">
+          <span style="font-size: 0.8rem; color: var(--text-dim); margin-right: 4px;">Auth:</span>
+          <div class="filter-chip active" data-auth="" onclick="setAuthFilter('', this)">All</div>
+          <div class="filter-chip" data-auth="No" onclick="setAuthFilter('No', this)">🟢 No Auth</div>
+          <div class="filter-chip" data-auth="apiKey" onclick="setAuthFilter('apiKey', this)">🔑 API Key</div>
+          <div class="filter-chip" data-auth="OAuth" onclick="setAuthFilter('OAuth', this)">🛡️ OAuth</div>
+        </div>
+
+        <!-- HTTPS Filter -->
+        <select class="filter-select" id="filter-https" onchange="applyFilters()">
+          <option value="">HTTPS: All</option>
+          <option value="Yes">HTTPS: Yes Only</option>
+          <option value="No">HTTPS: No</option>
+        </select>
+
+        <!-- CORS Filter -->
+        <select class="filter-select" id="filter-cors" onchange="applyFilters()">
+          <option value="">CORS: All</option>
+          <option value="Yes">CORS: Yes</option>
+          <option value="No">CORS: No</option>
+          <option value="Unknown">CORS: Unknown</option>
+        </select>
+
+        <!-- Category Dropdown -->
+        <select class="filter-select" id="filter-category-select" onchange="setCategoryFromSelect(this.value)" style="min-width: 170px;">
+          <option value="">Category: All Categories</option>
+        </select>
+
+        <!-- Sort Select -->
+        <select class="filter-select" id="filter-sort" onchange="applyFilters()">
+          <option value="name-asc">Sort: Name (A-Z)</option>
+          <option value="name-desc">Sort: Name (Z-A)</option>
+          <option value="category-asc">Sort: Category</option>
+          <option value="random">Sort: Random</option>
+        </select>
+
+        <!-- Layout Toggle Buttons -->
+        <div class="layout-toggle-group">
+          <button class="layout-btn active" id="btn-view-grid" onclick="setViewMode('grid')" title="Card Grid View">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7"></rect>
+              <rect x="14" y="3" width="7" height="7"></rect>
+              <rect x="14" y="14" width="7" height="7"></rect>
+              <rect x="3" y="14" width="7" height="7"></rect>
+            </svg>
+          </button>
+          <button class="layout-btn" id="btn-view-table" onclick="setViewMode('table')" title="Compact Table View">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="8" y1="6" x2="21" y2="6"></line>
+              <line x1="8" y1="12" x2="21" y2="12"></line>
+              <line x1="8" y1="18" x2="21" y2="18"></line>
+              <line x1="3" y1="6" x2="3.01" y2="6"></line>
+              <line x1="3" y1="12" x2="3.01" y2="12"></line>
+              <line x1="3" y1="18" x2="3.01" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Categories Scroll Pill Bar -->
+      <div class="categories-bar-wrapper">
+        <div class="categories-scroll" id="categories-scroll-list">
+          <button class="cat-btn active" onclick="setCategoryFilter('', this)">
+            All <span class="cat-count" id="count-all">1885</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Results Status Bar -->
+    <div class="results-bar">
+      <div class="results-count" id="results-count-text">
+        Showing <b>0</b> APIs
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <label style="font-size: 0.8rem; color: var(--text-dim);" for="page-size-select">Per page:</label>
+        <select class="filter-select" id="page-size-select" style="min-width: 80px; padding: 4px 8px;" onchange="changePageSize(this.value)">
+          <option value="36">36</option>
+          <option value="72">72</option>
+          <option value="144">144</option>
+          <option value="9999">All</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Grid View of API Cards -->
+    <div class="apis-grid" id="apis-grid-container"></div>
+
+    <!-- Table View of APIs -->
+    <div class="apis-table-wrapper" id="apis-table-wrapper">
+      <table class="apis-table">
+        <thead>
+          <tr>
+            <th style="width: 250px;">API Name</th>
+            <th>Category</th>
+            <th>Description</th>
+            <th>Auth</th>
+            <th>HTTPS</th>
+            <th>CORS</th>
+            <th style="text-align: right; width: 140px;">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="apis-table-body"></tbody>
+      </table>
+    </div>
+
+    <!-- Pagination Controls -->
+    <div class="pagination-bar" id="pagination-controls"></div>
+  </main>
+
+  <!-- Modal for API Inspection / Code Snippets -->
+  <div class="modal-overlay" id="api-modal" onclick="handleModalOverlayClick(event)">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div>
+          <div class="modal-title" id="modal-api-name">API Name</div>
+          <span class="category-badge" id="modal-api-cat" style="margin-top: 4px; margin-bottom: 0;">Category</span>
+        </div>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 20px; line-height: 1.6;" id="modal-api-desc"></p>
+        
+        <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px;">
+          <span class="badge" id="modal-badge-auth">Auth: No</span>
+          <span class="badge" id="modal-badge-https">HTTPS: Yes</span>
+          <span class="badge" id="modal-badge-cors">CORS: Yes</span>
+        </div>
+
+        <div style="margin-bottom: 12px; font-size: 0.85rem; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em;">
+          Integration Code Snippet
+        </div>
+
+        <div class="snippet-tabs">
+          <button class="snippet-tab active" onclick="switchSnippetTab('curl', this)">cURL</button>
+          <button class="snippet-tab" onclick="switchSnippetTab('fetch', this)">JavaScript (fetch)</button>
+          <button class="snippet-tab" onclick="switchSnippetTab('python', this)">Python (requests)</button>
+        </div>
+
+        <div class="code-preview-wrap">
+          <button class="btn btn-primary copy-snippet-btn" onclick="copyCurrentSnippet()">Copy</button>
+          <code id="modal-code-snippet"></code>
+        </div>
+
+        <!-- Live Browser Test Box -->
+        <div class="live-tester-box" id="modal-tester-section">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="font-weight: 600; font-size: 0.875rem;">Browser Quick Test</div>
+            <button class="btn btn-primary action-sm" id="modal-test-run-btn" onclick="runLiveTest()">
+              ▶ Send GET Request
+            </button>
+          </div>
+          <div style="font-size: 0.775rem; color: var(--text-dim); margin-top: 4px;">
+            Sends a real browser fetch request to test connectivity and view headers/response.
+          </div>
+          <div class="tester-response" id="modal-test-output" style="display: none;"></div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn" onclick="closeModal()">Close</button>
+        <a href="#" target="_blank" rel="noopener noreferrer" class="btn btn-primary" id="modal-btn-visit">
+          Visit Documentation / Site ↗
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <p style="margin-bottom: 8px;">
+        Powered by the open source <a href="https://github.com/public-apis/public-apis" target="_blank" rel="noopener noreferrer">public-apis/public-apis</a> repository.
+      </p>
+      <p style="opacity: 0.7;">
+        Made with vanilla HTML5, CSS3, and JavaScript • High Performance Offline Capable Explorer
+      </p>
+    </div>
+  </footer>
+
+  <!-- Include Data File (loads window.PUBLIC_APIS) -->
+  <script src="apis_data.js"></script>
+
+  <script>
+    // App State
+    let allApis = [];
+    let filteredApis = [];
+    let categoriesList = [];
+    let activeCategory = '';
+    let activeAuth = '';
+    let searchQuery = '';
+    let currentPage = 1;
+    let pageSize = 36;
+    let currentViewMode = 'grid'; // 'grid' | 'table'
+    let favorites = new Set();
+    let currentModalApi = null;
+    let currentSnippetType = 'curl';
+
+    // Initialize application
+    window.addEventListener('DOMContentLoaded', async () => {
+      loadFavorites();
+      initTheme();
+
+      // Check if data loaded from script
+      if (window.PUBLIC_APIS && Array.isArray(window.PUBLIC_APIS)) {
+        allApis = window.PUBLIC_APIS;
+        initApp();
+      } else {
+        // Fallback fetch JSON
+        try {
+          const res = await fetch('apis_data.json');
+          if (res.ok) {
+            allApis = await res.json();
+            initApp();
+          } else {
+            showToast('Unable to load API data file', 'error');
+          }
+        } catch (err) {
+          console.error(err);
+          showToast('Data file not found. Ensure apis_data.js or apis_data.json is present.', 'error');
+        }
+      }
+
+      // Keyboard shortcuts
+      window.addEventListener('keydown', (e) => {
+        if (e.key === '/' && document.activeElement.tagName !== 'INPUT') {
+          e.preventDefault();
+          document.getElementById('search-input').focus();
+        }
+        if (e.key === 'Escape') {
+          closeModal();
+        }
+      });
+    });
+
+    function initApp() {
+      // Calculate Stats
+      document.getElementById('stat-total').innerText = allApis.length.toLocaleString();
+      const noAuthCount = allApis.filter(a => a.auth === 'No').length;
+      document.getElementById('stat-no-auth').innerText = noAuthCount.toLocaleString();
+      
+      const httpsCount = allApis.filter(a => a.https.toLowerCase() === 'yes').length;
+      const httpsPercent = Math.round((httpsCount / allApis.length) * 100);
+      document.getElementById('stat-https').innerText = httpsPercent + '%';
+
+      // Extract unique categories
+      const catCountMap = {};
+      allApis.forEach(a => {
+        catCountMap[a.category] = (catCountMap[a.category] || 0) + 1;
+      });
+      categoriesList = Object.keys(catCountMap).sort();
+      document.getElementById('stat-categories').innerText = categoriesList.length;
+
+      // Populate Category Dropdown
+      const catSelect = document.getElementById('filter-category-select');
+      categoriesList.forEach(cat => {
+        const opt = document.createElement('option');
+        opt.value = cat;
+        opt.innerText = `${cat} (${catCountMap[cat]})`;
+        catSelect.appendChild(opt);
+      });
+
+      // Populate Scrollable Category Pills
+      const catScroll = document.getElementById('categories-scroll-list');
+      document.getElementById('count-all').innerText = allApis.length;
+
+      categoriesList.forEach(cat => {
+        const btn = document.createElement('button');
+        btn.className = 'cat-btn';
+        btn.dataset.category = cat;
+        btn.onclick = () => setCategoryFilter(cat, btn);
+        btn.innerHTML = `${cat} <span class="cat-count">${catCountMap[cat]}</span>`;
+        catScroll.appendChild(btn);
+      });
+
+      // Update Favorites badge
+      updateFavoritesBadge();
+
+      // Initial Filter & Render
+      applyFilters();
+    }
+
+    // Filter Logic
+    function applyFilters() {
+      const httpsVal = document.getElementById('filter-https').value;
+      const corsVal = document.getElementById('filter-cors').value;
+      const sortVal = document.getElementById('filter-sort').value;
+      const q = searchQuery.toLowerCase().trim();
+
+      filteredApis = allApis.filter(api => {
+        // Category filter
+        if (activeCategory && api.category !== activeCategory) {
+          return false;
+        }
+
+        // Auth filter
+        if (activeAuth) {
+          if (activeAuth === 'No' && api.auth !== 'No') return false;
+          if (activeAuth === 'apiKey' && !api.auth.toLowerCase().includes('apikey')) return false;
+          if (activeAuth === 'OAuth' && !api.auth.toLowerCase().includes('oauth')) return false;
+        }
+
+        // HTTPS filter
+        if (httpsVal && api.https.toLowerCase() !== httpsVal.toLowerCase()) {
+          return false;
+        }
+
+        // CORS filter
+        if (corsVal) {
+          if (corsVal === 'Yes' && api.cors.toLowerCase() !== 'yes') return false;
+          if (corsVal === 'No' && api.cors.toLowerCase() !== 'no') return false;
+          if (corsVal === 'Unknown' && api.cors.toLowerCase() !== 'unknown') return false;
+        }
+
+        // Search Query
+        if (q) {
+          const matchName = api.name.toLowerCase().includes(q);
+          const matchDesc = api.description.toLowerCase().includes(q);
+          const matchCat = api.category.toLowerCase().includes(q);
+          const matchUrl = (api.url || '').toLowerCase().includes(q);
+          if (!matchName && !matchDesc && !matchCat && !matchUrl) {
+            return false;
+          }
+        }
+
+        return true;
+      });
+
+      // Sort
+      if (sortVal === 'name-asc') {
+        filteredApis.sort((a, b) => a.name.localeCompare(b.name));
+      } else if (sortVal === 'name-desc') {
+        filteredApis.sort((a, b) => b.name.localeCompare(a.name));
+      } else if (sortVal === 'category-asc') {
+        filteredApis.sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+      } else if (sortVal === 'random') {
+        filteredApis.sort(() => Math.random() - 0.5);
+      }
+
+      currentPage = 1;
+      renderCurrentPage();
+    }
+
+    // Category Filter Selection
+    function setCategoryFilter(category, btnElement) {
+      activeCategory = category;
+      document.getElementById('filter-category-select').value = category;
+
+      // Update pill active classes
+      document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
+      if (btnElement) {
+        btnElement.classList.add('active');
+        btnElement.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+      } else {
+        const matched = Array.from(document.querySelectorAll('.cat-btn')).find(b => (b.dataset.category || '') === category);
+        if (matched) matched.classList.add('active');
+      }
+
+      applyFilters();
+    }
+
+    function setCategoryFromSelect(val) {
+      activeCategory = val;
+      document.querySelectorAll('.cat-btn').forEach(b => {
+        b.classList.toggle('active', (b.dataset.category || '') === val);
+      });
+      applyFilters();
+    }
+
+    // Auth Filter Selection
+    function setAuthFilter(auth, element) {
+      activeAuth = auth;
+      document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+      element.classList.add('active');
+      applyFilters();
+    }
+
+    // Search Input handling
+    let debounceTimer;
+    function handleSearchInput(val) {
+      clearTimeout(debounceTimer);
+      searchQuery = val;
+      const clearBtn = document.getElementById('search-clear');
+      clearBtn.style.display = val ? 'block' : 'none';
+
+      debounceTimer = setTimeout(() => {
+        applyFilters();
+      }, 150);
+    }
+
+    function clearSearch() {
+      const input = document.getElementById('search-input');
+      input.value = '';
+      searchQuery = '';
+      document.getElementById('search-clear').style.display = 'none';
+      input.focus();
+      applyFilters();
+    }
+
+    // Render Paginated Results
+    function renderCurrentPage() {
+      const totalResults = filteredApis.length;
+      const countEl = document.getElementById('results-count-text');
+      const startIdx = (currentPage - 1) * pageSize;
+      const endIdx = Math.min(startIdx + pageSize, totalResults);
+      const pageSlice = filteredApis.slice(startIdx, endIdx);
+
+      if (totalResults === 0) {
+        countEl.innerHTML = 'Showing <b>0</b> APIs';
+      } else {
+        countEl.innerHTML = `Showing <b>${startIdx + 1}–${endIdx}</b> of <b>${totalResults.toLocaleString()}</b> APIs`;
+      }
+
+      // Render Cards Grid
+      const gridContainer = document.getElementById('apis-grid-container');
+      const tableBody = document.getElementById('apis-table-body');
+      
+      if (totalResults === 0) {
+        const emptyHtml = `
+          <div class="empty-state">
+            <div class="empty-icon">🔍</div>
+            <div class="empty-title">No APIs Found</div>
+            <div class="empty-desc">Try loosening your search terms or clearing the active filters.</div>
+            <button class="btn btn-primary" style="margin-top: 16px;" onclick="resetAllFilters()">Reset All Filters</button>
+          </div>
+        `;
+        gridContainer.innerHTML = emptyHtml;
+        tableBody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 40px;">No APIs found matching criteria.</td></tr>`;
+        document.getElementById('pagination-controls').innerHTML = '';
+        return;
+      }
+
+      // Build Grid HTML
+      gridContainer.innerHTML = pageSlice.map(api => createCardHtml(api)).join('');
+
+      // Build Table HTML
+      tableBody.innerHTML = pageSlice.map(api => createTableRowHtml(api)).join('');
+
+      renderPagination(totalResults);
+    }
+
+    function createCardHtml(api) {
+      const isFav = favorites.has(api.id);
+      const authBadgeClass = api.auth === 'No' ? 'badge-auth-no' : (api.auth.toLowerCase().includes('oauth') ? 'badge-auth-oauth' : 'badge-auth-key');
+      const httpsBadgeClass = api.https.toLowerCase() === 'yes' ? 'badge-https-yes' : 'badge-https-no';
+      const corsBadgeClass = api.cors.toLowerCase() === 'yes' ? 'badge-cors-yes' : 'badge-cors-other';
+
+      return `
+        <div class="api-card" id="card-${api.id}">
+          <div>
+            <div class="card-top">
+              <a href="${escapeHtml(api.url)}" target="_blank" rel="noopener noreferrer" class="api-name" title="Visit ${escapeHtml(api.name)}">
+                ${escapeHtml(api.name)}
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                  <polyline points="15 3 21 3 21 9"></polyline>
+                  <line x1="10" y1="14" x2="21" y2="3"></line>
+                </svg>
+              </a>
+              <button class="fav-star-btn ${isFav ? 'starred' : ''}" onclick="toggleFavorite(${api.id})" title="${isFav ? 'Remove from favorites' : 'Add to favorites'}">
+                ${isFav ? '★' : '☆'}
+              </button>
+            </div>
+
+            <div class="category-badge" onclick="setCategoryFilter('${escapeHtml(api.category)}', null)" title="Filter by ${escapeHtml(api.category)}">
+              📁 ${escapeHtml(api.category)}
+            </div>
+
+            <p class="api-desc">${escapeHtml(api.description || 'No description provided.')}</p>
+
+            <div class="meta-badges">
+              <span class="badge ${authBadgeClass}">Auth: ${escapeHtml(api.auth || 'No')}</span>
+              <span class="badge ${httpsBadgeClass}">HTTPS: ${escapeHtml(api.https || 'Unknown')}</span>
+              <span class="badge ${corsBadgeClass}">CORS: ${escapeHtml(api.cors || 'Unknown')}</span>
+            </div>
+          </div>
+
+          <div class="card-footer">
+            <div class="card-actions-left">
+              <button class="btn action-sm" onclick="openInspectorModal(${api.id})" title="View code snippets & test API">
+                ⚡ Test & Code
+              </button>
+              <button class="btn action-sm" onclick="copyApiUrl('${escapeHtml(api.url)}')" title="Copy URL">
+                📋
+              </button>
+            </div>
+            <a href="${escapeHtml(api.url)}" target="_blank" rel="noopener noreferrer" class="btn btn-primary action-sm">
+              Visit ↗
+            </a>
+          </div>
+        </div>
+      `;
+    }
+
+    function createTableRowHtml(api) {
+      const isFav = favorites.has(api.id);
+      return `
+        <tr>
+          <td>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <button class="fav-star-btn ${isFav ? 'starred' : ''}" style="font-size: 1rem;" onclick="toggleFavorite(${api.id})">
+                ${isFav ? '★' : '☆'}
+              </button>
+              <a href="${escapeHtml(api.url)}" target="_blank" rel="noopener noreferrer" class="tbl-title">
+                ${escapeHtml(api.name)} ↗
+              </a>
+            </div>
+          </td>
+          <td><span class="category-badge" style="margin: 0;" onclick="setCategoryFilter('${escapeHtml(api.category)}', null)">${escapeHtml(api.category)}</span></td>
+          <td style="max-width: 380px;">${escapeHtml(api.description)}</td>
+          <td><span class="badge ${api.auth === 'No' ? 'badge-auth-no' : 'badge-auth-key'}">${escapeHtml(api.auth)}</span></td>
+          <td><span class="badge ${api.https.toLowerCase() === 'yes' ? 'badge-https-yes' : 'badge-https-no'}">${escapeHtml(api.https)}</span></td>
+          <td><span class="badge ${api.cors.toLowerCase() === 'yes' ? 'badge-cors-yes' : 'badge-cors-other'}">${escapeHtml(api.cors)}</span></td>
+          <td style="text-align: right;">
+            <button class="btn action-sm" onclick="openInspectorModal(${api.id})" style="padding: 4px 8px;">⚡ Code</button>
+            <a href="${escapeHtml(api.url)}" target="_blank" rel="noopener noreferrer" class="btn btn-primary action-sm" style="padding: 4px 8px;">Visit</a>
+          </td>
+        </tr>
+      `;
+    }
+
+    // Pagination Logic
+    function renderPagination(total) {
+      const totalPages = Math.ceil(total / pageSize);
+      const container = document.getElementById('pagination-controls');
+      if (totalPages <= 1) {
+        container.innerHTML = '';
+        return;
+      }
+
+      let html = `
+        <button class="page-btn" ${currentPage === 1 ? 'disabled' : ''} onclick="goToPage(${currentPage - 1})">
+          ‹ Prev
+        </button>
+      `;
+
+      const maxBtns = 7;
+      let startP = Math.max(1, currentPage - 3);
+      let endP = Math.min(totalPages, startP + maxBtns - 1);
+      if (endP - startP < maxBtns - 1) {
+        startP = Math.max(1, endP - maxBtns + 1);
+      }
+
+      if (startP > 1) {
+        html += `<button class="page-btn" onclick="goToPage(1)">1</button>`;
+        if (startP > 2) html += `<span style="color: var(--text-dim); padding: 0 4px;">…</span>`;
+      }
+
+      for (let p = startP; p <= endP; p++) {
+        html += `<button class="page-btn ${p === currentPage ? 'active' : ''}" onclick="goToPage(${p})">${p}</button>`;
+      }
+
+      if (endP < totalPages) {
+        if (endP < totalPages - 1) html += `<span style="color: var(--text-dim); padding: 0 4px;">…</span>`;
+        html += `<button class="page-btn" onclick="goToPage(${totalPages})">${totalPages}</button>`;
+      }
+
+      html += `
+        <button class="page-btn" ${currentPage === totalPages ? 'disabled' : ''} onclick="goToPage(${currentPage + 1})">
+          Next ›
+        </button>
+      `;
+
+      container.innerHTML = html;
+    }
+
+    function goToPage(page) {
+      currentPage = page;
+      renderCurrentPage();
+      window.scrollTo({ top: 380, behavior: 'smooth' });
+    }
+
+    function changePageSize(size) {
+      pageSize = parseInt(size, 10);
+      currentPage = 1;
+      renderCurrentPage();
+    }
+
+    // View Mode Toggle (Grid vs Table)
+    function setViewMode(mode) {
+      currentViewMode = mode;
+      document.getElementById('btn-view-grid').classList.toggle('active', mode === 'grid');
+      document.getElementById('btn-view-table').classList.toggle('active', mode === 'table');
+      
+      document.getElementById('apis-grid-container').style.display = mode === 'grid' ? 'grid' : 'none';
+      document.getElementById('apis-table-wrapper').style.display = mode === 'table' ? 'block' : 'none';
+    }
+
+    // Favorites Logic
+    function loadFavorites() {
+      try {
+        const stored = localStorage.getItem('public_apis_favorites');
+        if (stored) {
+          favorites = new Set(JSON.parse(stored));
+        }
+      } catch (e) {}
+    }
+
+    function saveFavorites() {
+      try {
+        localStorage.setItem('public_apis_favorites', JSON.stringify(Array.from(favorites)));
+      } catch (e) {}
+      updateFavoritesBadge();
+    }
+
+    function toggleFavorite(id) {
+      if (favorites.has(id)) {
+        favorites.delete(id);
+        showToast('Removed from favorites');
+      } else {
+        favorites.add(id);
+        showToast('Added to favorites ⭐');
+      }
+      saveFavorites();
+      renderCurrentPage();
+    }
+
+    function updateFavoritesBadge() {
+      const badge = document.getElementById('fav-count-badge');
+      badge.innerText = `Favorites (${favorites.size})`;
+    }
+
+    let favoritesOnlyMode = false;
+    function toggleFavoritesOnly() {
+      favoritesOnlyMode = !favoritesOnlyMode;
+      const btn = document.getElementById('btn-favs-view');
+      btn.classList.toggle('btn-primary', favoritesOnlyMode);
+
+      if (favoritesOnlyMode) {
+        filteredApis = allApis.filter(a => favorites.has(a.id));
+        currentPage = 1;
+        renderCurrentPage();
+        showToast(`Showing ${favorites.size} favorite APIs`);
+      } else {
+        applyFilters();
+      }
+    }
+
+    // Surprise Me / Random API
+    function showRandomApi() {
+      if (allApis.length === 0) return;
+      const randomIndex = Math.floor(Math.random() * allApis.length);
+      const api = allApis[randomIndex];
+      openInspectorModal(api.id);
+    }
+
+    // Modal Inspector
+    function openInspectorModal(apiId) {
+      const api = allApis.find(a => a.id === apiId);
+      if (!api) return;
+      currentModalApi = api;
+
+      document.getElementById('modal-api-name').innerText = api.name;
+      document.getElementById('modal-api-cat').innerText = '📁 ' + api.category;
+      document.getElementById('modal-api-desc').innerText = api.description;
+      
+      const badgeAuth = document.getElementById('modal-badge-auth');
+      badgeAuth.className = 'badge ' + (api.auth === 'No' ? 'badge-auth-no' : 'badge-auth-key');
+      badgeAuth.innerText = 'Auth: ' + (api.auth || 'No');
+
+      const badgeHttps = document.getElementById('modal-badge-https');
+      badgeHttps.className = 'badge ' + (api.https.toLowerCase() === 'yes' ? 'badge-https-yes' : 'badge-https-no');
+      badgeHttps.innerText = 'HTTPS: ' + api.https;
+
+      const badgeCors = document.getElementById('modal-badge-cors');
+      badgeCors.className = 'badge ' + (api.cors.toLowerCase() === 'yes' ? 'badge-cors-yes' : 'badge-cors-other');
+      badgeCors.innerText = 'CORS: ' + api.cors;
+
+      document.getElementById('modal-btn-visit').href = api.url;
+
+      // Reset live tester
+      const testOutput = document.getElementById('modal-test-output');
+      testOutput.style.display = 'none';
+      testOutput.innerText = '';
+      document.getElementById('modal-test-run-btn').disabled = false;
+
+      updateModalSnippet();
+
+      const modal = document.getElementById('api-modal');
+      modal.style.display = 'flex';
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeModal() {
+      document.getElementById('api-modal').style.display = 'none';
+      document.body.style.overflow = 'auto';
+    }
+
+    function handleModalOverlayClick(e) {
+      if (e.target.id === 'api-modal') {
+        closeModal();
+      }
+    }
+
+    function switchSnippetTab(type, tabEl) {
+      currentSnippetType = type;
+      document.querySelectorAll('.snippet-tab').forEach(t => t.classList.remove('active'));
+      tabEl.classList.add('active');
+      updateModalSnippet();
+    }
+
+    function updateModalSnippet() {
+      if (!currentModalApi) return;
+      const api = currentModalApi;
+      const codeEl = document.getElementById('modal-code-snippet');
+      const url = api.url || 'https://api.example.com';
+
+      if (currentSnippetType === 'curl') {
+        codeEl.innerText = `curl -X GET "${url}" \\\n  -H "Accept: application/json"${api.auth !== 'No' ? ' \\\n  -H "Authorization: Bearer YOUR_API_KEY"' : ''}`;
+      } else if (currentSnippetType === 'fetch') {
+        codeEl.innerText = `fetch("${url}", {\n  headers: {\n    "Accept": "application/json"${api.auth !== 'No' ? ',\n    "Authorization": "Bearer YOUR_API_KEY"' : ''}\n  }\n})\n  .then(res => res.json())\n  .then(data => console.log(data))\n  .catch(err => console.error("API error:", err));`;
+      } else if (currentSnippetType === 'python') {
+        codeEl.innerText = `import requests\n\nheaders = {\n    "Accept": "application/json"${api.auth !== 'No' ? ',\n    "Authorization": "Bearer YOUR_API_KEY"' : ''}\n}\nresponse = requests.get("${url}", headers=headers)\nprint(response.status_code)\nprint(response.json())`;
+      }
+    }
+
+    function copyCurrentSnippet() {
+      const code = document.getElementById('modal-code-snippet').innerText;
+      navigator.clipboard.writeText(code).then(() => {
+        showToast('Code snippet copied to clipboard!');
+      });
+    }
+
+    // Live test in browser
+    async function runLiveTest() {
+      if (!currentModalApi) return;
+      const url = currentModalApi.url;
+      const output = document.getElementById('modal-test-output');
+      const btn = document.getElementById('modal-test-run-btn');
+
+      output.style.display = 'block';
+      output.innerText = 'Sending request to: ' + url + ' ...\n';
+      btn.disabled = true;
+
+      const startTime = performance.now();
+      try {
+        const res = await fetch(url, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' }
+        });
+        const duration = Math.round(performance.now() - startTime);
+
+        let bodyText = '';
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('json')) {
+          const json = await res.json();
+          bodyText = JSON.stringify(json, null, 2);
+        } else {
+          bodyText = await res.text();
+          if (bodyText.length > 500) bodyText = bodyText.substring(0, 500) + '... (truncated)';
+        }
+
+        output.innerText = `Status: ${res.status} ${res.statusText} (${duration}ms)\nContent-Type: ${contentType}\n\nResponse Body:\n${bodyText}`;
+      } catch (err) {
+        output.innerText = `Request Failed: ${err.message}\n\nNote: If the API does not allow browser Cross-Origin (CORS) requests or requires authentication/special headers, client-side browser testing may be blocked by browser security. You can still call this API directly from backend servers (Node.js, Python, Go, cURL, etc.).`;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    // Helper utilities
+    function copyApiUrl(url) {
+      navigator.clipboard.writeText(url).then(() => {
+        showToast('API URL copied: ' + url);
+      });
+    }
+
+    function resetAllFilters() {
+      searchQuery = '';
+      activeCategory = '';
+      activeAuth = '';
+      favoritesOnlyMode = false;
+
+      document.getElementById('search-input').value = '';
+      document.getElementById('search-clear').style.display = 'none';
+      document.getElementById('filter-https').value = '';
+      document.getElementById('filter-cors').value = '';
+      document.getElementById('filter-sort').value = 'name-asc';
+      document.getElementById('filter-category-select').value = '';
+      document.getElementById('btn-favs-view').classList.remove('btn-primary');
+
+      document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+      document.querySelector('.filter-chip[data-auth=""]').classList.add('active');
+
+      document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
+      const allCatBtn = document.querySelector('.cat-btn');
+      if (allCatBtn) allCatBtn.classList.add('active');
+
+      applyFilters();
+      showToast('All filters reset');
+    }
+
+    function exportData(format) {
+      if (filteredApis.length === 0) {
+        showToast('No APIs to export', 'error');
+        return;
+      }
+
+      if (format === 'csv') {
+        const headers = ['Name', 'Category', 'Description', 'Auth', 'HTTPS', 'CORS', 'URL'];
+        const csvRows = [headers.join(',')];
+
+        filteredApis.forEach(api => {
+          const row = [
+            `"${(api.name || '').replace(/"/g, '""')}"`,
+            `"${(api.category || '').replace(/"/g, '""')}"`,
+            `"${(api.description || '').replace(/"/g, '""')}"`,
+            `"${(api.auth || '').replace(/"/g, '""')}"`,
+            `"${(api.https || '').replace(/"/g, '""')}"`,
+            `"${(api.cors || '').replace(/"/g, '""')}"`,
+            `"${(api.url || '').replace(/"/g, '""')}"`
+          ];
+          csvRows.push(row.join(','));
+        });
+
+        const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `public_apis_export_${filteredApis.length}.csv`;
+        link.click();
+        showToast(`Exported ${filteredApis.length} APIs to CSV!`);
+      }
+    }
+
+    function toggleTheme() {
+      const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+      const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', newTheme);
+      localStorage.setItem('public_apis_theme', newTheme);
+      showToast(`Switched to ${newTheme} mode`);
+    }
+
+    function initTheme() {
+      const saved = localStorage.getItem('public_apis_theme') || 'dark';
+      document.documentElement.setAttribute('data-theme', saved);
+    }
+
+    function showToast(msg, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      toast.innerHTML = `
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="16" x2="12" y2="12"></line>
+          <line x1="12" y1="8" x2="12.01" y2="8"></line>
+        </svg>
+        <span>${escapeHtml(msg)}</span>
+      `;
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(10px)';
+        toast.style.transition = 'all 0.3s ease';
+        setTimeout(() => toast.remove(), 300);
+      }, 2500);
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+  </script>
+</body>
+</html>
