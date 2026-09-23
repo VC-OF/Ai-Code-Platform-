@@ -291,9 +291,9 @@ export default function PreviewTab({
             className={`pst ${previewSubTab === t ? 'pst--active' : ''}`}
             onClick={() => setPreviewSubTab(t)}
           >
-            {t === 'browser'   ? '🌐 Browser'   :
-             t === 'database'  ? '🗄 Database'  :
-             '📊 Server'}
+            {t === 'browser'   ? 'Browser'   :
+             t === 'database'  ? 'Database'  :
+             'Server'}
           </button>
         ))}
       </div>
@@ -474,6 +474,7 @@ export default function PreviewTab({
           display: flex;
           flex-direction: column;
           height: 100%;
+          min-height: 0;
           background: var(--bg-base);
         }
 
@@ -482,7 +483,7 @@ export default function PreviewTab({
           display: flex;
           align-items: center;
           gap: 12px;
-          border-radius: 12px;
+          border-radius: var(--radius-sm);
           border: 1px solid var(--border-subtle);
           background: var(--panel);
           padding: 10px 14px;
@@ -612,6 +613,7 @@ export default function PreviewTab({
           background: var(--panel);
           padding: 8px 12px;
           margin: 12px 16px 0;
+          flex-shrink: 0;
         }
 
         .traffic-dots {
@@ -624,7 +626,7 @@ export default function PreviewTab({
           width: 8px;
           height: 8px;
           border-radius: 50%;
-          background: rgba(255, 255, 255, 0.12);
+          background: var(--border-strong);
         }
 
         .url-pill {
@@ -632,7 +634,7 @@ export default function PreviewTab({
           display: flex;
           align-items: center;
           gap: 8px;
-          background: rgba(255, 255, 255, 0.03);
+          background: var(--bg-deep);
           border: 1px solid var(--border-subtle);
           border-radius: 8px;
           padding: 6px 12px;
@@ -713,15 +715,15 @@ export default function PreviewTab({
           min-height: 0;
           padding: 12px 16px 12px;
           gap: 12px;
-          overflow-y: auto;
+          overflow: hidden;
         }
 
         .preview-canvas {
           flex: 1;
-          min-height: 240px;
-          border-radius: 12px;
+          min-height: 0;
+          border-radius: var(--radius-sm);
           border: 1px solid var(--border-subtle);
-          background: #0d1220;
+          background: var(--bg-deep);
           overflow: hidden;
           display: flex;
           align-items: center;
@@ -739,9 +741,9 @@ export default function PreviewTab({
         .preview-frame-wrapper.mobile {
           max-width: 375px;
           height: 95%;
-          border: 10px solid #222;
-          border-radius: 20px;
-          box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+          border: 8px solid var(--border-strong);
+          border-radius: 10px;
+          box-shadow: var(--shadow-md);
         }
 
         .preview-iframe {
@@ -814,10 +816,10 @@ export default function PreviewTab({
         /* ── Terminal Panel (Full width, shorter height) ── */
         .terminal-panel {
           width: 100%;
-          height: 180px;
+          height: 160px;
           border: 1px solid var(--border-subtle);
-          border-radius: 12px;
-          background: rgba(255, 255, 255, 0.01);
+          border-radius: var(--radius-sm);
+          background: var(--bg-deep);
           display: flex;
           flex-direction: column;
           flex-shrink: 0;
@@ -862,7 +864,7 @@ export default function PreviewTab({
           display: flex;
           flex-direction: column;
           gap: 6px;
-          background: rgba(0,0,0,0.15);
+          background: var(--bg-base);
         }
 
         .term-pre {
@@ -899,14 +901,14 @@ export default function PreviewTab({
         .term-input-row {
           padding: 8px 10px;
           border-top: 1px solid var(--border-subtle);
-          background: rgba(255,255,255,0.015);
+          background: var(--bg-deep);
         }
 
         .term-input-inner {
           display: flex;
           align-items: center;
           gap: 8px;
-          background: rgba(255, 255, 255, 0.025);
+          background: var(--bg-base);
           border: 1px solid var(--border-subtle);
           border-radius: var(--radius-md);
           padding: 4px 8px;
@@ -953,7 +955,7 @@ export default function PreviewTab({
 
         /* ── Dock Footer ── */
         .preview-dock {
-          height: 48px;
+          height: 42px;
           display: flex;
           align-items: center;
           justify-content: space-between;
@@ -978,13 +980,13 @@ export default function PreviewTab({
         }
 
         .dock-btn.ghost {
-          background: rgba(255, 255, 255, 0.03);
+          background: var(--bg-elevated);
           border: 1px solid var(--border-subtle);
           color: var(--text-secondary);
         }
 
         .dock-btn.ghost:hover:not(:disabled) {
-          background: rgba(255, 255, 255, 0.05);
+          background: var(--bg-hover);
           color: var(--text-primary);
         }
 
@@ -994,14 +996,14 @@ export default function PreviewTab({
         }
 
         .dock-btn.deploy {
-          background: #ffffff;
+          background: var(--brand);
           border: none;
-          color: #000000;
+          color: #fffaf7;
           font-weight: 600;
         }
 
         .dock-btn.deploy:hover:not(:disabled) {
-          background: rgba(255, 255, 255, 0.85);
+          background: var(--brand-dim);
         }
 
         .dock-btn.deploy:disabled {
@@ -1053,6 +1055,7 @@ export default function PreviewTab({
         /* Sub-tab panels */
         .subtab-panel {
           flex: 1;
+          min-height: 0;
           padding: 16px 20px;
           overflow-y: auto;
           display: flex;
@@ -1062,15 +1065,14 @@ export default function PreviewTab({
 
         .sta-grid {
           display: grid;
-          grid-template-columns: repeat(4, 1fr);
+          grid-template-columns: repeat(3, minmax(0, 1fr));
           gap: 10px;
         }
 
         .sta-card {
-          background: rgba(18,18,23,0.45);
-          backdrop-filter: blur(20px);
+          background: var(--bg-deep);
           border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-lg);
+          border-radius: var(--radius-sm);
           padding: 12px 14px;
         }
 

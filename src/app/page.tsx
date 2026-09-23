@@ -503,7 +503,7 @@ export default function App() {
 
         /* Footer execution bar */
         .app-footer {
-          height: 60px;
+          height: var(--dock-height);
           border-top: 1px solid var(--border-subtle);
           background: var(--bg-surface);
           backdrop-filter: blur(20px);

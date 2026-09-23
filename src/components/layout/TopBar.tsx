@@ -21,13 +21,13 @@ export default function TopBar({
   selectedModel,
   onModelChange,
 }: TopBarProps) {
-  const [isDark, setIsDark] = useState(true);
+  const [isDark, setIsDark] = useState(false);
   const [healthy, setHealthy] = useState<boolean | null>(null);
   const openPalette = useCommandPaletteStore((s) => s.setOpen);
 
   // Apply saved theme on mount (external-system sync from localStorage)
   useEffect(() => {
-    const saved = localStorage.getItem('oc-theme') ?? 'dark';
+    const saved = localStorage.getItem('oc-theme') ?? 'light';
     const dark = saved !== 'light';
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsDark(dark);

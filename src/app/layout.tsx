@@ -29,7 +29,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={inter.variable}>
+    <html lang="en" className={inter.variable} data-theme="light">
       <head>
         {/* Space Grotesk + JetBrains Mono */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
