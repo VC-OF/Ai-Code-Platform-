@@ -382,6 +382,77 @@ function DbPanel({ projectId }: { projectId: string }) {
   );
 }
 
+function SourceControlPanel({ projectId }: { projectId: string }) {
+  const [data, setData] = useState<{
+    branch?: string;
+    changes?: { code: string; path: string }[];
+    graph?: string[];
+    remote?: string[];
+  }>({});
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState('');
+
+  const refresh = useCallback(async () => {
+    const res = await fetch(`/api/git/status?projectId=${encodeURIComponent(projectId)}`);
+    setData(await res.json());
+  }, [projectId]);
+
+  useEffect(() => { refresh().catch(() => setNotice('Unable to read git status.')); }, [refresh]);
+
+  const runAction = async (action: 'commit' | 'push') => {
+    setBusy(true);
+    setNotice('');
+    try {
+      const res = await fetch('/api/git/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, action, message }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Source control action failed');
+      setMessage('');
+      setNotice(action === 'commit' ? 'Committed changes.' : 'Pushed changes.');
+      await refresh();
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="ed-sc">
+      <div className="ed-sc-head">
+        <div>
+          <div className="ed-sc-title">Source Control</div>
+          <div className="ed-sc-branch">{data.branch || 'Reading repository…'}</div>
+        </div>
+        <button className="ed-db-ref" onClick={() => refresh()} title="Refresh source control">↻</button>
+      </div>
+      <div className="ed-sc-actions">
+        <input value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Commit message" maxLength={200} />
+        <button onClick={() => runAction('commit')} disabled={busy || !message.trim()}>Commit</button>
+        <button onClick={() => runAction('push')} disabled={busy}>Push</button>
+      </div>
+      {notice && <div className="ed-sc-notice">{notice}</div>}
+      <div className="ed-sc-section">
+        <div className="ed-sc-label">Changes · {data.changes?.length ?? 0}</div>
+        {data.changes?.length ? data.changes.map((change) => (
+          <div className="ed-sc-change" key={`${change.code}-${change.path}`}>
+            <code>{change.code.trim() || '·'}</code><span>{change.path}</span>
+          </div>
+        )) : <div className="ed-sc-empty">Working tree clean.</div>}
+      </div>
+      <div className="ed-sc-section ed-sc-graph-section">
+        <div className="ed-sc-label">Commit Graph</div>
+        <pre className="ed-sc-graph">{data.graph?.length ? data.graph.join('\n') : 'No commits yet.'}</pre>
+      </div>
+      {data.remote?.length ? <div className="ed-sc-remote">Remote · {data.remote[0]}</div> : null}
+    </div>
+  );
+}
+
 // ─── Editor inner ──────────────────────────────────────────────────────────────
 function EditorInner() {
   const params    = useSearchParams();
@@ -397,7 +468,7 @@ function EditorInner() {
   const [loading,      setLoading]      = useState(false);
   const [saving,       setSaving]       = useState(false);
   const [saveMsg,      setSaveMsg]      = useState('');
-  const [rightPanel,   setRightPanel]   = useState<'agent'|'database'>('database');
+  const [rightPanel,   setRightPanel]   = useState<'agent'|'database'|'source'>('source');
   const [search,       setSearch]       = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -628,9 +699,11 @@ function EditorInner() {
         <div className="ed-rp">
           <div className="ed-rp-tabs">
             <button className={`ed-rp-tab ${rightPanel==='agent'?'on':''}`} onClick={()=>setRightPanel('agent')}>● Agent</button>
+            <button className={`ed-rp-tab ${rightPanel==='source'?'on':''}`} onClick={()=>setRightPanel('source')}>⌘ Source</button>
             <button className={`ed-rp-tab ${rightPanel==='database'?'on':''}`} onClick={()=>setRightPanel('database')}>🗄 Database</button>
           </div>
 
+          {rightPanel==='source' && <SourceControlPanel projectId={projectId}/>}
           {rightPanel==='database' && <DbPanel projectId={projectId}/>}
 
           {rightPanel==='agent' && (
@@ -671,7 +744,7 @@ function EditorInner() {
         .ed-body{flex:1;display:flex;overflow:hidden;min-height:0;}
 
         /* sidebar */
-        .ed-side{width:220px;flex-shrink:0;background:#111;border-right:1px solid #1e1e1e;display:flex;flex-direction:column;overflow:hidden;}
+        .ed-side{width:220px;flex-shrink:0;min-height:0;background:#111;border-right:1px solid #1e1e1e;display:flex;flex-direction:column;overflow:hidden;}
         .ed-side-hdr{padding:8px 10px 6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#4b5563;border-bottom:1px solid #1e1e1e;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
         .ed-side-acts{display:flex;gap:4px;}
         .ed-side-btn{background:none;border:none;color:#6b7280;font-size:14px;cursor:pointer;padding:0 3px;border-radius:3px;}
@@ -701,7 +774,7 @@ function EditorInner() {
         .s-del-btn:hover{color:#f87171!important;}
 
         /* main */
-        .ed-main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;background:#0d0d0d;}
+        .ed-main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;min-height:0;background:#0d0d0d;}
         .ed-tabs{display:flex;background:#111;border-bottom:1px solid #1e1e1e;height:34px;overflow-x:auto;flex-shrink:0;align-items:stretch;}
         .ed-tab{display:flex;align-items:center;gap:5px;padding:0 10px;height:100%;font-size:11.5px;color:#6b7280;cursor:pointer;border-right:1px solid #1e1e1e;flex-shrink:0;background:#111;max-width:180px;}
         .ed-tab:hover{color:#d1d5db;background:rgba(255,255,255,.03);}
@@ -743,7 +816,7 @@ function EditorInner() {
         .ed-shortcut kbd{background:#1e1e1e;border:1px solid #2a2a2a;border-radius:4px;padding:2px 7px;font-size:10.5px;font-family:'JetBrains Mono',monospace;color:#9ca3af;}
 
         /* right panel */
-        .ed-rp{width:280px;flex-shrink:0;border-left:1px solid #1e1e1e;display:flex;flex-direction:column;background:#111;overflow:hidden;}
+        .ed-rp{width:280px;flex-shrink:0;min-height:0;border-left:1px solid #1e1e1e;display:flex;flex-direction:column;background:#111;overflow:hidden;}
         .ed-rp-tabs{display:flex;border-bottom:1px solid #1e1e1e;flex-shrink:0;}
         .ed-rp-tab{flex:1;padding:9px 8px;font-size:11.5px;color:#6b7280;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-weight:500;}
         .ed-rp-tab:hover{color:#d1d5db;}
@@ -847,6 +920,95 @@ function EditorInner() {
         .d-gray{background:#374151;}
         .ed-ag-name{flex:1;font-size:12px;color:#d1d5db;}
         .ed-ag-status{font-size:10.5px;color:#4b5563;}
+
+        .ed-sc{display:flex;flex-direction:column;min-height:0;flex:1;overflow-y:auto;padding:12px;gap:12px;background:var(--bg-surface);}
+        .ed-sc-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;border-bottom:1px solid var(--border-subtle);padding-bottom:10px;}
+        .ed-sc-title{font-size:12px;font-weight:700;color:var(--text-primary);}
+        .ed-sc-branch{font-size:10px;color:var(--text-muted);font-family:var(--font-mono);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px;}
+        .ed-sc-actions{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:5px;}
+        .ed-sc-actions input{min-width:0;background:var(--bg-base);border:1px solid var(--border-base);border-radius:var(--radius-sm);padding:6px 7px;color:var(--text-primary);font-size:10px;outline:none;}
+        .ed-sc-actions input:focus{border-color:var(--brand);}
+        .ed-sc-actions button{background:var(--brand);border:0;border-radius:var(--radius-sm);padding:0 8px;color:#fffaf7;font-size:10px;font-weight:600;cursor:pointer;}
+        .ed-sc-actions button:last-child{background:var(--bg-elevated);border:1px solid var(--border-base);color:var(--text-primary);}
+        .ed-sc-actions button:disabled{opacity:.45;cursor:not-allowed;}
+        .ed-sc-notice{font-size:10px;color:var(--brand);background:var(--brand-glow);border:1px solid var(--accent-border);border-radius:var(--radius-sm);padding:6px 8px;}
+        .ed-sc-section{display:flex;flex-direction:column;gap:5px;min-width:0;}
+        .ed-sc-label{font-size:9px;color:var(--text-muted);font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding-bottom:4px;border-bottom:1px solid var(--border-subtle);}
+        .ed-sc-change{display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--text-secondary);min-width:0;}
+        .ed-sc-change code{color:var(--brand);font-family:var(--font-mono);width:18px;}
+        .ed-sc-change span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+        .ed-sc-empty{font-size:10.5px;color:var(--text-muted);font-style:italic;}
+        .ed-sc-graph-section{min-height:0;}
+        .ed-sc-graph{margin:0;max-height:270px;overflow:auto;background:var(--bg-base);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);padding:8px;font:9.5px/1.55 var(--font-mono);color:var(--text-secondary);white-space:pre;}
+        .ed-sc-remote{font-size:9px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-top:1px solid var(--border-subtle);padding-top:8px;}
+
+        /* The standalone editor shares the main app's light workbench theme. */
+        html[data-theme="light"] .ed-shell{background:var(--bg-base);color:var(--text-primary);}
+        html[data-theme="light"] .ed-bar,
+        html[data-theme="light"] .ed-side,
+        html[data-theme="light"] .ed-main,
+        html[data-theme="light"] .ed-rp,
+        html[data-theme="light"] .ed-tabs,
+        html[data-theme="light"] .ed-tab{background:var(--bg-surface);border-color:var(--border-subtle);}
+        html[data-theme="light"] .ed-menu,
+        html[data-theme="light"] .ed-side-hdr,
+        html[data-theme="light"] .ed-proj,
+        html[data-theme="light"] .ed-rp-tab,
+        html[data-theme="light"] .ed-db-stab,
+        html[data-theme="light"] .ed-search::placeholder{color:var(--text-muted);}
+        html[data-theme="light"] .ed-menu:hover,
+        html[data-theme="light"] .ed-side-btn:hover,
+        html[data-theme="light"] .ed-tab:hover,
+        html[data-theme="light"] .ed-rp-tab:hover,
+        html[data-theme="light"] .ed-db-stab:hover{color:var(--text-primary);background:var(--bg-hover);}
+        html[data-theme="light"] .ed-back{color:var(--brand);background:var(--brand-glow);border-color:var(--accent-border);}
+        html[data-theme="light"] .ed-search{background:var(--bg-base);border-color:var(--border-base);color:var(--text-primary);}
+        html[data-theme="light"] .s-row:hover,
+        html[data-theme="light"] .db-tbl-row:hover,
+        html[data-theme="light"] .db-qt tr:hover td{background:var(--bg-hover);}
+        html[data-theme="light"] .s-row-btn,
+        html[data-theme="light"] .ed-rp-tab.on,
+        html[data-theme="light"] .ed-db-title,
+        html[data-theme="light"] .db-tbl-nm,
+        html[data-theme="light"] .db-col-nm,
+        html[data-theme="light"] .ed-ag-name{color:var(--text-primary);}
+        html[data-theme="light"] .s-row.act,
+        html[data-theme="light"] .ed-tab.cur{background:var(--brand-glow);}
+        html[data-theme="light"] .s-row.act .s-row-btn,
+        html[data-theme="light"] .ed-db-stab.on{color:var(--brand);}
+        html[data-theme="light"] .ed-bc{background:var(--bg-deep);border-color:var(--border-subtle);}
+        html[data-theme="light"] .bc-s,
+        html[data-theme="light"] .bc-a,
+        html[data-theme="light"] .ed-wc-title,
+        html[data-theme="light"] .db-v,
+        html[data-theme="light"] .db-msg-body{color:var(--text-secondary);}
+        html[data-theme="light"] .ed-code-wrap,
+        html[data-theme="light"] .ed-gutter{background:var(--bg-surface);border-color:var(--border-subtle);}
+        html[data-theme="light"] .ed-hi{color:var(--text-primary);}
+        html[data-theme="light"] .ed-ta{caret-color:var(--brand);}
+        html[data-theme="light"] .ed-status{background:var(--brand);}
+        html[data-theme="light"] .ed-wc-sub,
+        html[data-theme="light"] .ed-shortcut,
+        html[data-theme="light"] .ed-hint,
+        html[data-theme="light"] .db-hint{color:var(--text-muted);}
+        html[data-theme="light"] .ed-shortcut kbd,
+        html[data-theme="light"] .db-stat-card,
+        html[data-theme="light"] .db-tbl-row,
+        html[data-theme="light"] .db-tbl-card,
+        html[data-theme="light"] .db-col-pill,
+        html[data-theme="light"] .db-model-row,
+        html[data-theme="light"] .db-tool-row,
+        html[data-theme="light"] .db-msg,
+        html[data-theme="light"] .ed-ag-row{background:var(--bg-elevated);border-color:var(--border-subtle);}
+        html[data-theme="light"] .db-sec-ttl,
+        html[data-theme="light"] .db-kv,
+        html[data-theme="light"] .db-llm-row,
+        html[data-theme="light"] .db-tool-log{border-color:var(--border-subtle);}
+        html[data-theme="light"] .db-qi{background:var(--bg-base);border-color:var(--border-base);color:var(--text-primary);}
+        html[data-theme="light"] .db-qrun{background:var(--brand);}
+        html[data-theme="light"] .db-qrun:hover:not(:disabled){background:var(--brand-dim);}
+        html[data-theme="light"] .db-qt th{background:var(--bg-elevated);color:var(--text-muted);border-color:var(--border-subtle);}
+        html[data-theme="light"] .db-qt td{color:var(--text-secondary);border-color:var(--border-subtle);}
         @keyframes pulse-soft{0%,100%{opacity:1}50%{opacity:.5}}
       `}</style>
     </div>
