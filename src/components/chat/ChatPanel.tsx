@@ -4,6 +4,11 @@ import { useEffect, useRef, useState } from 'react';
 import { StatusIndicator, type AgentStatus } from '../StatusIndicator';
 import { TimelineEvent } from '../TimelineEvent';
 import MessageInput from './MessageInput';
+import {
+  findSlashCommand,
+  formatSlashHelp,
+  parseSlashCommand,
+} from '@/lib/slashCommands';
 
 type Role = 'user' | 'assistant';
 
@@ -373,8 +378,56 @@ export default function ChatPanel({
   };
 
   const send = async (attachments: MessageAttachment[] = []) => {
-    const text = input.trim();
+    let text = input.trim();
     if (!text && attachments.length === 0) return;
+
+    const slash = parseSlashCommand(text);
+    if (slash) {
+      const command = findSlashCommand(slash.name);
+      setInput('');
+
+      if (!command) {
+        setTimeline((t) => [
+          ...t,
+          {
+            type: 'message',
+            role: 'assistant',
+            content: `Unknown command /${slash.name}. Type /help to see available commands.`,
+            ts: Date.now(),
+          },
+        ]);
+        return;
+      }
+
+      if (command.name === 'help') {
+        setTimeline((t) => [
+          ...t,
+          { type: 'message', role: 'assistant', content: formatSlashHelp(), ts: Date.now() },
+        ]);
+        return;
+      }
+
+      if (command.name === 'clear') {
+        setTimeline([]);
+        setHistory([]);
+        window.dispatchEvent(new CustomEvent('oc-clear-chat'));
+        return;
+      }
+
+      if (command.name === 'status' || command.name === 'model') {
+        const content = command.name === 'status'
+          ? `Agent status: ${agentStatus}${loading ? ' (running)' : ''}`
+          : `Selected model: ${selectedModel || 'default'}`;
+        setTimeline((t) => [
+          ...t,
+          { type: 'message', role: 'assistant', content, ts: Date.now() },
+        ]);
+        return;
+      }
+
+      text = command.prompt?.(slash.args) ?? slash.args;
+      if (!text.trim()) return;
+    }
 
     // Agent already running → steer it: queue the message for its next step
     if (loading) {

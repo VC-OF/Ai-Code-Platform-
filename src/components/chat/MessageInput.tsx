@@ -9,6 +9,32 @@ interface Attachment {
   content: string; // base64 for images, raw text for files
 }
 
+interface SpeechRecognitionResultEventLike extends Event {
+  results: { length: number; [index: number]: { [index: number]: { transcript: string } } };
+}
+
+interface SpeechRecognitionLike {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start: () => void;
+  stop: () => void;
+  onresult: ((event: SpeechRecognitionResultEventLike) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+}
+
+interface SpeechRecognitionConstructorLike {
+  new (): SpeechRecognitionLike;
+}
+
+declare global {
+  interface Window {
+    SpeechRecognition?: SpeechRecognitionConstructorLike;
+    webkitSpeechRecognition?: SpeechRecognitionConstructorLike;
+  }
+}
+
 interface MessageInputProps {
   value:         string;
   onChange:      (v: string) => void;
@@ -31,6 +57,8 @@ export default function MessageInput({
   const ref = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -56,6 +84,70 @@ export default function MessageInput({
 
   const triggerFileInput = () => {
     fileInputRef.current?.click();
+  };
+
+  const toggleVoice = () => {
+    if (isListening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Recognition) {
+      onChange(`${value}${value ? ' ' : ''}[Voice input is not supported by this browser]`);
+      return;
+    }
+
+    const recognition = new Recognition();
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.lang = navigator.language || 'en-US';
+    recognition.onresult = (event) => {
+      const transcript = Array.from({ length: event.results.length })
+        .map((_, index) => event.results[index]?.[0]?.transcript ?? '')
+        .join(' ')
+        .trim();
+      if (transcript) onChange(`${value}${value ? ' ' : ''}${transcript}`);
+    };
+    recognition.onerror = () => setIsListening(false);
+    recognition.onend = () => setIsListening(false);
+    recognitionRef.current = recognition;
+    setIsListening(true);
+    recognition.start();
+  };
+
+  const captureScreenshot = async () => {
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      triggerFileInput();
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      const track = stream.getVideoTracks()[0];
+      const settings = track.getSettings();
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      video.muted = true;
+      await video.play();
+      const canvas = document.createElement('canvas');
+      canvas.width = settings.width || video.videoWidth;
+      canvas.height = settings.height || video.videoHeight;
+      canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
+      setAttachments((prev) => [
+        ...prev,
+        {
+          id: Math.random().toString(36).slice(2, 11),
+          name: `screenshot-${new Date().toISOString().replace(/[:.]/g, '-')}.png`,
+          type: 'image/png',
+          content: canvas.toDataURL('image/png'),
+        },
+      ]);
+      track.stop();
+      video.srcObject = null;
+    } catch {
+      // The user may cancel the browser's screen-share prompt.
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -104,6 +196,7 @@ export default function MessageInput({
         ref={fileInputRef}
         type="file"
         multiple
+        accept="image/*,.txt,.md,.json,.csv,.pdf"
         onChange={handleFileChange}
         style={{ display: 'none' }}
       />
@@ -176,6 +269,38 @@ export default function MessageInput({
             </button>
           )}
 
+          {!isStreaming && (
+            <>
+              <button
+                type="button"
+                onClick={captureScreenshot}
+                className="btn-attach"
+                title="Capture a screenshot"
+                aria-label="Capture a screenshot"
+                disabled={disabled}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13}>
+                  <rect x="3" y="4" width="18" height="16" rx="2" />
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M8 4l1-2h6l1 2" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={toggleVoice}
+                className={`btn-attach ${isListening ? 'btn-attach--active' : ''}`}
+                title={isListening ? 'Stop voice input' : 'Start voice input'}
+                aria-label={isListening ? 'Stop voice input' : 'Start voice input'}
+                disabled={disabled}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13}>
+                  <rect x="9" y="2" width="6" height="12" rx="3" />
+                  <path d="M5 11a7 7 0 0014 0M12 18v4M8 22h8" />
+                </svg>
+              </button>
+            </>
+          )}
+
           {isStreaming && (
             <button onClick={onCancel} className="btn-stop" title="Stop execution (Esc)">
               <span className="stop-icon">■</span>
@@ -198,12 +323,10 @@ export default function MessageInput({
 
       <style jsx>{`
         .input-area {
-          background: rgba(18, 18, 23, 0.45);
-          backdrop-filter: blur(20px);
-          -webkit-backdrop-filter: blur(20px);
+            background: var(--bg-surface);
           border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-lg);
-          padding: 16px;
+          border-radius: var(--radius-sm);
+          padding: 12px;
           display: flex;
           flex-direction: column;
           gap: 10px;
@@ -225,7 +348,7 @@ export default function MessageInput({
           gap: var(--space-1);
           padding: 4px var(--space-2);
           background: var(--brand-glow);
-          border: 1px solid rgba(0, 122, 255, 0.25);
+          border: 1px solid var(--accent-border);
           border-radius: var(--radius-sm);
           width: fit-content;
           max-width: 100%;
@@ -262,7 +385,7 @@ export default function MessageInput({
           display: flex;
           align-items: center;
           gap: 6px;
-          background: rgba(255, 255, 255, 0.04);
+          background: var(--bg-elevated);
           border: 1px solid var(--border-subtle);
           border-radius: 6px;
           padding: 4px 8px;
@@ -313,7 +436,7 @@ export default function MessageInput({
           display: flex;
           align-items: center;
           gap: 10px;
-          background: rgba(0, 0, 0, 0.2);
+          background: var(--bg-base);
           border: 1px solid var(--border-base);
           border-radius: var(--radius-md);
           padding: 8px 12px;
@@ -321,7 +444,7 @@ export default function MessageInput({
         }
 
         .input-row:focus-within {
-          border-color: rgba(255, 255, 255, 0.15);
+          border-color: var(--accent-border);
         }
 
         .input-textarea {
@@ -355,7 +478,7 @@ export default function MessageInput({
           display: flex;
           align-items: center;
           justify-content: center;
-          background: rgba(255, 255, 255, 0.05);
+          background: var(--bg-elevated);
           color: var(--text-secondary);
           border: 1px solid var(--border-subtle);
           border-radius: 50%;
@@ -364,7 +487,7 @@ export default function MessageInput({
         }
 
         .btn-attach:hover:not(:disabled) {
-          background: rgba(255, 255, 255, 0.1);
+          background: var(--bg-hover);
           border-color: var(--border-base);
           color: var(--text-primary);
         }
@@ -372,6 +495,13 @@ export default function MessageInput({
         .btn-attach:disabled {
           opacity: 0.25;
           cursor: not-allowed;
+        }
+
+        .btn-attach--active {
+          color: var(--brand);
+          border-color: var(--accent-border);
+          background: var(--brand-glow);
+          animation: pulse-soft 1.4s ease-in-out infinite;
         }
 
         .btn-send,
@@ -388,12 +518,12 @@ export default function MessageInput({
         }
 
         .btn-send {
-          background: #ffffff;
-          color: #000000;
+          background: var(--brand);
+          color: #fffaf7;
         }
 
         .btn-send:hover:not(:disabled) {
-          background: rgba(255, 255, 255, 0.85);
+          background: var(--brand-dim);
         }
 
         .btn-send:disabled {

@@ -17,25 +17,47 @@ interface StatusIndicatorProps {
 }
 
 export function StatusIndicator({ status }: StatusIndicatorProps) {
-  const configs: Record<AgentStatus, { label: string; bg: string; text: string; dot: string; pulse: boolean }> = {
-    planning:   { label: 'Planning', bg: 'bg-indigo-50/50 dark:bg-indigo-950/20', text: 'text-indigo-600 dark:text-indigo-400', dot: 'bg-indigo-500', pulse: true },
-    reading:    { label: 'Reading Files', bg: 'bg-blue-50/50 dark:bg-blue-950/20', text: 'text-blue-600 dark:text-blue-400', dot: 'bg-blue-500', pulse: true },
-    writing:    { label: 'Writing Changes', bg: 'bg-amber-50/50 dark:bg-amber-950/20', text: 'text-amber-600 dark:text-amber-400', dot: 'bg-amber-500', pulse: true },
-    linting:    { label: 'Linting Code', bg: 'bg-teal-50/50 dark:bg-teal-950/20', text: 'text-teal-600 dark:text-teal-400', dot: 'bg-teal-500', pulse: true },
-    testing:    { label: 'Testing Suite', bg: 'bg-purple-50/50 dark:bg-purple-950/20', text: 'text-purple-600 dark:text-purple-400', dot: 'bg-purple-500', pulse: true },
-    running:    { label: 'Running Task', bg: 'bg-emerald-50/50 dark:bg-emerald-950/20', text: 'text-emerald-600 dark:text-emerald-400', dot: 'bg-emerald-500', pulse: true },
-    waiting:    { label: 'Waiting for Your Answer', bg: 'bg-amber-50/50 dark:bg-amber-950/20', text: 'text-amber-600 dark:text-amber-400', dot: 'bg-amber-500', pulse: true },
-    done:       { label: 'Idle', bg: 'bg-slate-50 dark:bg-slate-900', text: 'text-slate-500 dark:text-slate-400', dot: 'bg-slate-400', pulse: false },
-    error:      { label: 'Failed', bg: 'bg-rose-50/50 dark:bg-rose-950/20', text: 'text-rose-600 dark:text-rose-400', dot: 'bg-rose-500', pulse: false },
-    compacting: { label: 'Compacting Context', bg: 'bg-cyan-50/50 dark:bg-cyan-950/20', text: 'text-cyan-600 dark:text-cyan-400', dot: 'bg-cyan-500', pulse: true },
+  const configs: Record<AgentStatus, { label: string; tone: string; pulse: boolean }> = {
+    planning:   { label: 'Planning', tone: 'active', pulse: true },
+    reading:    { label: 'Reading Files', tone: 'info', pulse: true },
+    writing:    { label: 'Writing Changes', tone: 'active', pulse: true },
+    linting:    { label: 'Linting Code', tone: 'info', pulse: true },
+    testing:    { label: 'Testing Suite', tone: 'info', pulse: true },
+    running:    { label: 'Running Task', tone: 'active', pulse: true },
+    waiting:    { label: 'Waiting for Your Answer', tone: 'warning', pulse: true },
+    done:       { label: 'Idle', tone: 'neutral', pulse: false },
+    error:      { label: 'Failed', tone: 'error', pulse: false },
+    compacting: { label: 'Compacting Context', tone: 'info', pulse: true },
   };
 
   const config = configs[status] || configs.done;
 
   return (
-    <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border border-current/10 ${config.bg} ${config.text}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${config.dot} ${config.pulse ? 'animate-pulse' : ''}`} />
+    <div className={`status-indicator status-indicator--${config.tone} ${config.pulse ? 'status-indicator--pulse' : ''}`}>
+      <span className="status-indicator__dot" />
       {config.label}
+      <style jsx>{`
+        .status-indicator {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 3px 8px;
+          border: 1px solid var(--border-base);
+          border-radius: var(--radius-full);
+          background: var(--bg-elevated);
+          color: var(--text-secondary);
+          font-size: var(--text-xs);
+          font-weight: 600;
+          line-height: 1.2;
+        }
+        .status-indicator--active { color: var(--brand); background: var(--brand-glow); border-color: var(--accent-border); }
+        .status-indicator--info { color: var(--cyan); background: var(--cyan-soft); border-color: var(--accent-border); }
+        .status-indicator--warning { color: var(--warning); background: var(--warning-dim); border-color: var(--accent-border); }
+        .status-indicator--error { color: var(--error); background: var(--error-dim); border-color: var(--error); }
+        .status-indicator__dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+        .status-indicator--pulse .status-indicator__dot { animation: status-pulse 1.4s ease-in-out infinite; }
+        @keyframes status-pulse { 50% { opacity: 0.35; } }
+      `}</style>
     </div>
   );
 }

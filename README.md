@@ -124,6 +124,13 @@ Verification: `npm run typecheck`, `npm run lint`, `npm test` (vitest;
 includes security suites for `safeExec` and `safeResolve`), `e2e/` has
 Playwright specs.
 
+Chat supports Claude Code-style slash commands including `/help`, `/clear`,
+`/status`, `/model`, `/compact`, `/review`, `/build`, `/fix`, `/test`,
+`/refactor`, `/explain`, `/init`, `/memory`, `/permissions`, `/doctor`,
+`/cost`, `/security-review`, `/pr-comments`, `/vim`, `/terminal-setup`,
+`/hooks`, `/mcp`, `/config`, `/plan`, `/resume`, and `/add-dir`. Local commands
+execute immediately; work commands expand into explicit prompts for the agent.
+
 ## 4. Security model
 
 Defense in depth for a **local, single-user** tool — still not hardened

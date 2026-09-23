@@ -312,9 +312,7 @@ export default function FileExplorer({
           display: flex;
           flex-direction: column;
           height: 100%;
-          background: rgba(18, 18, 23, 0.45);
-          backdrop-filter: blur(20px);
-          -webkit-backdrop-filter: blur(20px);
+          background: var(--bg-surface);
           border-left: 1px solid var(--border-subtle);
         }
 
@@ -357,7 +355,7 @@ export default function FileExplorer({
 
         .action-btn:hover {
           color: var(--text-primary);
-          background: rgba(255, 255, 255, 0.05);
+          background: var(--bg-hover);
         }
 
         .explorer-search {
@@ -367,7 +365,7 @@ export default function FileExplorer({
 
         .search-input {
           width: 100%;
-          background: rgba(0, 0, 0, 0.2);
+          background: var(--bg-base);
           border: 1px solid var(--border-base);
           border-radius: var(--radius-md);
           padding: 6px 10px;
@@ -378,8 +376,8 @@ export default function FileExplorer({
         }
 
         .search-input:focus {
-          border-color: rgba(0, 122, 255, 0.5);
-          box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.15);
+          border-color: var(--brand);
+          box-shadow: 0 0 0 2px var(--brand-glow);
         }
 
         .search-input::placeholder {
@@ -454,29 +452,29 @@ export default function FileExplorer({
           border-radius: var(--radius-md);
           cursor: pointer;
           transition: all var(--transition-fast);
-          background: rgba(255,255,255,0.03);
+          background: var(--bg-elevated);
           border: 1px solid var(--border-subtle);
           color: var(--text-secondary);
           text-decoration: none;
           white-space: nowrap;
         }
         .qa-footer-btn:hover {
-          background: rgba(255,255,255,0.06);
+          background: var(--bg-hover);
           border-color: var(--border-base);
           color: var(--text-primary);
         }
         .qa-footer-btn--primary {
-          background: #1a3a1a;
-          border-color: rgba(52, 211, 84, 0.35);
-          color: #34d354;
+          background: var(--brand);
+          border-color: var(--brand);
+          color: #fffaf7;
           font-weight: 600;
           flex: 1.4;
         }
         .qa-footer-btn--primary:hover {
-          background: #1f4a1f;
-          border-color: rgba(52, 211, 84, 0.6);
-          box-shadow: 0 0 12px rgba(52, 211, 84, 0.2);
-          color: #4ade80;
+          background: var(--brand-dim);
+          border-color: var(--brand-dim);
+          box-shadow: var(--shadow-sm);
+          color: #fffaf7;
         }
       `}</style>
     </div>
