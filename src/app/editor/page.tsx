@@ -398,7 +398,20 @@ function SourceControlPanel({ projectId }: { projectId: string }) {
     setData(await res.json());
   }, [projectId]);
 
-  useEffect(() => { refresh().catch(() => setNotice('Unable to read git status.')); }, [refresh]);
+  useEffect(() => {
+    let active = true;
+    fetch(`/api/git/status?projectId=${encodeURIComponent(projectId)}`)
+      .then((res) => res.json())
+      .then((json) => {
+        if (active) setData(json);
+      })
+      .catch(() => {
+        if (active) setNotice('Unable to read git status.');
+      });
+    return () => {
+      active = false;
+    };
+  }, [projectId]);
 
   const runAction = async (action: 'commit' | 'push') => {
     setBusy(true);
@@ -542,7 +555,15 @@ function EditorInner() {
   },[projectId,loadTree,openFile]);
 
   const toggleFolder = useCallback((p:string)=>{
-    setExpanded(prev=>{const n=new Set(prev);n.has(p)?n.delete(p):n.add(p);return n;});
+    setExpanded(prev=>{
+      const n=new Set(prev);
+      if (n.has(p)) {
+        n.delete(p);
+      } else {
+        n.add(p);
+      }
+      return n;
+    });
   },[]);
 
   useEffect(()=>{
@@ -939,7 +960,7 @@ function EditorInner() {
         .ed-sc-change span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
         .ed-sc-empty{font-size:10.5px;color:var(--text-muted);font-style:italic;}
         .ed-sc-graph-section{min-height:0;}
-        .ed-sc-graph{margin:0;max-height:270px;overflow:auto;background:var(--bg-base);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);padding:8px;font:9.5px/1.55 var(--font-mono);color:var(--text-secondary);white-space:pre;}
+        .ed-sc-graph{margin:0;max-height:270px;overflow:auto;background:var(--bg-base);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);padding:8px;font:9.5px/1.55 var(--font-mono);color:var(--text-secondary);white-space:pre-wrap;word-break:break-all;}
         .ed-sc-remote{font-size:9px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-top:1px solid var(--border-subtle);padding-top:8px;}
 
         /* The standalone editor shares the main app's light workbench theme. */

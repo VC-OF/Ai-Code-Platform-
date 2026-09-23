@@ -50,6 +50,5 @@ export async function GET() {
     recentInvoices: invoices
       .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
       .slice(0, 5),
-    formatCurrency: (n: number) => formatCurrency(n, settings.currency),
   });
 }

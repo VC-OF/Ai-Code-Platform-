@@ -665,7 +665,7 @@ export default function SettingsTab({ projectId }: { projectId: string }) {
           align-items: flex-start;
           gap: 10px;
           padding: 10px 12px;
-          background: rgba(255,255,255,0.02);
+          background: var(--bg-elevated);
           border: 1px solid var(--border-subtle);
           border-radius: var(--radius-md);
         }
@@ -790,7 +790,8 @@ export default function SettingsTab({ projectId }: { projectId: string }) {
 
         .sn-item--active {
           background: var(--violet-soft);
-          color: #cfc9ff;
+          color: var(--brand);
+          font-weight: 600;
         }
 
         /* ── Panel ────────────────────────────────────────────────── */
@@ -815,6 +816,7 @@ export default function SettingsTab({ projectId }: { projectId: string }) {
           font-size: 18px;
           font-weight: 600;
           color: var(--text-primary);
+          white-space: nowrap;
         }
 
         .panel-desc {
@@ -1075,7 +1077,8 @@ export default function SettingsTab({ projectId }: { projectId: string }) {
 
         .table-nav-item--active {
           background: var(--violet-soft);
-          color: #cfc9ff;
+          color: var(--brand);
+          font-weight: 600;
         }
 
         .table-row-count {

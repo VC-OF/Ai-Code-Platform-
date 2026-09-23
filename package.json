@@ -18,7 +18,7 @@
     "better-sqlite3": "^12.11.1",
     "cross-spawn": "^7.0.6",
     "fast-glob": "^3.3.3",
-    "next": "16.2.10",
+    "next": "^16.3.6",
     "openai": "^6.45.0",
     "playwright-core": "^1.61.1",
     "react": "19.2.4",

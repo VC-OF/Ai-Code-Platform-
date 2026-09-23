@@ -35,7 +35,22 @@ export default function CodeTab({
   const [revertingFile, setRevertingFile] = useState(false);
   const [loadingFile, setLoadingFile] = useState(false);
   const [savingFile, setSavingFile] = useState(false);
+  const [editorTheme, setEditorTheme] = useState<"vs" | "vs-dark">("vs-dark");
   const editorRef = useRef<unknown>(null);
+
+  useEffect(() => {
+    const updateTheme = () => {
+      const theme = document.documentElement.getAttribute("data-theme");
+      setEditorTheme(theme === "light" ? "vs" : "vs-dark");
+    };
+    updateTheme();
+    const observer = new MutationObserver(updateTheme);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+    return () => observer.disconnect();
+  }, []);
 
   // Sync the active-file prop using the adjust-state-during-render pattern
   const [prevActiveFile, setPrevActiveFile] = useState(activeFile);
@@ -263,7 +278,7 @@ export default function CodeTab({
           <MonacoDiffEditor
             key={activePath + "-diff"}
             height="100%"
-            theme="vs-dark"
+            theme={editorTheme}
             language={languageFor(activePath)}
             original={loadingFile ? "// loading..." : gitContent}
             modified={loadingFile ? "// loading..." : content}
@@ -284,7 +299,7 @@ export default function CodeTab({
           <MonacoEditor
             key={activePath}
             height="100%"
-            theme="vs-dark"
+            theme={editorTheme}
             language={languageFor(activePath)}
             value={loadingFile ? "// loading..." : content}
             onChange={(val) => setContent(val ?? "")}

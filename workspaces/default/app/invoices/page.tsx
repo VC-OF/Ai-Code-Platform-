@@ -108,7 +108,12 @@ export default function InvoicesPage() {
                 {filtered.map((inv) => (
                   <tr key={inv.id} className="hover:bg-gray-50">
                     <td className="px-6 py-3 font-medium text-gray-900">
-                      {inv.number}
+                      <Link
+                        href={`/invoices/${inv.id}`}
+                        className="text-brand-600 hover:text-brand-800 hover:underline font-semibold"
+                      >
+                        {inv.number}
+                      </Link>
                     </td>
                     <td className="px-6 py-3 text-gray-600">
                       <div>{inv.clientName}</div>
@@ -130,6 +135,13 @@ export default function InvoicesPage() {
                     </td>
                     <td className="px-6 py-3 text-right">
                       <div className="inline-flex gap-1">
+                        <Link
+                          href={`/invoices/${inv.id}`}
+                          className="p-1.5 rounded hover:bg-gray-100 text-gray-500"
+                          title="View Details / Print"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </Link>
                         <Link
                           href={`/invoices/${inv.id}/edit`}
                           className="p-1.5 rounded hover:bg-gray-100 text-gray-500"

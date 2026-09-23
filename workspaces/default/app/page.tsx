@@ -128,7 +128,12 @@ export default function DashboardPage() {
                 {data.recentInvoices.map((inv: Invoice) => (
                   <tr key={inv.id} className="hover:bg-gray-50">
                     <td className="px-6 py-3 font-medium text-gray-900">
-                      {inv.number}
+                      <Link
+                        href={`/invoices/${inv.id}`}
+                        className="text-brand-600 hover:text-brand-800 hover:underline font-semibold"
+                      >
+                        {inv.number}
+                      </Link>
                     </td>
                     <td className="px-6 py-3 text-gray-600">
                       {inv.clientName}

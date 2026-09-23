@@ -5,6 +5,7 @@ import {
   getInvoices,
   getSettings,
   saveInvoices,
+  saveSettings,
 } from "@/lib/db";
 import { Invoice, LineItem } from "@/lib/types";
 
@@ -76,7 +77,6 @@ export async function POST(req: NextRequest) {
 
   // bump next invoice number
   settings.nextInvoiceNumber += 1;
-  const { saveSettings } = await import("@/lib/db");
   saveSettings(settings);
 
   return NextResponse.json(invoice, { status: 201 });

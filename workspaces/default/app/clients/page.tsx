@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, Trash2, X } from "lucide-react";
+import { Plus, Trash2, X, Edit2 } from "lucide-react";
 import { Client } from "@/lib/types";
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [showForm, setShowForm] = useState(false);
+  const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -31,22 +32,50 @@ export default function ClientsPage() {
     load();
   }, []);
 
+  function openCreate() {
+    setEditingClient(null);
+    setForm({ name: "", email: "", company: "", phone: "", address: "" });
+    setShowForm(true);
+  }
+
+  function openEdit(client: Client) {
+    setEditingClient(client);
+    setForm({
+      name: client.name || "",
+      email: client.email || "",
+      company: client.company || "",
+      phone: client.phone || "",
+      address: client.address || "",
+    });
+    setShowForm(true);
+  }
+
+  function closeForm() {
+    setShowForm(false);
+    setEditingClient(null);
+    setForm({ name: "", email: "", company: "", phone: "", address: "" });
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
-    const res = await fetch("/api/clients", {
-      method: "POST",
+
+    const isEdit = !!editingClient;
+    const url = isEdit ? `/api/clients/${editingClient.id}` : "/api/clients";
+    const method = isEdit ? "PUT" : "POST";
+
+    const res = await fetch(url, {
+      method,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(form),
     });
     setSaving(false);
     if (res.ok) {
-      setForm({ name: "", email: "", company: "", phone: "", address: "" });
-      setShowForm(false);
+      closeForm();
       load();
     } else {
       const err = await res.json();
-      alert(err.error || "Failed to add client");
+      alert(err.error || `Failed to ${isEdit ? "update" : "add"} client`);
     }
   }
 
@@ -65,7 +94,7 @@ export default function ClientsPage() {
             {clients.length} client{clients.length !== 1 && "s"}
           </p>
         </div>
-        <button onClick={() => setShowForm(true)} className="btn-primary">
+        <button onClick={openCreate} className="btn-primary">
           <Plus className="w-4 h-4" />
           New client
         </button>
@@ -74,9 +103,11 @@ export default function ClientsPage() {
       {showForm && (
         <div className="card p-6 mb-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-gray-900">New client</h2>
+            <h2 className="font-semibold text-gray-900">
+              {editingClient ? "Edit client" : "New client"}
+            </h2>
             <button
-              onClick={() => setShowForm(false)}
+              onClick={closeForm}
               className="p-1 rounded hover:bg-gray-100 text-gray-500"
             >
               <X className="w-4 h-4" />
@@ -133,13 +164,17 @@ export default function ClientsPage() {
             <div className="md:col-span-2 flex justify-end gap-3">
               <button
                 type="button"
-                onClick={() => setShowForm(false)}
+                onClick={closeForm}
                 className="btn-secondary"
               >
                 Cancel
               </button>
               <button type="submit" disabled={saving} className="btn-primary">
-                {saving ? "Saving…" : "Add client"}
+                {saving
+                  ? "Saving…"
+                  : editingClient
+                  ? "Update client"
+                  : "Add client"}
               </button>
             </div>
           </form>
@@ -182,13 +217,22 @@ export default function ClientsPage() {
                       {c.phone || "—"}
                     </td>
                     <td className="px-6 py-3 text-right">
-                      <button
-                        onClick={() => handleDelete(c.id)}
-                        className="p-1.5 rounded hover:bg-red-50 text-red-500"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="inline-flex gap-1 justify-end">
+                        <button
+                          onClick={() => openEdit(c)}
+                          className="p-1.5 rounded hover:bg-gray-100 text-gray-500"
+                          title="Edit client"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(c.id)}
+                          className="p-1.5 rounded hover:bg-red-50 text-red-500"
+                          title="Delete client"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

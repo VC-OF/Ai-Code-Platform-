@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  devIndicators: false,
   // Turbopack's file watcher otherwise walks .platform/ (SQLite WAL files,
   // locked exclusively on Windows by better-sqlite3 while open) and
   // workspaces/ (agent-managed project files that change outside any

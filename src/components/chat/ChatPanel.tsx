@@ -83,6 +83,8 @@ interface ChatPanelProps {
   onStatusChange?: (status: AgentStatus) => void;
   /** Fired when a turn completes; filesChanged comes from the agent's done event */
   onAgentDone?:    (info: { reason: string; filesChanged: string[] }) => void;
+  initialPrompt?:  string | null;
+  onClearInitialPrompt?: () => void;
 }
 
 export default function ChatPanel({
@@ -93,6 +95,8 @@ export default function ChatPanel({
   selectedModel,
   onStatusChange,
   onAgentDone,
+  initialPrompt,
+  onClearInitialPrompt,
 }: ChatPanelProps) {
   const [history,       setHistory]       = useState<Message[]>([]);
   const [timeline,      setTimeline]      = useState<TimelineItem[]>([]);
@@ -289,6 +293,34 @@ export default function ChatPanel({
     await processStream(resPromise);
   };
 
+  const executePrompt = async (text: string, baseHistory: Message[] = []) => {
+    setInput('');
+    setLoading(true);
+    setLastDoneReason(null);
+    updateStatus('planning');
+
+    const content = JSON.stringify({ text, attachments: [] });
+    const nextHistory = [...baseHistory, { role: 'user' as const, content }];
+    setHistory(nextHistory);
+    setTimeline((t) => [
+      ...t,
+      { type: 'message', role: 'user', content, ts: Date.now() },
+    ]);
+
+    const resPromise = fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: nextHistory,
+        projectId,
+        activeFilePath,
+        model: selectedModel,
+      }),
+    });
+
+    await processStream(resPromise);
+  };
+
   useEffect(() => {
     if (!projectId || projectId === 'default') {
       setHistory([]);
@@ -298,11 +330,12 @@ export default function ChatPanel({
     }
 
     setLoading(true);
+    let loadedHistory: Message[] = [];
     fetch(`/api/projects?id=${projectId}`)
       .then((res) => res.json())
       .then((data) => {
         if (data.project?.chatHistory) {
-          const loadedHistory = (data.project.chatHistory as Message[]).filter(
+          loadedHistory = (data.project.chatHistory as Message[]).filter(
             (m) => m.role === 'user' || m.role === 'assistant'
           );
           setHistory(loadedHistory);
@@ -328,6 +361,10 @@ export default function ChatPanel({
           reconnectStream();
         } else {
           setLoading(false);
+          if (initialPrompt && loadedHistory.length === 0) {
+            onClearInitialPrompt?.();
+            executePrompt(initialPrompt, []);
+          }
         }
       })
       .catch((err) => {
@@ -335,7 +372,7 @@ export default function ChatPanel({
         setLoading(false);
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, historyReloadKey]);
+  }, [projectId, historyReloadKey, initialPrompt]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });

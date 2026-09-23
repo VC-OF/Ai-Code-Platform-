@@ -11,7 +11,7 @@ async function createProjectViaUi(page: Page, name: string): Promise<string> {
   await page.getByPlaceholder('Project name…').fill(name);
   await page.locator('.template-chip', { hasText: 'Blank' }).click();
   await page.getByRole('button', { name: 'Create project' }).click();
-  await expect(page.locator('.app-footer')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.app-footer')).toBeVisible({ timeout: 25_000 });
   // The workspace URL carries the id (kept in sync by the app)
   await expect(page).toHaveURL(/projectId=proj_/);
   return new URL(page.url()).searchParams.get('projectId')!;

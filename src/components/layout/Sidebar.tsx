@@ -415,23 +415,24 @@ function ProjectItem({
         }
 
         .project-item:hover {
-          background: rgba(255,255,255,0.04);
+          background: var(--bg-hover);
         }
 
         .project-item--active {
-          background: rgba(255, 255, 255, 0.05) !important;
-          border-color: rgba(255, 255, 255, 0.06) !important;
+          background: var(--brand-glow) !important;
+          border-color: var(--accent-border) !important;
         }
 
         .project-item--active .project-name {
-          color: #ffffff;
+          color: var(--brand);
+          font-weight: 600;
         }
 
         .project-avatar {
           width: 26px;
           height: 26px;
           border-radius: 6px;
-          background: rgba(255,255,255,0.05);
+          background: var(--bg-elevated);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -443,8 +444,8 @@ function ProjectItem({
         }
 
         .project-avatar--active {
-          background: rgba(255, 255, 255, 0.15);
-          color: #fff;
+          background: var(--brand);
+          color: #fffaf7;
         }
 
         .project-info {
@@ -485,24 +486,30 @@ function ProjectItem({
         .project-delete {
           position: absolute;
           right: 6px;
-          width: 18px;
-          height: 18px;
+          width: 20px;
+          height: 20px;
           display: flex;
           align-items: center;
           justify-content: center;
-          background: var(--bg-overlay);
-          border: none;
+          background: var(--bg-surface);
+          border: 1px solid var(--border-base);
           border-radius: var(--radius-sm);
           color: var(--text-muted);
-          font-size: 9px;
+          font-size: 10px;
           cursor: pointer;
-          opacity: 0;
-          animation: fade-in 0.1s ease forwards;
+          opacity: 1;
+          transition: all var(--transition-fast);
         }
 
         .project-delete:hover {
           background: var(--error-dim);
+          border-color: var(--error);
           color: var(--error);
+        }
+
+        @keyframes fade-in {
+          from { opacity: 0; }
+          to { opacity: 1; }
         }
       `}</style>
     </div>

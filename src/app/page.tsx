@@ -14,7 +14,7 @@ import MobileLayout     from '@/components/mobile/MobileLayout';
 import FileExplorer     from '@/components/FileExplorer';
 import CompletionDialog from '@/components/CompletionDialog';
 import ToolModal        from '@/components/ToolModal';
-import PublicApiGallery from '@/components/PublicApiGallery';
+import PublicApiGallery, { type BuildProductSpec } from '@/components/PublicApiGallery';
 import { useIsMobile }  from '@/hooks/useMobile';
 import { useGlobalKeyboard, useShortcuts } from '@/hooks/useKeyboard';
 import { useAppCommands } from '@/components/command/useAppCommands';
@@ -50,6 +50,7 @@ export default function App() {
   const [agentStatus,   setAgentStatus]   = useState<AgentStatus>('done');
   const [previewToken,  setPreviewToken]  = useState(0);
   const [projects,      setProjects]      = useState<Project[]>([]);
+  const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
 
   // Media query mobile detector
   const isMobile = useIsMobile('md');
@@ -264,161 +265,168 @@ export default function App() {
         {/* ── Workspace Area (Multi-Column Grid) ────────────────────────── */}
         <div className="workspace-container">
           {activeProject ? (
-            <>
-              {/* ── Column 1: Chat/Prompt Widget Column ─────────────────── */}
-              <div className="workspace-column-left" style={{ width: chatWidth }}>
-                <ChatPanel
-                  projectId={activeProject.id}
-                  activeFilePath={activeFile ?? undefined}
-                  onFilesChanged={handleFilesChanged}
-                  onFileSelect={handleFileSelect}
-                  selectedModel={selectedModel}
-                  onStatusChange={setAgentStatus}
-                  onAgentDone={handleAgentDone}
-                />
-              </div>
-
-              {/* Resize handle */}
-              <ResizeHandle
-                onResize={(delta) =>
-                  setChatWidth((w) =>
-                    Math.max(300, Math.min(500, w + delta))
-                  )
-                }
-              />
-
-              {/* ── Column 2: Main Area (Metrics + Workspace Tabs) ──────── */}
-              <div className="workspace-column-middle">
-
-
-                {/* Tab Switcher & Content view */}
-                <div className="editor-tab-workspace">
-                  <TabBar
-                    active={activeTab}
-                    onChange={setActiveTab}
-                    changedFiles={filesChanged}
-                    showPreview={activeProject.kind !== 'build'}
+            <div className="workspace-main">
+              <div className="workspace-columns">
+                {/* ── Column 1: Chat/Prompt Widget Column ─────────────────── */}
+                <div className="workspace-column-left" style={{ width: chatWidth }}>
+                  <ChatPanel
+                    projectId={activeProject.id}
+                    activeFilePath={activeFile ?? undefined}
+                    onFilesChanged={handleFilesChanged}
+                    onFileSelect={handleFileSelect}
+                    selectedModel={selectedModel}
+                    onStatusChange={setAgentStatus}
+                    onAgentDone={handleAgentDone}
+                    initialPrompt={pendingPrompt}
+                    onClearInitialPrompt={() => setPendingPrompt(null)}
                   />
+                </div>
 
-                  <div className="panel-area">
-                    {activeTab === 'editor' && (
-                      <EditorPanel
-                        projectId={activeProject.id}
-                        activeFile={activeFile}
-                        onFileSelect={handleFileSelect}
-                        changedFiles={filesChanged}
-                      />
-                    )}
-                    {activeTab === 'preview' && activeProject.kind !== 'build' && (
-                      <PreviewPanel
-                        projectId={activeProject.id}
-                        autoStartToken={previewToken}
-                      />
-                    )}
-                    {activeTab === 'settings' && (
-                      <SettingsPanel project={activeProject} />
-                    )}
+                {/* Resize handle */}
+                <ResizeHandle
+                  onResize={(delta) =>
+                    setChatWidth((w) =>
+                      Math.max(300, Math.min(500, w + delta))
+                    )
+                  }
+                />
+
+                {/* ── Column 2: Main Area (Metrics + Workspace Tabs) ──────── */}
+                <div className="workspace-column-middle">
+                  {/* Tab Switcher & Content view */}
+                  <div className="editor-tab-workspace">
+                    <TabBar
+                      active={activeTab}
+                      onChange={setActiveTab}
+                      changedFiles={filesChanged}
+                      showPreview={activeProject.kind !== 'build'}
+                    />
+
+                    <div className="panel-area">
+                      {activeTab === 'editor' && (
+                        <EditorPanel
+                          projectId={activeProject.id}
+                          activeFile={activeFile}
+                          onFileSelect={handleFileSelect}
+                          changedFiles={filesChanged}
+                        />
+                      )}
+                      {activeTab === 'preview' && activeProject.kind !== 'build' && (
+                        <PreviewPanel
+                          projectId={activeProject.id}
+                          autoStartToken={previewToken}
+                        />
+                      )}
+                      {activeTab === 'settings' && (
+                        <SettingsPanel project={activeProject} />
+                      )}
+                    </div>
                   </div>
+                </div>
+
+                {/* ── Column 3: File Explorer (Right Column) ──────────────── */}
+                <div className="workspace-column-right">
+                  <FileExplorer
+                    projectId={activeProject.id}
+                    activeFile={activeFile}
+                    onFileSelect={handleFileSelect}
+                    refreshKey={refreshExplorerKey}
+                  />
                 </div>
               </div>
 
-              {/* ── Column 3: File Explorer (Right Column) ──────────────── */}
-              <div className="workspace-column-right">
-                <FileExplorer
-                  projectId={activeProject.id}
-                  activeFile={activeFile}
-                  onFileSelect={handleFileSelect}
-                  refreshKey={refreshExplorerKey}
-                />
+              {/* ── Bottom Execution / Control Footer Bar ──────────────────── */}
+              <div className="app-footer">
+                {/* Execution Controls */}
+                <div className="footer-left-controls">
+                  <div className="footer-section-label">EXECUTION CONTROLS</div>
+                  <div className="footer-row-btns">
+                    <button
+                      className="footer-btn footer-btn--execute"
+                      onClick={() => {
+                        const inputEl = document.querySelector('.input-textarea') as HTMLTextAreaElement;
+                        if (inputEl) {
+                          inputEl.focus();
+                        }
+                      }}
+                    >
+                      <svg viewBox="0 0 24 24" fill="currentColor" width={11} height={11}>
+                        <path d="M8 5v14l11-7z"/>
+                      </svg>
+                      Execute
+                    </button>
+                    <button
+                      className="footer-btn footer-btn--ghost"
+                      onClick={async () => {
+                        try {
+                          await fetch('/api/chat/cancel', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ projectId: activeProject.id }),
+                          });
+                        } catch {}
+                      }}
+                    >
+                      <svg viewBox="0 0 24 24" fill="currentColor" width={10} height={10}>
+                        <rect x="5" y="5" width="14" height="14" rx="2"/>
+                      </svg>
+                      Stop
+                    </button>
+                  </div>
+                </div>
+
+                {/* Live agent status */}
+                <div className="footer-middle-progress">
+                  <div className="footer-section-label">AGENT STATUS</div>
+                  <div className="progress-row">
+                    <StatusIndicator status={agentStatus} />
+                    {filesChanged.length > 0 && (
+                      <span className="files-changed-note">
+                        {filesChanged.length} file{filesChanged.length === 1 ? '' : 's'} changed this turn
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Quick Actions */}
+                <div className="footer-right-actions">
+                  <div className="footer-section-label">QUICK ACTIONS</div>
+                  <div className="footer-row-btns">
+                    <a
+                      href={`/api/download?projectId=${activeProject.id}`}
+                      className="footer-btn footer-btn--ghost"
+                      download
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} width={10} height={10}>
+                        <path d="M12 3v13M7 12l5 5 5-5M5 21h14"/>
+                      </svg>
+                      Export
+                    </a>
+                    <button
+                      className="footer-btn footer-btn--ghost"
+                      onClick={() => setShowToolModal(true)}
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} width={10} height={10}>
+                        <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/>
+                      </svg>
+                      Tools
+                    </button>
+                  </div>
+                </div>
               </div>
-            </>
+            </div>
           ) : (
-            <WelcomeScreen onProjectSelect={setActiveProject} />
+            <WelcomeScreen
+              onProjectSelect={(project, prompt) => {
+                setActiveProject(project);
+                if (prompt) {
+                  setPendingPrompt(prompt);
+                }
+              }}
+            />
           )}
         </div>
       </div>
-
-      {/* ── Bottom Execution / Control Footer Bar ──────────────────────── */}
-      {activeProject && (
-        <div className="app-footer">
-          {/* Execution Controls */}
-          <div className="footer-left-controls">
-            <div className="footer-section-label">EXECUTION CONTROLS</div>
-            <div className="footer-row-btns">
-              <button
-                className="footer-btn footer-btn--execute"
-                onClick={() => {
-                  const inputEl = document.querySelector('.input-textarea') as HTMLTextAreaElement;
-                  if (inputEl) {
-                    inputEl.focus();
-                  }
-                }}
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor" width={11} height={11}>
-                  <path d="M8 5v14l11-7z"/>
-                </svg>
-                Execute
-              </button>
-              <button
-                className="footer-btn footer-btn--ghost"
-                onClick={async () => {
-                  try {
-                    await fetch('/api/chat/cancel', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ projectId: activeProject.id }),
-                    });
-                  } catch {}
-                }}
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor" width={10} height={10}>
-                  <rect x="5" y="5" width="14" height="14" rx="2"/>
-                </svg>
-                Stop
-              </button>
-            </div>
-          </div>
-
-          {/* Live agent status */}
-          <div className="footer-middle-progress">
-            <div className="footer-section-label">AGENT STATUS</div>
-            <div className="progress-row">
-              <StatusIndicator status={agentStatus} />
-              {filesChanged.length > 0 && (
-                <span className="files-changed-note">
-                  {filesChanged.length} file{filesChanged.length === 1 ? '' : 's'} changed this turn
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Quick Actions */}
-          <div className="footer-right-actions">
-            <div className="footer-section-label">QUICK ACTIONS</div>
-            <div className="footer-row-btns">
-              <a
-                href={`/api/download?projectId=${activeProject.id}`}
-                className="footer-btn footer-btn--ghost"
-                download
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} width={10} height={10}>
-                  <path d="M12 3v13M7 12l5 5 5-5M5 21h14"/>
-                </svg>
-                Export
-              </a>
-              <button
-                className="footer-btn footer-btn--ghost"
-                onClick={() => setShowToolModal(true)}
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} width={10} height={10}>
-                  <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/>
-                </svg>
-                Tools
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Command Palette */}
       <CommandPalette />
@@ -460,6 +468,23 @@ export default function App() {
           min-width: 0;
           min-height: 0;
           background: var(--bg-base);
+        }
+
+        .workspace-main {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          min-width: 0;
+          min-height: 0;
+          overflow: hidden;
+        }
+
+        .workspace-columns {
+          flex: 1;
+          display: flex;
+          min-width: 0;
+          min-height: 0;
+          overflow: hidden;
         }
 
         .workspace-column-left {
@@ -609,7 +634,7 @@ export default function App() {
 function WelcomeScreen({
   onProjectSelect,
 }: {
-  onProjectSelect: (p: Project) => void;
+  onProjectSelect: (p: Project, initialPrompt?: string) => void;
 }) {
   const [mode,     setMode]     = useState<'app' | 'build'>('app');
   const [name,     setName]     = useState('');
@@ -649,6 +674,48 @@ function WelcomeScreen({
       onProjectSelect(data.project);
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBuildApiProduct = async (spec: BuildProductSpec) => {
+    setLoading(true);
+    setError('');
+    try {
+      // 1. Create project with given title and template
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: spec.title,
+          template: spec.template || 'react-vite',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to create project');
+
+      // 2. Save API key in project encrypted settings if supplied
+      if (spec.apiKey && spec.apiKey.trim()) {
+        try {
+          await fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              key: spec.keyEnv || 'VITE_API_KEY',
+              value: spec.apiKey.trim(),
+              projectId: data.project.id,
+            }),
+          });
+        } catch (settingsErr) {
+          console.warn('Failed to save project API key setting:', settingsErr);
+        }
+      }
+
+      // 3. Switch to project with initial prompt for agent
+      onProjectSelect(data.project, spec.prompt);
+    } catch (e) {
+      setError((e as Error).message || 'Failed to initialize API product');
     } finally {
       setLoading(false);
     }
@@ -786,37 +853,41 @@ function WelcomeScreen({
             </div>
           )}
         </div>
-        <PublicApiGallery />
+        <PublicApiGallery onBuildProduct={handleBuildApiProduct} />
       </div>
 
       <style jsx>{`
         .welcome {
           flex: 1;
           display: flex;
+          flex-direction: column;
           align-items: center;
-          justify-content: center;
-          padding: 40px 24px;
+          justify-content: flex-start;
+          overflow-y: auto;
+          min-height: 0;
+          padding: 36px 24px 64px;
+          width: 100%;
         }
 
         .welcome-inner {
           display: flex;
           flex-direction: column;
           align-items: center;
-          gap: 24px;
+          gap: 28px;
           width: 100%;
           max-width: 980px;
         }
 
         .welcome-card {
           width: 100%;
-          max-width: 440px;
+          max-width: 460px;
           border-radius: var(--radius-xl);
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          background: rgba(18, 18, 23, 0.65);
+          border: 1px solid var(--border-subtle);
+          background: var(--bg-surface);
           backdrop-filter: blur(20px);
           -webkit-backdrop-filter: blur(20px);
-          box-shadow: var(--shadow-lg);
-          padding: 36px 32px;
+          box-shadow: var(--shadow-md);
+          padding: 32px 28px;
           display: flex;
           flex-direction: column;
           align-items: center;
@@ -829,21 +900,21 @@ function WelcomeScreen({
           content: '';
           position: absolute;
           inset: 0;
-          background: radial-gradient(400px 200px at 50% 0%, rgba(255, 255, 255, 0.1), transparent 70%);
+          background: radial-gradient(400px 200px at 50% 0%, var(--brand-glow), transparent 70%);
           pointer-events: none;
         }
 
         .welcome-icon {
-          width: 58px;
-          height: 58px;
+          width: 52px;
+          height: 52px;
           border-radius: 14px;
-          background: rgba(255, 255, 255, 0.05);
-          border: 1px solid rgba(255, 255, 255, 0.15);
+          background: var(--brand-glow);
+          border: 1px solid var(--accent-border);
           display: flex;
           align-items: center;
           justify-content: center;
-          color: #ffffff;
-          margin-bottom: 18px;
+          color: var(--brand);
+          margin-bottom: 16px;
           position: relative;
         }
 
@@ -851,6 +922,7 @@ function WelcomeScreen({
           font-family: var(--font-brand);
           font-size: 19px;
           font-weight: 600;
+          color: var(--text-primary);
           margin-bottom: 8px;
           letter-spacing: -0.1px;
           position: relative;
@@ -860,28 +932,29 @@ function WelcomeScreen({
           font-size: 12.5px;
           color: var(--text-secondary);
           line-height: 1.6;
-          max-width: 350px;
-          margin-bottom: 24px;
+          max-width: 360px;
+          margin-bottom: 20px;
           position: relative;
         }
 
         .welcome-input {
           width: 100%;
-          background: rgba(0, 0, 0, 0.2);
+          background: var(--bg-base);
           border: 1px solid var(--border-base);
           border-radius: var(--radius-md);
           padding: 10px 14px;
           font-size: 13px;
           color: var(--text-primary);
           outline: none;
-          margin-bottom: 8px;
+          margin-bottom: 10px;
           font-family: var(--font-sans);
           position: relative;
           transition: all var(--transition-fast);
         }
 
         .welcome-input:focus {
-          border-color: rgba(255, 255, 255, 0.2);
+          border-color: var(--brand);
+          box-shadow: 0 0 0 1px var(--brand);
         }
 
         .welcome-input::placeholder {
@@ -894,7 +967,7 @@ function WelcomeScreen({
           width: 100%;
           padding: 3px;
           margin-bottom: 16px;
-          background: rgba(0, 0, 0, 0.2);
+          background: var(--bg-elevated);
           border: 1px solid var(--border-subtle);
           border-radius: var(--radius-md);
         }
@@ -912,11 +985,13 @@ function WelcomeScreen({
           transition: all var(--transition-fast);
         }
 
-        .mode-tab:hover { color: var(--text-secondary); }
+        .mode-tab:hover { color: var(--text-primary); }
 
         .mode-tab--active {
-          background: rgba(255, 255, 255, 0.08);
-          color: #ffffff;
+          background: var(--bg-surface);
+          color: var(--text-primary);
+          font-weight: 600;
+          box-shadow: var(--shadow-sm);
         }
 
         .build-mode-notice {
@@ -957,42 +1032,43 @@ function WelcomeScreen({
           display: flex;
           gap: 6px;
           width: 100%;
-          margin-bottom: 10px;
+          margin-bottom: 12px;
         }
 
         .template-chip {
           flex: 1;
-          padding: 7px 8px;
-          background: rgba(255, 255, 255, 0.03);
+          padding: 8px 10px;
+          background: var(--bg-elevated);
           border: 1px solid var(--border-subtle);
           border-radius: var(--radius-md);
           color: var(--text-secondary);
-          font-size: 11.5px;
+          font-size: 12px;
           cursor: pointer;
           transition: all var(--transition-fast);
         }
 
         .template-chip:hover {
-          background: rgba(255, 255, 255, 0.06);
+          background: var(--bg-hover);
           color: var(--text-primary);
+          border-color: var(--border-base);
         }
 
         .template-chip--active {
-          background: rgba(255, 255, 255, 0.1);
-          border-color: rgba(255, 255, 255, 0.25);
-          color: #ffffff;
+          background: var(--brand-glow);
+          border-color: var(--accent-border);
+          color: var(--brand);
           font-weight: 600;
         }
 
         .welcome-btn {
           width: 100%;
-          background: #ffffff;
+          background: var(--brand);
           border: none;
           border-radius: var(--radius-md);
-          color: #000000;
-          font-weight: 500;
+          color: #fffaf7;
+          font-weight: 600;
           font-size: 13px;
-          padding: 10px;
+          padding: 10px 14px;
           cursor: pointer;
           margin-bottom: 6px;
           position: relative;
@@ -1004,7 +1080,7 @@ function WelcomeScreen({
         }
 
         .welcome-btn:hover:not(:disabled) {
-          background: rgba(255, 255, 255, 0.85);
+          background: var(--brand-dim);
         }
 
         .welcome-btn:active:not(:disabled) {
@@ -1012,7 +1088,7 @@ function WelcomeScreen({
         }
 
         .welcome-btn:disabled {
-          opacity: 0.4;
+          opacity: 0.45;
           cursor: not-allowed;
         }
 
@@ -1052,8 +1128,8 @@ function WelcomeScreen({
           align-items: center;
           gap: 10px;
           width: 100%;
-          padding: 8px 10px;
-          background: rgba(255,255,255,0.02);
+          padding: 8px 12px;
+          background: var(--bg-elevated);
           border: 1px solid var(--border-subtle);
           border-radius: var(--radius-md);
           color: var(--text-primary);
@@ -1064,8 +1140,8 @@ function WelcomeScreen({
         }
 
         .welcome-project-item:hover {
-          background: rgba(255,255,255,0.05);
-          border-color: rgba(255, 255, 255, 0.15);
+          background: var(--bg-hover);
+          border-color: var(--border-base);
         }
 
         .wp-icon {

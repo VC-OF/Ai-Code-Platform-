@@ -79,7 +79,7 @@ function TreeEntry({
         onClick={() => onSelect(node.fullPath)}
         className={`w-full text-left flex items-center gap-1.5 py-1.5 pr-8 text-xs font-mono transition-all cursor-pointer rounded-md ${
           isActive
-            ? 'bg-[var(--brand)]/12 text-blue-400 border-r-2 border-[var(--brand)]'
+            ? 'bg-[var(--accent-soft)] text-[var(--brand)] font-semibold border-l-2 border-[var(--brand)]'
             : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
         }`}
         style={{ paddingLeft: `${8 + indent + 16}px` }}
@@ -141,7 +141,11 @@ export default function FileExplorer({
   function toggleFolder(path: string) {
     setExpandedFolders((prev) => {
       const next = new Set(prev);
-      next.has(path) ? next.delete(path) : next.add(path);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
       return next;
     });
   }
@@ -259,7 +263,7 @@ export default function FileExplorer({
                   onClick={() => onFileSelect(f.path)}
                   className={`w-full text-left flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono transition-all cursor-pointer rounded-md ${
                     activeFile === f.path
-                      ? 'bg-[var(--brand)]/12 text-blue-400 border-r-2 border-[var(--brand)]'
+                      ? 'bg-[var(--accent-soft)] text-[var(--brand)] font-semibold border-l-2 border-[var(--brand)]'
                       : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
                   }`}
                   title={f.path}
