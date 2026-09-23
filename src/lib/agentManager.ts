@@ -5,6 +5,9 @@ import { EventEmitter, type AgentStatus } from '@/lib/events';
 import { projectDb, messageDb, planDb } from '@/lib/db';
 import { getModel, LLMMessage, type LLMTool } from '@/lib/llmClient';
 import { SYSTEM_PROMPT } from '@/lib/systemPrompt';
+import { createHarness } from '@/lib/harness';
+import { composeSystemPrompt } from '@/lib/promptComposer';
+import { loadSkills } from '@/lib/skills';
 import { TOOL_SCHEMAS } from '@/lib/tools';
 import { isDockerMode } from '@/lib/safeExec';
 import { getMcpToolSchemas } from '@/lib/mcpClient';
@@ -243,12 +246,13 @@ class AgentManager {
 
         // MCP servers contribute extra tools (mcp_<server>_<tool>)
         const mcpTools = await getMcpToolSchemas().catch(() => []);
+        const skills = await loadSkills(project.workspace);
 
         // Persisted plan from earlier turns → resume context
         const currentPlan = planDb.get(projectId);
 
-        const systemPrompt =
-          SYSTEM_PROMPT +
+        const systemPrompt = composeSystemPrompt({
+          basePrompt: SYSTEM_PROMPT +
           (isDockerMode()
             ? '\n\nNote: run_command executes in an isolated container — full shell syntax (pipes, &&, redirection) is available. Network access only works for package-manager installs.'
             : '') +
@@ -257,7 +261,11 @@ class AgentManager {
             : '') +
           (project.kind === 'build'
             ? '\n\nNote: this project is Build Mode — an existing, real codebase opened directly from disk, not a fresh scaffold. It may not follow any particular template or framework. Explore the file structure and read key files (README, package.json, lint/format configs) before making assumptions, and follow the project\'s existing conventions rather than introducing new ones.'
-            : '');
+            : ''),
+          agentsMemory,
+          harness: createHarness(project.kind),
+          skills,
+        });
 
         await runAgentLoop({
           projectId,
@@ -272,7 +280,8 @@ class AgentManager {
             ...(mcpTools as unknown as LLMTool[]),
           ],
           systemPrompt,
-          agentsMemory,
+          // Project memory is already part of the composed, cached system prompt.
+          agentsMemory: undefined,
           activeFilePath,
           turnIndex,
           emitter,

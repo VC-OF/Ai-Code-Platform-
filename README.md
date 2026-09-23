@@ -150,6 +150,24 @@ for hostile multi-tenant use (no container isolation):
 
 ## 5. Beyond the basics
 
+### Skills, harness, and context memory
+
+Project-specific skills can be added under `.opencode/skills/<name>/SKILL.md`.
+The agent also recognizes `.agents/skills/<name>/SKILL.md` and
+`skills/<name>/SKILL.md`. Each skill may start with YAML-style `name` and
+`description` fields, followed by instructions. Skills are loaded per project
+and included in that project's system prompt.
+
+Every run uses a harness with guardrails for secret handling, scoped edits,
+untrusted tool output, and honest verification reporting. `AGENTS.md` remains
+the project memory file and is composed with the harness and skills.
+
+Long conversations are compacted before the model reaches its context limit.
+The platform first asks the configured model for a factual summary, preserves
+recent tool-call groups, and falls back to deterministic summaries if that
+request fails or is cancelled. Compaction is ephemeral: original history
+remains persisted while the working context stays within the model window.
+
 - **Build Mode** — a second project type alongside the app-builder flow. On
   the welcome screen, switch to **Build Mode** and give it an absolute path
   to any existing folder on disk (any language, any framework, no template
