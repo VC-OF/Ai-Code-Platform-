@@ -95,6 +95,9 @@ browser. Set `LLM_FALLBACKS` (comma-separated model list) to auto-fail-over
 when the selected model errors or rate-limits before producing output.
 Adding another OpenAI-compatible provider is one `PROVIDERS` entry.
 
+Nemotron Ultra is available through Ollama Cloud as `nemotron-3-ultra:cloud`.
+Select it from the model picker, or set `LLM_MODEL=nemotron-3-ultra:cloud`.
+
 Image generation: the agent's `generate_image` tool uses Pollinations
 (keyless, Flux) with a Hugging Face `FLUX.1-schnell` fallback when
 `HUGGINGFACE_API_KEY` is set, saving assets straight into the workspace.

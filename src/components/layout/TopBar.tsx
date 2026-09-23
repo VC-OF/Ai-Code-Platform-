@@ -84,7 +84,7 @@ export default function TopBar({
           <select
             value={selectedModel}
             onChange={(e) => onModelChange?.(e.target.value)}
-            className="bg-zinc-800/80 text-zinc-200 text-xs px-2 py-1 rounded border border-zinc-700 outline-none w-56 cursor-pointer focus:border-indigo-500 transition-colors"
+            className="model-select text-xs px-2 py-1 rounded border outline-none w-56 cursor-pointer transition-colors"
           >
               <optgroup label="Groq Models">
                 <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile</option>
@@ -102,6 +102,7 @@ export default function TopBar({
                 <option value="minimax-m3:cloud">minimax-m3:cloud</option>
                 <option value="qwen3-coder-next:cloud">qwen3-coder-next:cloud</option>
                 <option value="glm-5.2:cloud">glm-5.2:cloud</option>
+                <option value="nemotron-3-ultra:cloud">nemotron-3-ultra:cloud</option>
               </optgroup>
               <optgroup label="Local Ollama Models">
                 <option value="deepseek-r1:latest">deepseek-r1:latest</option>
@@ -176,7 +177,7 @@ export default function TopBar({
           align-items: center;
           justify-content: space-between;
           padding: 0 24px;
-          background: rgba(18, 18, 23, 0.45);
+          background: color-mix(in srgb, var(--bg-surface) 82%, transparent);
           backdrop-filter: blur(20px);
           -webkit-backdrop-filter: blur(20px);
           border-bottom: 1px solid var(--border-subtle);
@@ -199,6 +200,22 @@ export default function TopBar({
           align-items: center;
           justify-content: center;
           box-shadow: 0 2px 8px rgba(255, 255, 255, 0.2);
+        }
+
+        .model-select {
+          background: var(--bg-elevated);
+          color: var(--text-primary);
+          border-color: var(--border-base);
+        }
+
+        .model-select:focus {
+          border-color: var(--brand);
+        }
+
+        .model-select option,
+        .model-select optgroup {
+          background: var(--bg-surface);
+          color: var(--text-primary);
         }
 
         .brand-text {
@@ -229,7 +246,7 @@ export default function TopBar({
           display: flex;
           align-items: center;
           gap: 8px;
-          background: rgba(255, 255, 255, 0.04);
+          background: var(--bg-elevated);
           border: 1px solid var(--border-subtle);
           border-radius: var(--radius-md);
           padding: 6px 12px;
@@ -239,8 +256,8 @@ export default function TopBar({
         }
 
         .global-search:hover {
-          border-color: rgba(255, 255, 255, 0.15);
-          background: rgba(255, 255, 255, 0.06);
+          border-color: var(--border-strong);
+          background: var(--bg-hover);
         }
 
         .search-icon {
@@ -258,7 +275,7 @@ export default function TopBar({
         .search-kbd {
           font-size: 9.5px;
           color: var(--text-muted);
-          background: rgba(255, 255, 255, 0.04);
+          background: var(--bg-elevated);
           border: 1px solid var(--border-subtle);
           border-radius: 4px;
           padding: 1px 4px;
@@ -279,7 +296,7 @@ export default function TopBar({
           font-size: 11px;
           font-weight: 500;
           color: var(--text-secondary);
-          background: rgba(255, 255, 255, 0.03);
+          background: var(--bg-elevated);
           border: 1px solid var(--border-subtle);
           padding: 5px 12px;
           border-radius: 20px;
@@ -319,15 +336,15 @@ export default function TopBar({
 
         .icon-btn:hover {
           color: var(--text-primary);
-          background: rgba(255, 255, 255, 0.05);
+          background: var(--bg-hover);
         }
 
         .profile-avatar {
           width: 28px;
           height: 28px;
           border-radius: 50%;
-          background: rgba(255, 255, 255, 0.1);
-          color: #ffffff;
+          background: var(--bg-overlay);
+          color: var(--text-primary);
           display: flex;
           align-items: center;
           justify-content: center;

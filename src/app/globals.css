@@ -14,9 +14,9 @@ html, body, #__next {
 
 body {
   background:
-    radial-gradient(1200px 800px at 15% -10%, rgba(152,144,227,0.14), transparent 50%),
-    radial-gradient(1000px 700px at 85% 15%, rgba(100,210,255,0.08), transparent 45%),
-    radial-gradient(800px 600px at 50% 90%, rgba(0,122,255,0.05), transparent 45%),
+    radial-gradient(1200px 800px at 15% -10%, var(--brand-glow), transparent 50%),
+    radial-gradient(1000px 700px at 85% 15%, var(--cyan-soft), transparent 45%),
+    radial-gradient(800px 600px at 50% 90%, var(--accent-soft), transparent 45%),
     var(--bg-base);
   color:       var(--text-primary);
   font-family: var(--font-sans);
@@ -105,10 +105,10 @@ body {
 
 /* ── Glassmorphism (Premium macOS style) ────────────────────────────────────── */
 .glass {
-  background: rgba(18, 18, 23, 0.72);
+  background: color-mix(in srgb, var(--bg-surface) 82%, transparent);
   backdrop-filter: blur(20px) saturate(190%);
   -webkit-backdrop-filter: blur(20px) saturate(190%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-base);
 }
 
 .border-subtle { border-color: var(--border-subtle); }
