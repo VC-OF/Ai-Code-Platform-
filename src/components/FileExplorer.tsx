@@ -38,18 +38,18 @@ function TreeEntry({
       <div>
         <button
           onClick={() => toggleFolder(node.fullPath)}
-          className="w-full text-left flex items-center gap-1.5 py-1.5 pr-2 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/30 transition-all rounded-md cursor-pointer"
+          className="w-full text-left flex items-center gap-1.5 py-1.5 pr-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-all rounded-md cursor-pointer"
           style={{ paddingLeft: `${8 + indent}px` }}
         >
           <svg
-            className={`w-3.5 h-3.5 shrink-0 text-zinc-500 transition-transform duration-150 ${isExpanded ? 'rotate-90' : ''}`}
+            className={`w-3.5 h-3.5 shrink-0 text-[var(--text-muted)] transition-transform duration-150 ${isExpanded ? 'rotate-90' : ''}`}
             fill="currentColor"
             viewBox="0 0 24 24"
           >
             <path d="M10 6l6 6-6 6V6z" />
           </svg>
           <FolderIcon open={isExpanded} />
-          <span className="text-xs truncate font-medium text-zinc-300">
+          <span className="text-xs truncate font-medium text-[var(--text-primary)]">
             {node.name}
           </span>
         </button>
@@ -80,7 +80,7 @@ function TreeEntry({
         className={`w-full text-left flex items-center gap-1.5 py-1.5 pr-8 text-xs font-mono transition-all cursor-pointer rounded-md ${
           isActive
             ? 'bg-[var(--brand)]/12 text-blue-400 border-r-2 border-[var(--brand)]'
-            : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/30'
+            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
         }`}
         style={{ paddingLeft: `${8 + indent + 16}px` }}
         title={node.fullPath}
@@ -90,7 +90,7 @@ function TreeEntry({
       </button>
       <button
         onClick={(e) => onDelete(node.fullPath, e)}
-        className="absolute right-1.5 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-zinc-800 rounded text-rose-500 transition-opacity cursor-pointer"
+        className="absolute right-1.5 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[var(--bg-hover)] rounded text-[var(--error)] transition-opacity cursor-pointer"
         title="Delete File"
       >
         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -260,7 +260,7 @@ export default function FileExplorer({
                   className={`w-full text-left flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono transition-all cursor-pointer rounded-md ${
                     activeFile === f.path
                       ? 'bg-[var(--brand)]/12 text-blue-400 border-r-2 border-[var(--brand)]'
-                      : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/30'
+                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
                   }`}
                   title={f.path}
                 >

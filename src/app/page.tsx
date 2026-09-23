@@ -457,6 +457,7 @@ export default function App() {
           display: flex;
           overflow: hidden;
           min-width: 0;
+          min-height: 0;
           background: var(--bg-base);
         }
 
@@ -465,6 +466,7 @@ export default function App() {
           display: flex;
           flex-direction: column;
           overflow: hidden;
+          min-height: 0;
           padding: 12px 0 12px 12px;
         }
 
@@ -474,6 +476,7 @@ export default function App() {
           flex-direction: column;
           gap: 0;
           min-width: 0;
+          min-height: 0;
           overflow: hidden;
           padding: 12px 0;
         }
@@ -482,6 +485,7 @@ export default function App() {
           width: 260px;
           flex-shrink: 0;
           height: 100%;
+          min-height: 0;
           padding: 12px 12px 12px 0;
         }
 

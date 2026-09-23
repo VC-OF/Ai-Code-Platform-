@@ -482,7 +482,7 @@ export default function PreviewTab({
         .preview-toolbar {
           display: flex;
           align-items: center;
-          gap: 12px;
+          gap: 8px;
           border-radius: var(--radius-sm);
           border: 1px solid var(--border-subtle);
           background: var(--panel);
@@ -760,8 +760,10 @@ export default function PreviewTab({
           justify-content: center;
           flex-direction: column;
           text-align: center;
-          padding: 24px;
+          padding: 16px;
           max-width: 300px;
+          max-height: 100%;
+          overflow-y: auto;
         }
 
         .preview-offline-icon {
@@ -801,7 +803,7 @@ export default function PreviewTab({
           padding: 8px 16px;
           border-radius: var(--radius-md);
           cursor: pointer;
-          box-shadow: 0 2px 6px rgba(0, 122, 255, 0.25);
+          box-shadow: var(--shadow-sm);
           transition: all var(--transition-fast);
         }
 

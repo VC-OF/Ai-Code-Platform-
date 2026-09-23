@@ -673,6 +673,7 @@ export default function ChatPanel({
           display: flex;
           flex-direction: column;
           height: 100%;
+          min-height: 0;
           gap: 8px;
           overflow: hidden;
         }
@@ -904,6 +905,7 @@ export default function ChatPanel({
         /* Scrollable Timeline area */
         .chat-timeline {
           flex: 1;
+          min-height: 0;
           overflow-y: auto;
           display: flex;
           flex-direction: column;
