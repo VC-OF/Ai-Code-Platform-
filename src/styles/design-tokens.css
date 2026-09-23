@@ -66,8 +66,8 @@ html[data-theme="light"] {
 :root {
   color-scheme: dark;
   /* ── Apple-like Base Colors ─────────────────────────────────────────────── */
-  --void:          #09090b; /* macOS Dark Mode deep void background */
-  --bg-deep:       #121217; /* macOS panel base */
+  --void:          #000000;
+  --bg-deep:       #0b0b0b;
   --panel:         rgba(255, 255, 255, 0.035);
   --panel-strong:  rgba(255, 255, 255, 0.06);
 
