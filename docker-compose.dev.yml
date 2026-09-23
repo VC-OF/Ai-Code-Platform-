@@ -1,0 +1,41 @@
+version: "3.9"
+
+services:
+  open-code:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: deps  # Use deps stage for dev
+    image: open-code:dev
+    container_name: open-code-dev
+
+    command: npm run dev
+
+    ports:
+      - "3000:3000"
+      - "9229:9229"  # Node debugger
+
+    volumes:
+      # Mount source code for hot reload
+      - .:/app
+      - /app/node_modules   # Don't override node_modules
+      - /app/.next          # Don't override build cache
+
+    environment:
+      NODE_ENV:    development
+      AUTH_TOKEN:  ""           # Disable auth in dev
+      SETTINGS_ENCRYPTION_KEY: dev-encryption-key-32-chars-long
+
+    depends_on:
+      - ollama
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama-dev
+    volumes:
+      - ollama-models:/root/.ollama
+    ports:
+      - "11434:11434"
+
+volumes:
+  ollama-models:

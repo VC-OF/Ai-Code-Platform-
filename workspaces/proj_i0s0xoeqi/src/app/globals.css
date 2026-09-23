@@ -1,0 +1,175 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --sumi-900: #16150f;
+  --sumi-800: #26241c;
+  --sumi-700: #3f3b2f;
+  --shu-600: #b32525;
+  --kinari: #f7f4ec;
+}
+
+html,
+body {
+  background: var(--kinari);
+  color: var(--sumi-900);
+  font-family:
+    "Inter",
+    system-ui,
+    -apple-system,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Japanese textured background (very subtle washi-paper feel) */
+.bg-washi {
+  background-color: #f7f4ec;
+  background-image:
+    radial-gradient(rgba(20, 20, 10, 0.03) 1px, transparent 1px),
+    radial-gradient(rgba(20, 20, 10, 0.025) 1px, transparent 1px);
+  background-size:
+    16px 16px,
+    23px 23px;
+  background-position:
+    0 0,
+    8px 11px;
+}
+
+.bg-asanoha {
+  background-color: #f7f4ec;
+  background-image:
+    linear-gradient(
+      60deg,
+      rgba(70, 137, 184, 0.06) 25%,
+      transparent 25.5%,
+      transparent 75%,
+      rgba(70, 137, 184, 0.06) 75%
+    ),
+    linear-gradient(
+      120deg,
+      rgba(70, 137, 184, 0.06) 25%,
+      transparent 25.5%,
+      transparent 75%,
+      rgba(70, 137, 184, 0.06) 75%
+    );
+  background-size: 28px 48px;
+  background-position:
+    0 0,
+    14px 24px;
+}
+
+/* Stamp / Hanko effect */
+.stamp {
+  font-family: "Noto Serif JP", serif;
+  color: #b32525;
+  border: 2px solid #b32525;
+  border-radius: 4px;
+  padding: 2px 6px;
+  display: inline-block;
+  letter-spacing: 0.1em;
+  transform: rotate(-6deg);
+  opacity: 0.85;
+  text-shadow: 0 0 1px rgba(179, 37, 37, 0.3);
+}
+
+/* Card */
+.card {
+  background: white;
+  border: 1px solid #ecebe5;
+  border-radius: 12px;
+  box-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.04),
+    0 4px 16px -6px rgba(20, 20, 10, 0.08);
+}
+
+.btn {
+  @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium transition-all duration-150 select-none;
+}
+.btn-primary {
+  @apply btn bg-sumi-900 text-kinari hover:bg-sumi-800 active:scale-[0.98] shadow-jp;
+}
+.btn-shu {
+  @apply btn bg-shu-600 text-white hover:bg-shu-700 active:scale-[0.98] shadow-jp;
+}
+.btn-ghost {
+  @apply btn bg-transparent text-sumi-800 hover:bg-sumi-100;
+}
+.btn-outline {
+  @apply btn border border-sumi-300 text-sumi-800 hover:bg-sumi-50;
+}
+
+.input {
+  @apply w-full px-3 py-2 rounded-lg border border-sumi-200 bg-white focus:border-sumi-700 focus:ring-2 focus:ring-sumi-700/10 focus:outline-none transition;
+}
+
+.badge {
+  @apply inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full;
+}
+.badge-green {
+  @apply badge bg-green-100 text-green-800;
+}
+.badge-amber {
+  @apply badge bg-amber-100 text-amber-800;
+}
+.badge-red {
+  @apply badge bg-red-100 text-red-800;
+}
+.badge-blue {
+  @apply badge bg-blue-100 text-blue-800;
+}
+.badge-gray {
+  @apply badge bg-sumi-100 text-sumi-700;
+}
+
+/* Vertical text for Japanese accents */
+.tategaki {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+
+/* Scrollbar */
+.scroll-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: #d6d3c5;
+  border-radius: 3px;
+}
+.scroll-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Marquee */
+.marquee {
+  overflow: hidden;
+}
+.marquee-track {
+  display: inline-flex;
+  white-space: nowrap;
+  animation: scroll-x 40s linear infinite;
+}
+
+/* Hide focus outline for mouse, keep for keyboard */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* No-select utility for secure exam mode */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+}
+.no-context {
+  -webkit-touch-callout: none;
+}
+
+/* Print hidden */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}

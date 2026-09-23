@@ -1,0 +1,10 @@
+#!/bin/sh
+# Maven Wrapper (Unix)
+set -e
+DIR=$(cd "$(dirname "$0")" && pwd)
+WRAPPER_JAR="$DIR/.mvn/wrapper/maven-wrapper.jar"
+if [ ! -f "$WRAPPER_JAR" ]; then
+  mkdir -p "$DIR/.mvn/wrapper"
+  curl -fsSL -o "$WRAPPER_JAR" https://repo.maven.apache.org/maven2/org/apache/maven/wrapper/maven-wrapper/3.3.2/maven-wrapper-3.3.2.jar
+fi
+exec "${JAVA_HOME:-/usr}/bin/java" $MAVEN_OPTS -classpath "$WRAPPER_JAR" org.apache.maven.wrapper.MavenWrapperMain "$@"

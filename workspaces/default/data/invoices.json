@@ -1,0 +1,28 @@
+[
+  {
+    "id": "mr6flxqxgp5x3f",
+    "number": "INV-1001",
+    "clientId": "mr6fledksbdzu1",
+    "clientName": "oryfolks",
+    "clientEmail": "oryfolks@gmail.com",
+    "clientAddress": "Nellore , vedayapalem , Andhra Pradesh",
+    "issueDate": "2026-07-04",
+    "dueDate": "2026-08-03",
+    "status": "draft",
+    "items": [
+      {
+        "id": "67ofqacb",
+        "description": "salary",
+        "quantity": 1,
+        "unitPrice": 33.99
+      }
+    ],
+    "notes": "",
+    "taxRate": 8.5,
+    "subtotal": 33.99,
+    "taxAmount": 2.89,
+    "total": 36.88,
+    "createdAt": "2026-07-04T14:02:27.993Z",
+    "updatedAt": "2026-07-04T14:02:27.993Z"
+  }
+]

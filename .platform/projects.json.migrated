@@ -1,0 +1,67 @@
+[
+  {
+    "id": "proj_i0s0xoeqi",
+    "title": "# Japanese Online Examination ...",
+    "createdAt": 1783173073023,
+    "updatedAt": 1783174423414,
+    "chatHistory": [
+      {
+        "role": "user",
+        "content": "# Japanese Online Examination Platform - Requirements\n\nBuild a secure web-based Japanese Examination Platform capable of conducting online examinations for multiple candidates simultaneously. The platform should support at least **30 concurrent candidates** without performance degradation while ensuring the integrity of the examination process.\n\n## Core Features\n\n### 1. Online Examination\n\n* Conduct Japanese language examinations (JLPT-style).\n* Support multiple question types:\n\n  * Multiple Choice Questions (MCQs)\n  * Reading Comprehension\n  * Listening Comprehension\n  * Vocabulary\n  * Grammar\n  * Kanji\n* Automatic timer with auto-submit when the exam duration ends.\n* Save answers automatically at regular intervals.\n\n### 2. Multi-Candidate Support\n\n* Support at least **30 candidates taking the exam simultaneously**.\n* Real-time monitoring dashboard for invigilators.\n* Live status of each candidate:\n\n  * Exam Started\n  * In Progress\n  * Completed\n  * Disconnected\n  * Suspicious Activity\n\n### 3. Secure Browser / Anti-Cheating Features\n\nThe platform should continuously monitor candidate activity throughout the examination.\n\n#### Tab Switching Detection\n\n* Detect when the candidate switches to another browser tab or application.\n* Pause or terminate the examination based on configurable exam rules.\n* Record every tab-switch event with timestamp.\n* Display warnings to the candidate.\n\n#### Browser Activity Monitoring\n\nDetect and log if the candidate opens:\n\n* Google Search\n* ChatGPT\n* Gemini\n* Claude\n* DeepSeek\n* Bing\n* YouTube\n* Online dictionaries\n* Translation websites\n* Any other external websites\n\nThe system should record:\n\n* Website name\n* URL\n* Opened time\n* Duration\n* Number of visits\n\n#### Search Monitoring\n\nIf the candidate searches online during the examination, log:\n\n* Search engine used\n* Search keywords\n* Search time\n* Search URL\n\nExample:\n\n* Google Search: \"Japanese N5 Question 12 Answer\"\n* ChatGPT Prompt: \"What is the answer for Question 15?\"\n* Bing Search: \"JLPT N4 Kanji answers\"\n\n### 4. Application Monitoring\n\nDetect when the candidate opens other applications during the examination, such as:\n\n* Microsoft Word\n* Notepad\n* Calculator\n* PDF Reader\n* Browser Developer Tools\n* Screen Capture Tools\n\nRecord:\n\n* Application name\n* Opened time\n* Duration\n* Number of times opened\n\n### 5. Full-Screen Enforcement\n\n* Examination must run in full-screen mode.\n* Detect when the candidate exits full-screen.\n* Issue warnings or terminate the examination after configurable violations.\n\n### 6. Copy/Paste Restrictions\n\nDisable:\n\n* Copy\n* Paste\n* Cut\n* Right-click\n* Text selection\n* Keyboard shortcuts (Ctrl+C, Ctrl+V, Ctrl+A, Ctrl+Shift+I, F12, etc.)\n\n### 7. Developer Tools Detection\n\nDetect attempts to open:\n\n* Chrome DevTools\n* Firefox Developer Tools\n* Console\n* Inspect Element\n\nAutomatically:\n\n* Warn the candidate\n* Record the event\n* Optionally terminate the examination\n\n### 8. Webcam Monitoring (Optional)\n\n* Capture periodic snapshots.\n* Detect if the candidate leaves the camera view.\n* Detect multiple faces.\n* Record suspicious events.\n\n### 9. Screen Recording (Optional)\n\n* Record the candidate's screen during the examination.\n* Store recordings securely for later review.\n\n### 10. Candidate Authentication\n\n* Login using Email/Password or Registration Number.\n* OTP verification.\n* Face verification (optional).\n* ID proof verification (optional).\n\n### 11. Exam Administration\n\nAdministrators should be able to:\n\n* Create examinations.\n* Create question banks.\n* Schedule examinations.\n* Assign candidates.\n* Configure exam duration.\n* Define anti-cheating policies.\n* View live candidate activity.\n* Generate examination reports.\n\n### 12. Examination Report\n\nAfter the examination, generate a detailed report for each candidate containing:\n\n#### Candidate Information\n\n* Name\n* Registration Number\n* Exam Name\n* Start Time\n* End Time\n* Duration\n\n#### Examination Result\n\n* Score\n* Correct Answers\n* Incorrect Answers\n* Percentage\n* Pass/Fail Status\n\n#### Security Report\n\n* Number of tab switches\n* Full-screen exits\n* Copy/Paste attempts\n* Developer tools attempts\n* External websites visited\n* Applications opened\n* Suspicious events\n* Warnings issued\n\n#### Website Activity Report\n\nExample:\n\n| Time     | Website | URL                 | Duration |\n| -------- | ------- | ------------------- | -------- |\n| 10:12 AM | ChatGPT | https://chatgpt.com | 2 min    |\n| 10:18 AM | Google  | https://google.com  | 45 sec   |\n| 10:25 AM | YouTube | https://youtube.com | 1 min    |\n\n#### Search History Report\n\nExample:\n\n| Time     | Search Engine | Search Query              |\n| -------- | ------------- | ------------------------- |\n| 10:13 AM | Google        | JLPT N5 Question 5 Answer |\n| 10:19 AM | ChatGPT       | Translate Question 12     |\n\n#### Violation Summary\n\n* Total Violations\n* Severity Level\n* Recommended Action\n* Final Examination Status\n\n### 13. Dashboard\n\n#### Candidate Dashboard\n\n* Upcoming exams\n* Active exam\n* Previous results\n* Profile\n* Notifications\n\n#### Admin Dashboard\n\n* Live examinations\n* Online candidates\n* Suspicious candidates\n* Examination analytics\n* Performance reports\n* Security reports\n\n### 14. Technology Stack\n\nFrontend:\n\n* React.js / Next.js\n* TypeScript\n* Tailwind CSS\n\nBackend:\n\n* Java Spring Boot\n* REST APIs\n* WebSocket for real-time monitoring\n\nDatabase:\n\n* PostgreSQL\n\nCache:\n\n* Redis\n\nStorage:\n\n* AWS S3 or MinIO\n\nAuthentication:\n\n* JWT\n* Refresh Tokens\n\nMonitoring:\n\n* WebSocket\n* Event Logging\n* Audit Trail\n\n### Important Note\n\nDue to browser security and privacy restrictions, a standard web application **cannot reliably detect or record all applications, websites, search queries, or browser activity outside its own page**. Features such as monitoring other browser tabs, other applications, search history, or forcing external windows to close require a **Secure Exam Browser (SEB)**, a managed enterprise environment, or a native desktop application with appropriate operating system permissions. If comprehensive monitoring is required, the platform should include a custom secure browser or desktop client in addition to the web application."
+      },
+      {
+        "role": "user",
+        "content": "continue"
+      }
+    ]
+  },
+  {
+    "id": "proj_y4alxi72e",
+    "title": "hrms",
+    "createdAt": 1783423157393,
+    "updatedAt": 1783423157393,
+    "chatHistory": []
+  },
+  {
+    "id": "proj_67zwu3vw2",
+    "title": "lms",
+    "createdAt": 1783442128610,
+    "updatedAt": 1783442128610,
+    "chatHistory": []
+  },
+  {
+    "id": "proj_ogl0koskh",
+    "title": "abv",
+    "createdAt": 1783499331462,
+    "updatedAt": 1783499331462,
+    "chatHistory": []
+  },
+  {
+    "id": "proj_emv7loje1",
+    "title": "portfolio",
+    "createdAt": 1783880153721,
+    "updatedAt": 1783880153721,
+    "chatHistory": []
+  },
+  {
+    "id": "proj_vx69847ce",
+    "title": "invoice system",
+    "createdAt": 1784017986061,
+    "updatedAt": 1784017986061,
+    "chatHistory": []
+  },
+  {
+    "id": "proj_r19anaf9u",
+    "title": "template-test",
+    "createdAt": 1784363176420,
+    "updatedAt": 1784363176420,
+    "chatHistory": []
+  },
+  {
+    "id": "proj_peszferyd",
+    "title": "time sheet",
+    "createdAt": 1784364032464,
+    "updatedAt": 1784364032464,
+    "chatHistory": []
+  }
+]

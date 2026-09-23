@@ -1,0 +1,181 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body,
+#__next {
+  height: 100%;
+}
+body {
+  background: #f1f5f9;
+  color: #0f172a;
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    "Helvetica Neue",
+    Arial;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Disable text selection in exam */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+.no-select * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+/* Hide caret for read-only fields */
+.no-caret {
+  caret-color: transparent;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Exam watermark */
+.watermark {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image: repeating-linear-gradient(
+    -30deg,
+    transparent 0 120px,
+    rgba(15, 23, 42, 0.025) 120px 121px
+  );
+}
+
+/* Recording dot */
+.rec-dot::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background: #ef4444;
+  border-radius: 9999px;
+  margin-right: 6px;
+  box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6);
+  animation: pulse-soft 1.5s infinite;
+}
+
+/* Card */
+.card {
+  @apply bg-white border border-ink-200 rounded-xl shadow-sm;
+}
+.card-header {
+  @apply px-5 py-3 border-b border-ink-200 flex items-center justify-between;
+}
+.card-body {
+  @apply p-5;
+}
+
+/* Buttons */
+.btn {
+  @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition;
+}
+.btn-primary {
+  @apply btn bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50;
+}
+.btn-secondary {
+  @apply btn bg-ink-100 text-ink-800 hover:bg-ink-200;
+}
+.btn-ghost {
+  @apply btn text-ink-700 hover:bg-ink-100;
+}
+.btn-danger {
+  @apply btn bg-red-600 text-white hover:bg-red-700;
+}
+.btn-sm {
+  @apply px-3 py-1.5 text-xs;
+}
+
+/* Form */
+.input {
+  @apply w-full rounded-lg border border-ink-300 bg-white px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100;
+}
+.label {
+  @apply block text-xs font-medium text-ink-700 mb-1;
+}
+.kbd {
+  @apply inline-block min-w-[1.5rem] px-1.5 py-0.5 rounded border border-ink-300 bg-ink-50 text-ink-700 text-[10px] font-mono;
+}
+
+/* Badge */
+.badge {
+  @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium;
+}
+.badge-green {
+  @apply badge bg-emerald-100 text-emerald-700;
+}
+.badge-red {
+  @apply badge bg-red-100 text-red-700;
+}
+.badge-yellow {
+  @apply badge bg-amber-100 text-amber-700;
+}
+.badge-blue {
+  @apply badge bg-sky-100 text-sky-700;
+}
+.badge-gray {
+  @apply badge bg-ink-100 text-ink-700;
+}
+.badge-purple {
+  @apply badge bg-violet-100 text-violet-700;
+}
+
+/* Status dots */
+.dot {
+  @apply inline-block w-2 h-2 rounded-full;
+}
+.dot-green {
+  @apply bg-emerald-500;
+}
+.dot-red {
+  @apply bg-red-500;
+}
+.dot-yellow {
+  @apply bg-amber-500;
+}
+.dot-gray {
+  @apply bg-ink-400;
+}
+.dot-blue {
+  @apply bg-sky-500;
+}
+
+/* Fullscreen warning */
+.fs-warning {
+  background: repeating-linear-gradient(
+    45deg,
+    #fee2e2,
+    #fee2e2 10px,
+    #fecaca 10px,
+    #fecaca 20px
+  );
+  border: 2px solid #dc2626;
+}

@@ -1,0 +1,137 @@
+version: "3.9"
+
+services:
+  # ── Main app ────────────────────────────────────────────────────────────────
+  open-code:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    image: open-code:latest
+    container_name: open-code
+
+    ports:
+      - "${PORT:-3000}:3000"
+
+    volumes:
+      # Persist all data outside container
+      - workspaces:/app/workspaces
+      - platform:/app/.platform
+      - settings:/app/.settings
+      - logs:/app/logs
+
+    environment:
+      # App
+      NODE_ENV: production
+      PORT: 3000
+
+      # Auth (set AUTH_TOKEN= to disable)
+      AUTH_TOKEN: ${AUTH_TOKEN:-}
+
+      # Encryption key for secrets (32+ chars)
+      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:?SETTINGS_ENCRYPTION_KEY is required}
+
+      # LLM defaults
+      DEFAULT_MODEL:    ${DEFAULT_MODEL:-qwen2.5-coder:32b}
+      DEFAULT_PROVIDER: ${DEFAULT_PROVIDER:-ollama}
+
+      # Ollama (if using local models)
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+
+      # Limits
+      MAX_AGENT_STEPS:  ${MAX_AGENT_STEPS:-25}
+      AGENT_TIMEOUT_MS: ${AGENT_TIMEOUT_MS:-300000}
+
+    restart: unless-stopped
+
+    depends_on:
+      ollama:
+        condition: service_started
+
+    healthcheck:
+      test:         ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval:     30s
+      timeout:      10s
+      retries:      3
+      start_period: 40s
+
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus:   "2"
+        reservations:
+          memory: 256M
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Ollama (local LLM) ───────────────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+
+    volumes:
+      - ollama-models:/root/.ollama
+
+    ports:
+      - "11434:11434"
+
+    restart: unless-stopped
+
+    # GPU support (uncomment if you have NVIDIA GPU)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+    healthcheck:
+      test:         ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval:     30s
+      timeout:      10s
+      retries:      5
+      start_period: 60s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Nginx reverse proxy (optional, for SSL) ──────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: open-code-nginx
+    profiles: ["with-nginx"]
+
+    ports:
+      - "80:80"
+      - "443:443"
+
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+
+    depends_on:
+      - open-code
+
+    restart: unless-stopped
+
+# ── Volumes ───────────────────────────────────────────────────────────────────
+volumes:
+  workspaces:
+    driver: local
+  platform:
+    driver: local
+  settings:
+    driver: local
+  logs:
+    driver: local
+  ollama-models:
+    driver: local

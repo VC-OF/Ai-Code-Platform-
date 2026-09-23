@@ -1,0 +1,46 @@
+# Dependencies
+node_modules
+.pnp
+.pnp.js
+
+# Build outputs
+.next
+out
+build
+dist
+
+# Testing
+coverage
+.nyc_output
+e2e/results
+e2e/screenshots
+
+# Development
+.git
+.github
+*.md
+*.log
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data (mounted as volumes)
+workspaces
+.platform
+.settings
+logs
+
+# CI artifacts
+*.tgz

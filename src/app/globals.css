@@ -1,0 +1,132 @@
+@import "tailwindcss";
+
+/* ── Reset ─────────────────────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #__next {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background:
+    radial-gradient(1200px 800px at 15% -10%, rgba(152,144,227,0.14), transparent 50%),
+    radial-gradient(1000px 700px at 85% 15%, rgba(100,210,255,0.08), transparent 45%),
+    radial-gradient(800px 600px at 50% 90%, rgba(0,122,255,0.05), transparent 45%),
+    var(--bg-base);
+  color:       var(--text-primary);
+  font-family: var(--font-sans);
+  font-size:   var(--text-base);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Scrollbars (macOS overlays style) ─────────────────────────────────────── */
+::-webkit-scrollbar       { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background:    var(--scrollbar-thumb, rgba(255, 255, 255, 0.08));
+  border-radius: var(--radius-full);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-hover, rgba(255, 255, 255, 0.16));
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+/* ── Selection ──────────────────────────────────────────────────────────────── */
+::selection {
+  background: rgba(0, 122, 255, 0.3);
+  color:      #ffffff;
+}
+
+/* ── Focus ──────────────────────────────────────────────────────────────────── */
+:focus-visible {
+  outline:        2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* ── Animations (fluid Apple transitions) ───────────────────────────────────── */
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.6; }
+}
+
+@keyframes slide-in-right {
+  from { transform: translateX(12px); opacity: 0; }
+  to   { transform: translateX(0);   opacity: 1; }
+}
+
+@keyframes slide-in-up {
+  from { transform: translateY(10px); opacity: 0; }
+  to   { transform: translateY(0);   opacity: 1; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 10px rgba(0, 122, 255, 0.2); }
+  50%       { box-shadow: 0 0 22px rgba(0, 122, 255, 0.45); }
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes glow-green {
+  0%, 100% { box-shadow: 0 0 8px var(--green-glow, rgba(48,209,88,0.25)); }
+  50%       { box-shadow: 0 0 20px var(--green-glow, rgba(48,209,88,0.25)), 0 0 40px var(--green-glow, rgba(48,209,88,0.15)); }
+}
+
+@keyframes slide-in-bottom {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-pulse-soft    { animation: pulse-soft    2.2s cubic-bezier(0.25, 1, 0.5, 1) infinite; }
+.animate-slide-right   { animation: slide-in-right 0.3s cubic-bezier(0.25, 1, 0.5, 1); }
+.animate-slide-up      { animation: slide-in-up    0.35s cubic-bezier(0.25, 1, 0.5, 1); }
+.animate-fade-in       { animation: fade-in         0.22s cubic-bezier(0.25, 1, 0.5, 1); }
+.animate-glow          { animation: glow-pulse      2.2s cubic-bezier(0.25, 1, 0.5, 1) infinite; }
+.animate-spin-slow     { animation: spin-slow       4s linear infinite; }
+.animate-glow-green    { animation: glow-green      2.5s cubic-bezier(0.25, 1, 0.5, 1) infinite; }
+.animate-slide-bottom  { animation: slide-in-bottom 0.28s cubic-bezier(0.25, 1, 0.5, 1); }
+
+/* ── Glassmorphism (Premium macOS style) ────────────────────────────────────── */
+.glass {
+  background: rgba(18, 18, 23, 0.72);
+  backdrop-filter: blur(20px) saturate(190%);
+  -webkit-backdrop-filter: blur(20px) saturate(190%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.border-subtle { border-color: var(--border-subtle); }
+.border-base   { border-color: var(--border-base); }
+
+.text-muted    { color: var(--text-muted); }
+.text-secondary { color: var(--text-secondary); }
+
+.font-mono     { font-family: var(--font-mono); }
+
+/* ── Monaco Editor overrides ─────────────────────────────────────────────────── */
+.monaco-editor,
+.monaco-editor-background,
+.monaco-editor .margin {
+  background-color: var(--bg-surface) !important;
+}
+
+.monaco-editor .current-line {
+  background: var(--bg-elevated) !important;
+  border: none !important;
+}

@@ -1,0 +1,10 @@
+{
+  "businessName": "Acme Studio",
+  "businessEmail": "billing@acmestudio.com",
+  "businessAddress": "123 Market Street, San Francisco, CA 94103",
+  "businessPhone": "+1 (555) 010-2030",
+  "taxRate": 8.5,
+  "currency": "USD",
+  "invoicePrefix": "INV",
+  "nextInvoiceNumber": 1002
+}

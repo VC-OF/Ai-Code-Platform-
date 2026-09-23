@@ -1,0 +1,32 @@
+openapi: 3.1.0
+info:
+  title: Core Banking Platform API
+  version: 0.0.1
+  description: |
+    REST API for the Core Banking Platform.
+
+    This is a placeholder. The full OpenAPI spec is generated from controllers
+    starting in Phase 2 and committed on every build.
+  contact:
+    name: CBP Engineering
+    email: engineering@cbp.local
+  license:
+    name: Proprietary
+servers:
+  - url: http://localhost:8080
+    description: Local dev
+  - url: https://api.staging.cbp.local
+    description: Staging
+  - url: https://api.cbp.bank
+    description: Production
+tags: []
+paths: {}
+components:
+  schemas: {}
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+security:
+  - bearerAuth: []

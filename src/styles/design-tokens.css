@@ -1,0 +1,175 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Light theme overrides — applied when <html data-theme="light"> is set
+   All dark defaults live in :root below.
+───────────────────────────────────────────────────────────────────────────── */
+[data-theme="light"] {
+  --void:          #f5f5f7;
+  --bg-deep:       #ffffff;
+  --panel:         rgba(0, 0, 0, 0.02);
+  --panel-strong:  rgba(0, 0, 0, 0.04);
+
+  --bg-base:       var(--void);
+  --bg-surface:    #ffffff;
+  --bg-elevated:   rgba(0, 0, 0, 0.03);
+  --bg-overlay:    rgba(0, 0, 0, 0.05);
+  --bg-hover:      rgba(0, 0, 0, 0.04);
+
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --border-base:   rgba(0, 0, 0, 0.10);
+  --border-strong: rgba(0, 0, 0, 0.18);
+
+  --text-primary:  #1d1d1f;
+  --text-secondary:#424245;
+  --text-muted:    #86868b;
+  --text-disabled: #aeaeb2;
+
+  --brand:         #0071e3;
+  --brand-dim:     #0077ed;
+  --brand-glow:    rgba(0, 113, 227, 0.15);
+  --violet:        #6e6acd;
+  --violet-soft:   rgba(110, 106, 205, 0.10);
+  --violet-glow:   rgba(110, 106, 205, 0.25);
+
+  --accent:        #0071e3;
+  --accent-dim:    #e8f0fe;
+  --accent-soft:   rgba(0, 113, 227, 0.08);
+  --accent-border: rgba(0, 113, 227, 0.3);
+  --cyan:          #007aff;
+  --cyan-soft:     rgba(0, 122, 255, 0.10);
+
+  --success:       #1c8c3c;
+  --success-dim:   rgba(28, 140, 60, 0.10);
+  --success-border:rgba(28, 140, 60, 0.3);
+  --warning:       #d97706;
+  --warning-dim:   rgba(217, 119, 6, 0.10);
+  --error:         #d93025;
+  --error-dim:     rgba(217, 48, 37, 0.10);
+  --info:          #0071e3;
+  --info-dim:      rgba(0, 113, 227, 0.08);
+  --green:         #1c8c3c;
+  --amber:         #d97706;
+  --coral:         #d93025;
+
+  --shadow-sm:         0 1px 2px rgba(0,0,0,0.06);
+  --shadow-md:         0 4px 18px rgba(0,0,0,0.08);
+  --shadow-lg:         0 12px 36px rgba(0,0,0,0.12);
+  --shadow-glow:       0 0 24px var(--violet-glow);
+  --shadow-accent-glow:0 0 20px rgba(0, 113, 227, 0.12);
+
+  --scrollbar-thumb:   rgba(0,0,0,0.15);
+  --scrollbar-hover:   rgba(0,0,0,0.25);
+
+  --green-glow:    rgba(28, 140, 60, 0.2);
+}
+
+:root {
+  /* ── Apple-like Base Colors ─────────────────────────────────────────────── */
+  --void:          #09090b; /* macOS Dark Mode deep void background */
+  --bg-deep:       #121217; /* macOS panel base */
+  --panel:         rgba(255, 255, 255, 0.035);
+  --panel-strong:  rgba(255, 255, 255, 0.06);
+
+  /* ── Map to app variables ────────────────────────────────────────────────── */
+  --bg-base:       var(--void);
+  --bg-surface:    var(--bg-deep);
+  --bg-elevated:   rgba(255, 255, 255, 0.045);
+  --bg-overlay:    rgba(255, 255, 255, 0.08);
+  --bg-hover:      rgba(255, 255, 255, 0.06);
+
+  /* ── Ultra-thin borders for retina displays ───────────────────────────── */
+  --border-subtle: rgba(255, 255, 255, 0.045);
+  --border-base:   rgba(255, 255, 255, 0.075);
+  --border-strong: rgba(255, 255, 255, 0.15);
+
+  --text-primary:  #f4f4f5; /* clean light-gray text */
+  --text-secondary:#a1a1aa; /* secondary label */
+  --text-muted:    #71717a; /* tertiary label */
+  --text-disabled: #4b4b52; /* quaternary label */
+
+  /* ── Brand Colors (SF Pro Blue / Premium Purple) ────────────────────────── */
+  --brand:         #007aff; /* Apple system blue */
+  --brand-dim:     #005ec2;
+  --brand-glow:    rgba(0, 122, 255, 0.15);
+  --violet:        #9890e3; /* Premium soft violet */
+  --violet-soft:   rgba(152, 144, 227, 0.12);
+  --violet-glow:   rgba(152, 144, 227, 0.35);
+
+  /* ── Accent Colors ──────────────────────────────────────────────────────── */
+  --accent:        #64d2ff; /* Apple system cyan */
+  --accent-dim:    #0070c2;
+  --accent-soft:   rgba(100, 210, 255, 0.12);
+  --accent-border: rgba(100, 210, 255, 0.25);
+  --cyan:          #64d2ff;
+  --cyan-soft:     rgba(100, 210, 255, 0.12);
+
+  /* ── Semantic Colors (Apple standard palettes) ─────────────────────────── */
+  --success:       #30d158; /* Apple green */
+  --success-dim:   rgba(48, 209, 88, 0.12);
+  --warning:       #ff9f0a; /* Apple orange */
+  --warning-dim:   rgba(255, 159, 10, 0.12);
+  --error:         #ff453a; /* Apple red */
+  --error-dim:     rgba(255, 69, 58, 0.12);
+  --info:          #64d2ff;
+  --info-dim:      rgba(100, 210, 255, 0.1);
+  --green:         #30d158;
+  --amber:         #ff9f0a;
+  --coral:         #ff453a;
+
+  /* ── Tool colors ─────────────────────────────────────────────────────────── */
+  --tool-read:     #ff9f0a;
+  --tool-write:    #30d158;
+  --tool-test:     #bf5af2; /* Apple purple */
+  --tool-lint:     #ff9f0a;
+  --tool-run:      #64d2ff;
+
+  /* ── Typography (Apple font stack) ───────────────────────────────────────── */
+  --font-brand:    system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+  --font-sans:     system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  --font-mono:     "SF Mono", SFMono-Regular, ui-monospace, "DejaVu Sans Mono", Menlo, Consolas, monospace;
+
+  --text-xs:       0.75rem;
+  --text-sm:       0.8125rem;
+  --text-base:     0.875rem;
+  --text-lg:       1rem;
+
+  /* ── Spacing ──────────────────────────────────────────────────────────────── */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-6:  24px;
+
+  /* ── Radius (iOS/macOS style squircles) ───────────────────────────────────── */
+  --radius-sm:   6px;
+  --radius-md:   10px;
+  --radius-lg:   14px;
+  --radius-xl:   18px;
+  --radius-full: 9999px;
+
+  /* ── Shadows (Apple-like soft ambient shadows) ────────────────────────────── */
+  --success-border:rgba(48, 209, 88, 0.3);
+  --green-glow:    rgba(48, 209, 88, 0.25);
+  --scrollbar-thumb:   rgba(255,255,255,0.08);
+  --scrollbar-hover:   rgba(255,255,255,0.16);
+
+  --shadow-sm:         0 1px 2px rgba(0,0,0,0.4);
+  --shadow-md:         0 4px 18px rgba(0,0,0,0.35);
+  --shadow-lg:         0 12px 36px rgba(0,0,0,0.5);
+  --shadow-glow:       0 0 24px var(--violet-glow);
+  --shadow-accent-glow:0 0 20px rgba(100,210,255,0.15);
+
+  /* ── Sidebar ──────────────────────────────────────────────────────────────── */
+  --sidebar-width:     256px;
+  --sidebar-collapsed: 64px;
+
+  /* ── Panel sizes ──────────────────────────────────────────────────────────── */
+  --chat-width:    390px;
+  --header-height: 58px;
+  --tab-bar-height:40px;
+  --dock-height:   72px;
+
+  /* ── Animations (Apple fluid spring transitions) ──────────────────────────── */
+  --transition-fast:   120ms cubic-bezier(0.25, 1, 0.5, 1);
+  --transition-base:   240ms cubic-bezier(0.25, 1, 0.5, 1);
+  --transition-slow:   380ms cubic-bezier(0.25, 1, 0.5, 1);
+}

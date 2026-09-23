@@ -1,0 +1,16 @@
+target/
+.idea/
+*.iml
+.vscode/
+.DS_Store
+node_modules/
+dist/
+build/
+coverage/
+*.log
+.env
+.env.local
+*.env
+.angular/
+.next/
+.mvn/wrapper/maven-wrapper.jar

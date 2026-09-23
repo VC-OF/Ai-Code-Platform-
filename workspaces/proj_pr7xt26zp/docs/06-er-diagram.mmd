@@ -1,0 +1,315 @@
+%%{init: {'theme':'neutral'}}%%
+erDiagram
+    USERS ||--o{ USER_ROLES : has
+    ROLES ||--o{ USER_ROLES : grants
+    ROLES ||--o{ ROLE_PERMISSIONS : includes
+    PERMISSIONS ||--o{ ROLE_PERMISSIONS : grouped_in
+    USERS ||--o{ REFRESH_TOKENS : issues
+    USERS ||--o{ DEVICES : tracks
+
+    BRANCHES ||--o{ EMPLOYEES : employs
+    BRANCHES ||--o{ CUSTOMERS : serves
+    BRANCHES ||--o{ ACCOUNTS : hosts
+    BRANCHES ||--o{ TRANSACTIONS : records
+    USERS ||--|| EMPLOYEES : authenticates
+    USERS ||--o{ NOTIFICATION_LOGS : receives
+
+    CUSTOMERS ||--o{ ACCOUNTS : owns
+    CUSTOMERS ||--o{ BENEFICIARIES : adds
+    CUSTOMERS ||--o{ KYC_DOCUMENTS : uploads
+    CUSTOMERS ||--o{ CUSTOMER_EVENTS : timeline
+    CUSTOMERS ||--o{ CARDS : holds
+    CUSTOMERS ||--o{ LOAN_APPLICATIONS : applies
+
+    ACCOUNT_PRODUCTS ||--o{ ACCOUNTS : instantiates
+    ACCOUNTS ||--o{ FD_ACCOUNTS : "fd"
+    ACCOUNTS ||--o{ RD_ACCOUNTS : "rd"
+    ACCOUNTS ||--o{ CARDS : issued_for
+    ACCOUNTS ||--o{ CHEQUE_BOOKS : issues
+    ACCOUNTS ||--o{ CHEQUES : drawn_on
+    ACCOUNTS ||--o{ ACCOUNT_HOLDS : restricted_by
+
+    TRANSACTIONS ||--o{ LEDGER_ENTRIES : posts
+    LEDGER_ACCOUNTS ||--o{ LEDGER_ENTRIES : debits_credits
+    TRANSACTIONS ||--o| TRANSACTIONS : "reverses"
+
+    LOAN_PRODUCTS ||--o{ LOAN_APPLICATIONS : instantiated_by
+    LOAN_APPLICATIONS ||--|| LOAN_ACCOUNTS : approved_to
+    LOAN_APPLICATIONS ||--o{ LOAN_CREDIT_CHECKS : evaluated_by
+    LOAN_ACCOUNTS ||--o{ EMI_SCHEDULES : schedules
+    LOAN_ACCOUNTS ||--o{ LOAN_REPAYMENTS : receives
+    LOAN_ACCOUNTS ||--o{ LOAN_FORECLOSURES : closed_by
+
+    CHEQUE_BOOKS ||--o{ CHEQUES : contains
+    ACCOUNTS ||--o{ STOP_PAYMENT_REQUESTS : "stops"
+
+    CURRENCIES ||--o{ EXCHANGE_RATES : quoted
+    CURRENCIES ||--o{ ACCOUNTS : denominated
+
+    NOTIFICATION_TEMPLATES ||--o{ NOTIFICATION_LOGS : renders
+
+    AUDIT_LOG }o..o{ USERS : "actor (polymorphic)"
+
+    USERS {
+        bigint id PK
+        uuid uuid
+        string username
+        string email
+        string password_hash
+        string principal_type
+        string status
+        boolean mfa_enabled
+        string locale
+    }
+    ROLES {
+        bigint id PK
+        string code
+        string name
+    }
+    PERMISSIONS {
+        bigint id PK
+        string code
+        string module
+    }
+    BRANCHES {
+        bigint id PK
+        string code
+        string ifsc
+        string name
+        numeric cash_balance
+    }
+    EMPLOYEES {
+        bigint id PK
+        bigint user_id FK
+        bigint branch_id FK
+        string employee_code
+        string designation
+        numeric salary
+    }
+    CUSTOMERS {
+        bigint id PK
+        uuid uuid
+        string customer_code
+        string full_name
+        date dob
+        string kyc_status
+        int credit_score
+        string risk_category
+    }
+    KYC_DOCUMENTS {
+        bigint id PK
+        bigint customer_id FK
+        string doc_type
+        bytea doc_number_enc
+        string file_path
+        string status
+    }
+    ACCOUNT_PRODUCTS {
+        bigint id PK
+        string code
+        string type
+        string currency
+        numeric interest_rate
+    }
+    ACCOUNTS {
+        bigint id PK
+        uuid uuid
+        string account_number
+        bigint customer_id FK
+        bigint product_id FK
+        bigint branch_id FK
+        string currency
+        numeric balance
+        numeric available_balance
+        string status
+    }
+    FD_ACCOUNTS {
+        bigint id PK
+        bigint account_id FK
+        numeric principal
+        numeric rate
+        int tenure_months
+        date maturity_date
+        numeric maturity_amount
+    }
+    RD_ACCOUNTS {
+        bigint id PK
+        bigint account_id FK
+        numeric monthly_installment
+        numeric rate
+        int tenure_months
+        date maturity_date
+    }
+    TRANSACTIONS {
+        bigint id PK
+        uuid uuid
+        string txn_number
+        string type
+        string channel
+        string status
+        numeric amount
+        string currency
+        bigint from_account_id FK
+        bigint to_account_id FK
+        bigint beneficiary_id FK
+        bigint branch_id FK
+        timestamp completed_at
+    }
+    LEDGER_ACCOUNTS {
+        bigint id PK
+        string code
+        string type
+        string currency
+    }
+    LEDGER_ENTRIES {
+        bigint id PK
+        bigint transaction_id FK
+        bigint ledger_account_id FK
+        string dc
+        numeric amount
+        string currency
+        timestamp value_date
+        bigint reverses_entry_id FK
+    }
+    IDEMPOTENCY_KEYS {
+        string key PK
+        bigint user_id
+        string request_hash
+        int response_status
+        text response_body
+        timestamp expires_at
+    }
+    BENEFICIARIES {
+        bigint id PK
+        bigint customer_id FK
+        string account_number
+        string ifsc
+        boolean is_favorite
+        boolean is_verified
+    }
+    LOAN_PRODUCTS {
+        bigint id PK
+        string code
+        string type
+        numeric min_amount
+        numeric max_amount
+        numeric base_rate
+    }
+    LOAN_APPLICATIONS {
+        bigint id PK
+        string application_no
+        bigint customer_id FK
+        bigint product_id FK
+        bigint branch_id FK
+        numeric principal
+        int tenure_months
+        string status
+    }
+    LOAN_ACCOUNTS {
+        bigint id PK
+        bigint application_id FK
+        bigint account_id FK
+        numeric principal_disbursed
+        numeric rate
+        int tenure_months
+        numeric emi_amount
+        string status
+    }
+    EMI_SCHEDULES {
+        bigint id PK
+        bigint loan_account_id FK
+        int installment_no
+        date due_date
+        numeric principal_due
+        numeric interest_due
+        numeric paid_amount
+        string status
+    }
+    LOAN_REPAYMENTS {
+        bigint id PK
+        bigint loan_account_id FK
+        bigint txn_id FK
+        numeric amount
+        numeric principal_part
+        numeric interest_part
+    }
+    LOAN_FORECLOSURES {
+        bigint id PK
+        bigint loan_account_id FK
+        numeric outstanding
+        string status
+    }
+    CARDS {
+        bigint id PK
+        bigint customer_id FK
+        bigint account_id FK
+        bytea card_number_hash
+        string pan_masked
+        string type
+        string status
+        numeric daily_limit
+    }
+    CHEQUE_BOOKS {
+        bigint id PK
+        bigint account_id FK
+        int from_number
+        int to_number
+        string status
+    }
+    CHEQUES {
+        bigint id PK
+        bigint cheque_book_id FK
+        int cheque_number
+        numeric amount
+        string status
+    }
+    STOP_PAYMENT_REQUESTS {
+        bigint id PK
+        bigint account_id FK
+        int from_number
+        int to_number
+        string status
+    }
+    CURRENCIES {
+        string code PK
+        string name
+        string symbol
+        int decimal_places
+    }
+    EXCHANGE_RATES {
+        bigint id PK
+        string base_currency
+        string quote_currency
+        numeric rate
+        date effective_date
+    }
+    NOTIFICATION_TEMPLATES {
+        bigint id PK
+        string code
+        string channel
+        string locale
+    }
+    NOTIFICATION_LOGS {
+        bigint id PK
+        bigint recipient_user_id FK
+        string channel
+        string template_code
+        string status
+    }
+    AUDIT_LOG {
+        bigint id PK
+        string entity_type
+        bigint entity_id
+        string action
+        jsonb old_value_json
+        jsonb new_value_json
+        bigint actor_id
+        string actor_ip
+        timestamp occurred_at
+    }
+    ACCOUNT_HOLDS {
+        bigint id PK
+        bigint account_id FK
+        numeric amount
+        string status
+    }

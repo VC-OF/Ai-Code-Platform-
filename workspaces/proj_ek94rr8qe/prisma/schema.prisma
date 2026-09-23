@@ -1,0 +1,98 @@
+// Prisma schema for Ideal Folks Invoice System
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Company settings (issuer of the invoice) — Ideal Folks
+model Company {
+  id               String   @id @default(cuid())
+  name             String   // 屋号 / 会社名
+  nameEn           String?  // English name
+  registrationNo   String?  // 適格請求書発行事業者登録番号 (T + 13 digits)
+  postalCode       String?
+  address          String?
+  tel              String?
+  email            String?
+  bankInfo         String?  // 振込先 (free text)
+  logoText         String?  // displayed on invoice
+  taxNote          String?  // 備考
+  defaultTaxRate   Int      @default(10) // 10 standard, 8 reduced
+  invoicePrefix    String   @default("IF")
+  nextInvoiceSeq   Int      @default(1)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model Customer {
+  id             String   @id @default(cuid())
+  name           String   // 宛名 (company or person)
+  nameKana       String?  // フリガナ
+  honorific      String   @default("御中") // 御中 / 様
+  postalCode     String?
+  address        String?
+  registrationNo String?  // customer's 登録番号
+  tel            String?
+  email          String?
+  note           String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  invoices       Invoice[]
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  code        String?  @unique
+  name        String
+  description String?
+  unitPrice   Int      // JPY (no decimals)
+  taxRate     Int      @default(10) // 10 standard, 8 reduced, 0 exempt
+  unit        String   @default("個")
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  items       InvoiceItem[]
+}
+
+model Invoice {
+  id              String   @id @default(cuid())
+  number          String   @unique // e.g. IF-2026-0001
+  issueDate       DateTime
+  dueDate         DateTime?
+  status          String   @default("draft") // draft / issued / paid / void
+  subject         String?  // 件名 (title)
+  remarks         String?  // 但書 / 備考
+  // amounts (stored as JPY integer)
+  subtotal10      Int      @default(0) // 標準税率対象額
+  subtotal8       Int      @default(0) // 軽減税率対象額
+  subtotal0       Int      @default(0) // 非課税 / 免税
+  tax10           Int      @default(0)
+  tax8            Int      @default(0)
+  total           Int      @default(0)
+  withholding     Int      @default(0) // 源泉徴収額 (memo)
+  customerId      String
+  customer        Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  items           InvoiceItem[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model InvoiceItem {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  name        String
+  description String?
+  quantity    Int     @default(1)
+  unit        String  @default("個")
+  unitPrice   Int
+  taxRate     Int     @default(10)
+  lineTotal   Int
+  position    Int     @default(0)
+}
