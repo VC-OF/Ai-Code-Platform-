@@ -122,14 +122,14 @@ export default function ToolModal({ onClose }: ToolModalProps) {
           top: 50%;
           left: 50%;
           transform: translate(-50%, -50%);
-          width: 680px;
+          width: min(680px, calc(100vw - 32px));
           max-height: 82vh;
           z-index: 301;
-          background: rgba(18, 18, 23, 0.95);
+          background: var(--bg-surface);
           backdrop-filter: blur(20px);
           -webkit-backdrop-filter: blur(20px);
           border: 1px solid var(--border-base);
-          border-radius: var(--radius-xl);
+          border-radius: var(--radius-md);
           display: flex;
           flex-direction: column;
           overflow: hidden;
@@ -142,7 +142,7 @@ export default function ToolModal({ onClose }: ToolModalProps) {
           align-items: center;
           padding: 16px 22px;
           border-bottom: 1px solid var(--border-subtle);
-          background: rgba(255,255,255,0.02);
+          background: var(--bg-elevated);
           flex-shrink: 0;
         }
 
@@ -167,7 +167,8 @@ export default function ToolModal({ onClose }: ToolModalProps) {
         .tm-body {
           flex: 1;
           overflow-y: auto;
-          padding: 20px 22px;
+          padding: 16px;
+          min-height: 0;
           display: flex;
           flex-direction: column;
           gap: 16px;
@@ -176,7 +177,7 @@ export default function ToolModal({ onClose }: ToolModalProps) {
         /* Step navigator */
         .tm-steps {
           display: flex;
-          background: rgba(0,0,0,0.2);
+          background: var(--bg-base);
           border: 1px solid var(--border-subtle);
           border-radius: var(--radius-md);
           overflow: hidden;
@@ -197,14 +198,14 @@ export default function ToolModal({ onClose }: ToolModalProps) {
           transition: all var(--transition-fast);
         }
         .tm-step:last-child { border-right: none; }
-        .tm-step:hover { background: rgba(255,255,255,0.03); }
+        .tm-step:hover { background: var(--bg-hover); }
 
-        .tm-step--active { background: rgba(0,122,255,0.08) !important; }
+        .tm-step--active { background: var(--brand-glow) !important; }
 
         .tm-step-n {
           width: 22px;
           height: 22px;
-          background: rgba(255,255,255,0.05);
+          background: var(--bg-elevated);
           border: 1px solid var(--border-base);
           border-radius: 50%;
           display: flex;
@@ -215,7 +216,7 @@ export default function ToolModal({ onClose }: ToolModalProps) {
         }
         .tm-step--active .tm-step-n {
           background: var(--brand-glow);
-          border-color: rgba(0,122,255,0.4);
+          border-color: var(--accent-border);
           color: var(--brand);
         }
 
@@ -238,7 +239,7 @@ export default function ToolModal({ onClose }: ToolModalProps) {
         .tm-tbl th {
           text-align: left;
           padding: 8px 12px;
-          background: rgba(255,255,255,0.03);
+          background: var(--bg-elevated);
           color: var(--text-muted);
           font-size: 9px;
           letter-spacing: 0.07em;
@@ -254,7 +255,7 @@ export default function ToolModal({ onClose }: ToolModalProps) {
           line-height: 1.5;
         }
         .tm-tbl tr:last-child td { border-bottom: none; }
-        .tm-tbl tr:hover td { background: rgba(255,255,255,0.02); }
+        .tm-tbl tr:hover td { background: var(--bg-hover); }
 
         .tm-cat  { color: var(--brand); font-weight: 500; font-size: 11px; white-space: nowrap; }
 
@@ -262,7 +263,7 @@ export default function ToolModal({ onClose }: ToolModalProps) {
           font-family: var(--font-mono);
           font-size: 11px;
           color: var(--accent);
-          background: rgba(100,210,255,0.08);
+          background: var(--accent-soft);
           padding: 1px 6px;
           border-radius: 4px;
           white-space: nowrap;
@@ -276,16 +277,16 @@ export default function ToolModal({ onClose }: ToolModalProps) {
           font-weight: 600;
           border: 1px solid;
         }
-        .tm-scope--workspace { background: rgba(48,209,88,0.08); border-color: rgba(48,209,88,0.25); color: var(--success); }
-        .tm-scope--sandbox   { background: rgba(255,159,10,0.08); border-color: rgba(255,159,10,0.25); color: var(--warning); }
-        .tm-scope--network   { background: rgba(100,210,255,0.08); border-color: rgba(100,210,255,0.25); color: var(--cyan); }
-        .tm-scope--project   { background: rgba(152,144,227,0.08); border-color: rgba(152,144,227,0.25); color: var(--violet); }
+        .tm-scope--workspace { background: var(--success-dim); border-color: var(--success-border); color: var(--success); }
+        .tm-scope--sandbox   { background: var(--warning-dim); border-color: var(--accent-border); color: var(--warning); }
+        .tm-scope--network   { background: var(--cyan-soft); border-color: var(--accent-border); color: var(--cyan); }
+        .tm-scope--project   { background: var(--violet-soft); border-color: var(--accent-border); color: var(--violet); }
 
         .tm-desc { font-size: 11px; color: var(--text-muted); }
 
         /* Info block */
         .tm-info {
-          background: rgba(255,255,255,0.02);
+          background: var(--bg-elevated);
           border: 1px solid var(--border-subtle);
           border-radius: var(--radius-md);
           padding: 12px 14px;

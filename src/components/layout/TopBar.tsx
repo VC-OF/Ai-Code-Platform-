@@ -246,8 +246,8 @@ export default function TopBar({
           display: flex;
           align-items: center;
           gap: 8px;
-          background: var(--bg-elevated);
-          border: 1px solid var(--border-subtle);
+          background: var(--bg-surface);
+          border: 1px solid var(--border-base);
           border-radius: var(--radius-md);
           padding: 6px 12px;
           width: 100%;
@@ -275,7 +275,7 @@ export default function TopBar({
         .search-kbd {
           font-size: 9.5px;
           color: var(--text-muted);
-          background: var(--bg-elevated);
+          background: var(--bg-deep);
           border: 1px solid var(--border-subtle);
           border-radius: 4px;
           padding: 1px 4px;
