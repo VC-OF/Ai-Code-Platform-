@@ -343,8 +343,6 @@ function ProjectItem({
   onClick:  () => void;
   onDelete: (e: React.MouseEvent) => void;
 }) {
-  const [hovered, setHovered] = useState(false);
-
   const initials = project.title
     .split(' ')
     .slice(0, 2)
@@ -355,8 +353,6 @@ function ProjectItem({
     <div
       className={`project-item ${active ? 'project-item--active' : ''}`}
       onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
@@ -383,15 +379,13 @@ function ProjectItem({
       </div>
 
       {/* Delete button */}
-      {hovered && (
-        <button
-          className="project-delete"
-          onClick={onDelete}
-          title="Delete project"
-        >
-          ✕
-        </button>
-      )}
+      <button
+        className="project-delete"
+        onClick={onDelete}
+        title="Delete project"
+      >
+        ✕
+      </button>
 
       <style jsx>{`
         .project-item {
@@ -497,8 +491,15 @@ function ProjectItem({
           color: var(--text-muted);
           font-size: 10px;
           cursor: pointer;
-          opacity: 1;
+          opacity: 0;
+          pointer-events: none;
           transition: all var(--transition-fast);
+        }
+
+        .project-item:hover .project-delete,
+        .project-item:focus-within .project-delete {
+          opacity: 1;
+          pointer-events: auto;
         }
 
         .project-delete:hover {
