@@ -167,7 +167,7 @@ function buildDockerInvocation(
   containerName: string,
   extraEnv?: Record<string, string>
 ): { bin: string; args: string[] } {
-  const image = process.env.SANDBOX_IMAGE || 'node:20';
+  const image = process.env.SANDBOX_IMAGE || 'node:20-slim';
   const network = PACKAGE_INSTALL_PATTERN.test(command) ? 'bridge' : 'none';
   const mount = `${path.resolve(cwd).replace(/\\/g, '/')}:/workspace`;
 

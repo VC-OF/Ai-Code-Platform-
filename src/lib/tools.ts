@@ -8,6 +8,7 @@ import { generateImage } from "./imageGen";
 import { getPreviewLogs, getPreviewStatus } from "./previewManager";
 import { callMcpTool, demangleName } from "./mcpClient";
 import { planDb, type PlanTask } from "./db";
+import { getDockerStatus, execInDocker } from "./dockerService";
 
 // ─── Tool Schemas ──────────────────────────────────────────────────────────────
 
@@ -398,6 +399,45 @@ export const TOOL_SCHEMAS = [
           },
         },
         required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "docker_run",
+      description:
+        "Execute a command inside an isolated Docker container with the workspace mounted at /workspace. Useful for multi-language execution (Python, Rust, Node, Go, C/C++) and isolated Linux testing.",
+      parameters: {
+        type: "object",
+        properties: {
+          command: {
+            type: "string",
+            description: "The shell command to run inside the container (e.g. 'python main.py', 'npm test', 'cargo --version')",
+          },
+          image: {
+            type: "string",
+            description: "Optional Docker image (defaults to node:20-slim; options: python:3.11-slim, alpine:3, etc.)",
+          },
+          network: {
+            type: "string",
+            enum: ["bridge", "none"],
+            description: "Network mode. 'bridge' enables network for package downloads, 'none' disables network.",
+          },
+        },
+        required: ["command"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "docker_status",
+      description:
+        "Inspect the host Docker engine status, active containers, images, and container sandbox availability.",
+      parameters: {
+        type: "object",
+        properties: {},
       },
     },
   },
@@ -867,6 +907,40 @@ export async function executeTool(
             : `Command '${command}' ${success ? "succeeded" : `failed (exit ${result.code})`}`,
         };
       }
+
+      // ── docker_run ────────────────────────────────────────────────────
+      case "docker_run": {
+        const command = args.command as string;
+        const image = (args.image as string) || undefined;
+        const network = (args.network as 'bridge' | 'none') || 'bridge';
+        const res = await execInDocker(command, workspace, {
+          image,
+          network,
+          timeoutMs: 180_000,
+        });
+        ctx.commandsRun.push(`docker: ${command}`);
+        const success = res.exitCode === 0;
+        return {
+          success,
+          output: truncate(
+            res.stdout + (res.stderr ? `\nSTDERR:\n${res.stderr}` : "")
+          ),
+          summary: `Docker [${image || 'default'}] '${command}' ${success ? "succeeded" : `failed (exit ${res.exitCode})`}`,
+        };
+      }
+
+      // ── docker_status ─────────────────────────────────────────────────
+      case "docker_status": {
+        const status = await getDockerStatus(true);
+        return {
+          success: status.available,
+          output: JSON.stringify(status, null, 2),
+          summary: status.available
+            ? `Docker Engine online (${status.containersRunning} running, ${status.imagesCount} images, ${status.version || 'v' + status.serverVersion})`
+            : `Docker Engine unavailable: ${status.error}`,
+        };
+      }
+
 
       // ── update_plan ────────────────────────────────────────────────────
       case "update_plan": {

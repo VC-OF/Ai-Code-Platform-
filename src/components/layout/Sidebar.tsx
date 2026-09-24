@@ -39,7 +39,7 @@ export default function Sidebar({
       const res = await fetch('/api/projects', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ title: newName.trim() }),
+        body:    JSON.stringify({ title: newName.trim(), template: 'react-vite' }),
       });
       const data = await res.json();
       const project = data.project;

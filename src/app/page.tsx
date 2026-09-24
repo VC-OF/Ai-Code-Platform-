@@ -46,7 +46,7 @@ export default function App() {
   const [refreshExplorerKey, setRefreshExplorerKey] = useState(0);
   const [showCompletion, setShowCompletion] = useState(false);
   const [showToolModal,  setShowToolModal]  = useState(false);
-  const [selectedModel, setSelectedModel] = useState('llama-3.3-70b-versatile');
+  const [selectedModel, setSelectedModel] = useState('nemotron-3-ultra:cloud');
   const [agentStatus,   setAgentStatus]   = useState<AgentStatus>('done');
   const [previewToken,  setPreviewToken]  = useState(0);
   const [projects,      setProjects]      = useState<Project[]>([]);
@@ -252,6 +252,7 @@ export default function App() {
         onSidebarToggle={() => setSidebarOpen((p) => !p)}
         selectedModel={selectedModel}
         onModelChange={setSelectedModel}
+        agentStatus={agentStatus}
       />
 
       <div className="app-body">
@@ -630,6 +631,18 @@ export default function App() {
   );
 }
 
+function formatRelativeDate(ts: number): string {
+  const diff = Date.now() - ts;
+  const min  = 60_000;
+  const hour = 60 * min;
+  const day  = 24 * hour;
+  if (diff < min)       return 'just now';
+  if (diff < hour)      return `${Math.floor(diff / min)}m ago`;
+  if (diff < day)       return `${Math.floor(diff / hour)}h ago`;
+  if (diff < 7 * day)   return `${Math.floor(diff / day)}d ago`;
+  return new Date(ts).toLocaleDateString();
+}
+
 // ─── Welcome screen ───────────────────────────────────────────────────────────
 function WelcomeScreen({
   onProjectSelect,
@@ -844,6 +857,7 @@ function WelcomeScreen({
                     </div>
                     <span className="wp-name">{p.title}</span>
                     {p.kind === 'build' && <span className="wp-build-badge">Build</span>}
+                    <span className="wp-date">{formatRelativeDate(p.updatedAt)}</span>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13} className="wp-arrow">
                       <path d="M9 18l6-6-6-6"/>
                     </svg>
@@ -1162,6 +1176,14 @@ function WelcomeScreen({
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
+        }
+
+        .wp-date {
+          font-size: 11px;
+          color: var(--text-muted);
+          margin-left: auto;
+          margin-right: 8px;
+          flex-shrink: 0;
         }
 
         .wp-arrow {

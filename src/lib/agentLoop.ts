@@ -28,7 +28,7 @@ import crypto from 'crypto';
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MAX_STEPS    = 25;
 const MAX_DURATION = 5 * 60_000;   // 5 minutes total
-const STEP_TIMEOUT = 60_000;       // 60s per LLM call
+const STEP_TIMEOUT = 300_000;      // 5 min per LLM call (prevents premature timeout on reasoning models)
 const COMPACT_AT   = 0.60;         // Compact at 60% context
 const COMPACT_TO   = 0.40;         // Compact down to 40%
 
@@ -57,6 +57,8 @@ export interface AgentLoopOptions {
   /** Persisted task plan from earlier turns — injected as context so the
    *  agent resumes interrupted work instead of starting over. */
   currentPlan?: PlanTask[];
+  /** Execution mode: 'auto' (autonomous), 'manual' (step approval), or 'plan' (architect) */
+  executionMode?: 'auto' | 'manual' | 'plan';
 }
 
 export interface AgentLoopResult {
@@ -532,6 +534,57 @@ export async function runAgentLoop(
               emitter.checkpoint(stepIndex, sha, 0);
             } catch {
               // Not fatal if checkpoint fails
+            }
+          }
+
+          // Manual execution mode: require approval before running mutating actions
+          const MUTATING_TOOLS = new Set([
+            'edit_file',
+            'create_file',
+            'replace_lines',
+            'delete_file',
+            'run_command',
+            'docker_run',
+            'deploy_app',
+          ]);
+
+          if (opts.executionMode === 'manual' && MUTATING_TOOLS.has(toolName) && opts.waitForUserInput) {
+            let targetSummary = '';
+            if (typeof toolArgs.path === 'string') targetSummary = `file "${toolArgs.path}"`;
+            else if (typeof toolArgs.command === 'string') targetSummary = `command "${(toolArgs.command as string).slice(0, 80)}"`;
+            else targetSummary = JSON.stringify(toolArgs).slice(0, 80);
+
+            const question = `🛡️ [Manual Approval Required]\nAllow tool \`${toolName}\` on ${targetSummary}?\n\nArguments:\n\`\`\`json\n${JSON.stringify(toolArgs, null, 2).slice(0, 600)}\n\`\`\``;
+            const pauseStart = Date.now();
+            const answer = await opts.waitForUserInput(question, ['Approve', 'Skip Tool', 'Cancel Run']);
+            pausedMs += Date.now() - pauseStart;
+
+            if (answer && answer.toLowerCase().includes('skip')) {
+              const skippedResult = {
+                success: false,
+                output: `Action '${toolName}' was skipped by user in Manual Mode. Please provide an alternative approach or report to the user.`,
+                summary: `Action '${toolName}' skipped by user`,
+              };
+              emitter.toolStart(stepIndex, toolCallId, toolName, toolArgs);
+              emitter.toolEnd(stepIndex, toolCallId, toolName, 0, false, skippedResult.summary);
+              messages.push({
+                role: 'tool',
+                content: skippedResult.output,
+                tool_call_id: toolCallId,
+                tool_name: toolName,
+              });
+              continue;
+            } else if (answer && answer.toLowerCase().includes('cancel')) {
+              cancellation.cancel();
+              return {
+                success: false,
+                reason: 'user_cancelled',
+                stepsCompleted: stepIndex,
+                filesChanged: [...ctx.filesCreated, ...ctx.filesEdited],
+                totalTokens,
+                durationMs: Date.now() - startTime - pausedMs,
+                finalMessage: 'Turn cancelled by user during manual tool approval.',
+              };
             }
           }
 

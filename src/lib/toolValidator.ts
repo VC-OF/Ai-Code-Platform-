@@ -29,6 +29,10 @@ const toolSchemas = {
     path: z.string().min(1).max(500),
   }),
   
+  list_files: z.object({
+    path: z.string().max(500).optional().default('.'),
+  }).optional().default({ path: '.' }),
+
   glob_files: z.object({
     pattern: z.string().min(1).max(200),
   }),
@@ -101,6 +105,13 @@ const toolSchemas = {
   run_tests: z.object({
     pattern: z.string().max(200).optional(),
   }).optional(),
+  
+  docker_run: z.object({
+    command: z.string().min(1).max(2000),
+    image: z.string().max(200).optional(),
+    network: z.enum(['none', 'bridge']).optional(),
+  }),
+  docker_status: z.object({}).optional(),
 };
 
 export type ToolName = keyof typeof toolSchemas;

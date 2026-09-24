@@ -16,7 +16,7 @@ export interface ModelInfo {
 }
 
 const DEFAULT_MODEL_INFO: ModelInfo = {
-  contextWindow: 32_000,
+  contextWindow: 2_000_000,
   costPer1kIn: 0,
   costPer1kOut: 0,
 };
@@ -41,7 +41,11 @@ const MODELS: Record<string, Partial<ModelInfo>> = {
   'qwen/qwen3.6-27b':          { contextWindow: 128_000 },
   'openai/gpt-oss-120b':       { contextWindow: 128_000 },
   'openai/gpt-oss-20b':        { contextWindow: 128_000 },
+  'qwen/qwen3.8-27b':          { contextWindow: 128_000 },
+  'allam-2-7b':                { contextWindow: 128_000 },
   // Ollama cloud
+  'nemotron-3-ultra:cloud':    { contextWindow: 2_000_000 },
+  'nemotron-3-super:cloud':    { contextWindow: 2_000_000 },
   'minimax-m3:cloud':          { contextWindow: 128_000 },
   'qwen3-coder-next:cloud':    { contextWindow: 128_000 },
   'glm-5.2:cloud':             { contextWindow: 128_000 },
@@ -49,8 +53,8 @@ const MODELS: Record<string, Partial<ModelInfo>> = {
   'gpt-oss:120b':              { contextWindow: 128_000 },
   'gpt-oss:20b':               { contextWindow: 128_000 },
   'nemotron-3-nano:30b':       { contextWindow: 128_000 },
-  'nemotron-3-super':          { contextWindow: 128_000 },
-  'nemotron-3-ultra':          { contextWindow: 128_000 },
+  'nemotron-3-super':          { contextWindow: 2_000_000 },
+  'nemotron-3-ultra':          { contextWindow: 2_000_000 },
   // Ollama local
   'qwen2.5-coder:32b':         { contextWindow: 32_000 },
   'llama3.1':                  { contextWindow: 32_000 },
@@ -78,6 +82,11 @@ export function getModelInfo(rawModel: string): ModelInfo {
 }
 
 export function getContextWindow(model: string): number {
+  const envLimit = process.env.CONTEXT_WINDOW || process.env.LLM_CONTEXT_WINDOW;
+  if (envLimit) {
+    const parsed = parseInt(envLimit, 10);
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
   return getModelInfo(model).contextWindow;
 }
 
@@ -152,14 +161,15 @@ export function resolveProvider(
   model?: string,
   keys: Record<string, string> = {}
 ): ProviderConfig {
+  const targetModel = model || process.env.LLM_MODEL || process.env.OPENAI_MODEL || 'nemotron-3-ultra:cloud';
   const keyFor = (env: string | null) =>
     env ? keys[env] || process.env[env] || '' : '';
 
   // 1. Explicit provider prefix
-  if (model) {
-    const colon = model.indexOf(':');
+  if (targetModel) {
+    const colon = targetModel.indexOf(':');
     if (colon > 0) {
-      const prefix = model.slice(0, colon);
+      const prefix = targetModel.slice(0, colon);
       const provider = PROVIDERS.find((p) => p.prefix === prefix);
       if (provider) {
         const apiKey = keyFor(provider.keyEnv);
@@ -168,7 +178,7 @@ export function resolveProvider(
           name: provider.id,
           baseURL: providerBaseURL(provider),
           apiKey: apiKey || (needsKey ? '' : 'local'),
-          model: model.slice(colon + 1),
+          model: targetModel.slice(colon + 1),
           missingKeyError:
             needsKey && !apiKey
               ? `${provider.keyEnv} is not set. Add it in Settings → Environment Variables (global) or .env.local.`
@@ -179,13 +189,13 @@ export function resolveProvider(
   }
 
   // 2. Groq heuristics
-  if (model && GROQ_MODEL_PATTERN.test(model)) {
+  if (targetModel && GROQ_MODEL_PATTERN.test(targetModel)) {
     const apiKey = keyFor('GROQ_API_KEY');
     return {
       name: 'groq',
       baseURL: providerBaseURL(PROVIDERS.find((p) => p.id === 'groq')!),
       apiKey,
-      model,
+      model: targetModel,
       missingKeyError: apiKey
         ? undefined
         : 'GROQ_API_KEY is not set. Add it in Settings → Environment Variables (global) or .env.local.',
@@ -193,12 +203,12 @@ export function resolveProvider(
   }
 
   // 3. Ollama heuristics
-  if (model && OLLAMA_MODEL_PATTERN.test(model)) {
+  if (targetModel && OLLAMA_MODEL_PATTERN.test(targetModel)) {
     return {
       name: 'ollama',
       baseURL: process.env.OLLAMA_BASE_URL || 'http://localhost:11434/v1',
       apiKey: 'ollama', // Ollama's OpenAI-compatible endpoint ignores the key
-      model,
+      model: targetModel,
     };
   }
 
@@ -217,7 +227,7 @@ export function resolveProvider(
     name: 'default',
     baseURL,
     apiKey: apiKey || (isLocal ? 'ollama' : ''),
-    model,
+    model: model || process.env.LLM_MODEL || process.env.OPENAI_MODEL || 'nemotron-3-ultra:cloud',
     missingKeyError:
       apiKey || isLocal
         ? undefined

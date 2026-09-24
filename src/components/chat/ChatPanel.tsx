@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { StatusIndicator, type AgentStatus } from '../StatusIndicator';
 import { TimelineEvent } from '../TimelineEvent';
 import MessageInput from './MessageInput';
@@ -72,6 +72,31 @@ const PROMPT_TEMPLATES: { label: string; hint: string; prompt: string }[] = [
     hint: 'Explain how something works',
     prompt: 'Read the relevant files and explain how this works: ',
   },
+  {
+    label: 'Compact',
+    hint: 'Compact working context (2M token limit)',
+    prompt: '/compact',
+  },
+  {
+    label: 'Context',
+    hint: 'Inspect context metrics (2M token limit)',
+    prompt: '/context',
+  },
+  {
+    label: 'Skills',
+    hint: 'Inspect active Antigravity & project skills',
+    prompt: '/skills',
+  },
+  {
+    label: 'Docker',
+    hint: 'Inspect Docker engine and sandbox status',
+    prompt: '/docker',
+  },
+  {
+    label: 'Mode',
+    hint: 'Switch execution mode: Auto / Manual / Plan',
+    prompt: '/mode',
+  },
 ];
 
 interface ChatPanelProps {
@@ -112,6 +137,64 @@ export default function ChatPanel({
   const [plan, setPlan] = useState<PlanTask[]>([]);
   const [planCollapsed, setPlanCollapsed] = useState(false);
   const [lastDoneReason, setLastDoneReason] = useState<string | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [currentToolInfo, setCurrentToolInfo] = useState<{ name: string; detail?: string } | null>(null);
+
+  const [executionMode, setExecutionMode] = useState<'auto' | 'manual' | 'plan'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('oc-execution-mode');
+      if (saved === 'manual' || saved === 'plan' || saved === 'auto') return saved;
+    }
+    return 'auto';
+  });
+
+  const handleModeChange = (mode: 'auto' | 'manual' | 'plan') => {
+    setExecutionMode(mode);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('oc-execution-mode', mode);
+    }
+  };
+
+  const [contextInfo, setContextInfo] = useState<{
+    tokens: number;
+    limit: number;
+    ratio: number;
+    messageCount: number;
+  }>({ tokens: 0, limit: 2_000_000, ratio: 0, messageCount: 0 });
+
+  const loadContextInfo = useCallback(async () => {
+    if (!projectId || projectId === 'default') return;
+    try {
+      const res = await fetch(`/api/chat/context?projectId=${encodeURIComponent(projectId)}&model=${encodeURIComponent(selectedModel || '')}`);
+      if (res.ok) {
+        const data = await res.json();
+        setContextInfo({
+          tokens: Number(data.currentTokens || 0),
+          limit: Number(data.windowSize || 2_000_000),
+          ratio: Number(data.ratio || 0),
+          messageCount: Number(data.messageCount || 0),
+        });
+      }
+    } catch {}
+  }, [projectId, selectedModel]);
+
+  useEffect(() => {
+    loadContextInfo();
+  }, [loadContextInfo, historyReloadKey, timeline.length]);
+
+  // Live timer while agent is executing
+  useEffect(() => {
+    if (!loading) {
+      setElapsedSeconds(0);
+      setCurrentToolInfo(null);
+      return;
+    }
+    const t0 = Date.now();
+    const interval = setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - t0) / 1000));
+    }, 500);
+    return () => clearInterval(interval);
+  }, [loading]);
 
   // Restore the persisted plan when opening a project
   useEffect(() => {
@@ -222,6 +305,19 @@ export default function ChatPanel({
           } else if (
             ['message', 'tool_start', 'tool_end', 'tool_error', 'checkpoint', 'compaction', 'verification', 'plan'].includes(event.type)
           ) {
+            if (event.type === 'tool_start') {
+              const toolEvt = event as unknown as { toolName?: string; args?: Record<string, unknown> };
+              const toolName = toolEvt.toolName ?? 'tool';
+              const args = toolEvt.args || {};
+              const detail = (args.path || args.file || args.command || args.query || args.question || '') as string;
+              setCurrentToolInfo({
+                name: toolName,
+                detail: detail ? String(detail).slice(0, 50) : undefined,
+              });
+            } else if (event.type === 'tool_end' || event.type === 'tool_error') {
+              setCurrentToolInfo(null);
+            }
+
             setTimeline((t) => {
               if (event.type === 'message') {
                 const exists = t.some((item) => item.type === 'message' && item.role === event.role && item.content === event.content);
@@ -258,6 +354,7 @@ export default function ChatPanel({
       setLoading(false);
       setStreamingText('');
       setPendingQuestion(null);
+      setCurrentToolInfo(null);
       updateStatus(sawError ? 'error' : 'done');
     }
   };
@@ -315,6 +412,7 @@ export default function ChatPanel({
         projectId,
         activeFilePath,
         model: selectedModel,
+        mode: executionMode,
       }),
     });
 
@@ -462,6 +560,231 @@ export default function ChatPanel({
         return;
       }
 
+      if (command.name === 'context') {
+        try {
+          const res = await fetch(`/api/chat/context?projectId=${encodeURIComponent(projectId)}&model=${encodeURIComponent(selectedModel || '')}`);
+          const data = await res.json();
+          const tokensFmt = Number(data.currentTokens || 0).toLocaleString();
+          const windowFmt = Number(data.windowSize || 2_000_000).toLocaleString();
+          const pct = ((data.ratio || 0) * 100).toFixed(2);
+          const thresholdFmt = Number(data.compactThreshold || 1_200_000).toLocaleString();
+
+          const content = `📊 **Context Window Metrics (2M Limit Active)**\n` +
+            `• **Context Window Limit**: \`${windowFmt} tokens\` (2 Million tokens)\n` +
+            `• **Current Context Usage**: \`${tokensFmt} tokens\` (${pct}%)\n` +
+            `• **Message Count**: \`${data.messageCount ?? timeline.length} messages\`\n` +
+            `• **Compaction Threshold**: \`${thresholdFmt} tokens\` (60%)\n` +
+            `• **Status**: ${Number(data.currentTokens) > Number(data.compactThreshold) ? '⚠️ Near auto-compaction threshold' : '🟢 Healthy (plenty of room for deep reasoning)'}\n\n` +
+            `💡 *Type \`/compact\` or click the Compact pill to summarize and compress working memory.*`;
+
+          setTimeline((t) => [
+            ...t,
+            { type: 'message', role: 'assistant', content, ts: Date.now() },
+          ]);
+        } catch {
+          setTimeline((t) => [
+            ...t,
+            {
+              type: 'message',
+              role: 'assistant',
+              content: `📊 **Context Window**: 2,000,000 tokens limit. Working messages: ${timeline.length}.`,
+              ts: Date.now(),
+            },
+          ]);
+        }
+        return;
+      }
+
+      if (command.name === 'compact') {
+        try {
+          setTimeline((t) => [
+            ...t,
+            { type: 'message', role: 'assistant', content: '⏳ Compacting working context into memory brief…', ts: Date.now() },
+          ]);
+          const res = await fetch('/api/chat/compact', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ projectId, model: selectedModel }),
+          });
+          const data = await res.json();
+          if (data.compacted) {
+            setTimeline((t) => [
+              ...t.filter((m) => m.content !== '⏳ Compacting working context into memory brief…'),
+              {
+                type: 'compaction',
+                before: data.before,
+                after: data.after,
+                ts: Date.now(),
+              } as any,
+              {
+                type: 'message',
+                role: 'assistant',
+                content: `✨ **Context successfully compacted!**\n• Messages: \`${data.before.messages} → ${data.after.messages}\`\n• Tokens: \`${Number(data.before.tokens).toLocaleString()} → ${Number(data.after.tokens).toLocaleString()} tokens\`\n• Limit: \`${Number(data.windowSize || 2_000_000).toLocaleString()} tokens\` (2M limit)\n${data.summary ? `\n> **Summary Memory:**\n> ${data.summary}` : ''}`,
+                ts: Date.now(),
+              },
+            ]);
+            setHistoryReloadKey((k) => k + 1);
+            loadContextInfo();
+          } else {
+            setTimeline((t) => [
+              ...t.filter((m) => m.content !== '⏳ Compacting working context into memory brief…'),
+              {
+                type: 'message',
+                role: 'assistant',
+                content: `ℹ️ ${data.message || 'Context is already compact and does not need compaction.'}`,
+                ts: Date.now(),
+              },
+            ]);
+          }
+        } catch (err) {
+          setTimeline((t) => [
+            ...t.filter((m) => m.content !== '⏳ Compacting working context into memory brief…'),
+            {
+              type: 'message',
+              role: 'assistant',
+              content: `❌ Failed to compact context: ${err instanceof Error ? err.message : String(err)}`,
+              ts: Date.now(),
+            },
+          ]);
+        }
+        return;
+      }
+
+      if (command.name === 'skills') {
+        try {
+          const res = await fetch(`/api/skills?projectId=${encodeURIComponent(projectId)}`);
+          const data = await res.json();
+          if (data.skills && data.skills.length > 0) {
+            const list = data.skills
+              .map(
+                (s: any) =>
+                  `• **\`${s.name}\`**: ${s.description}\n  *(Source: \`${s.source}\`)*`
+              )
+              .join('\n\n');
+            setTimeline((t) => [
+              ...t,
+              {
+                type: 'message',
+                role: 'assistant',
+                content: `🛠️ **Active Skills (${data.count} available in context):**\n\n${list}\n\n*These skills are automatically injected into the agent loop and applied when matching your coding tasks.*`,
+                ts: Date.now(),
+              },
+            ]);
+          } else {
+            setTimeline((t) => [
+              ...t,
+              {
+                type: 'message',
+                role: 'assistant',
+                content: 'ℹ️ No skills currently discovered. Add skills to `.opencode/skills/` or root `skills/`.',
+                ts: Date.now(),
+              },
+            ]);
+          }
+        } catch (err) {
+          setTimeline((t) => [
+            ...t,
+            {
+              type: 'message',
+              role: 'assistant',
+              content: `❌ Failed to load skills: ${err instanceof Error ? err.message : String(err)}`,
+              ts: Date.now(),
+            },
+          ]);
+        }
+        return;
+      }
+
+      if (command.name === 'docker') {
+        try {
+          const res = await fetch('/api/docker/status?containers=true&refresh=true');
+          const data = await res.json();
+          if (data.available) {
+            const containerList =
+              data.containers && data.containers.length > 0
+                ? '\n\n**Active Containers:**\n' +
+                  data.containers
+                    .slice(0, 5)
+                    .map((c: any) => `• \`${c.names || c.id.slice(0, 10)}\` (${c.image}) - *${c.status}*`)
+                    .join('\n')
+                : '\n\n*No running project containers.*';
+
+            setTimeline((t) => [
+              ...t,
+              {
+                type: 'message',
+                role: 'assistant',
+                content: `🐳 **Docker Engine Integrated & Active!**\n\n• **Engine Version**: \`${data.version || 'Online'}\` (${data.osType || 'Linux'})\n• **Sandbox Mode**: \`${data.sandboxModeActive ? 'Active (Isolated Containers)' : 'Available'}\`\n• **Default Sandbox Image**: \`${data.defaultImage}\`\n• **Engine Resources**: \`${data.cpus || 12} CPUs, ${data.memoryGiB || 6.4} GiB RAM allocated\`\n• **Containers**: \`${data.containersRunning} running / ${data.containersTotal} total\` (Images: \`${data.imagesCount}\`)${containerList}\n\n💡 *All agent build, test, and shell executions are safely containerized in throwaway Linux sandboxes.*`,
+                ts: Date.now(),
+              },
+            ]);
+          } else {
+            setTimeline((t) => [
+              ...t,
+              {
+                type: 'message',
+                role: 'assistant',
+                content: `⚠️ **Docker Daemon Offline:** ${data.error || 'Please ensure Docker Desktop is running.'}\n\n*Agent will use host execution until Docker Desktop is started.*`,
+                ts: Date.now(),
+              },
+            ]);
+          }
+        } catch (err) {
+          setTimeline((t) => [
+            ...t,
+            {
+              type: 'message',
+              role: 'assistant',
+              content: `❌ Failed to inspect Docker: ${err instanceof Error ? err.message : String(err)}`,
+              ts: Date.now(),
+            },
+          ]);
+        }
+        return;
+      }
+
+      if (command.name === 'mode') {
+        const arg = (slash.args || '').toLowerCase().trim();
+        let newMode: 'auto' | 'manual' | 'plan' = executionMode;
+        if (arg.includes('manual') || arg === 'm') {
+          newMode = 'manual';
+        } else if (arg.includes('plan') || arg === 'p') {
+          newMode = 'plan';
+        } else if (arg.includes('auto') || arg === 'a') {
+          newMode = 'auto';
+        }
+
+        if (arg && newMode !== executionMode) {
+          handleModeChange(newMode);
+          setTimeline((t) => [
+            ...t,
+            {
+              type: 'message',
+              role: 'assistant',
+              content: `⚙️ **Execution Mode switched to \`${newMode.toUpperCase()}\`**\n\n${
+                newMode === 'manual'
+                  ? '🛡️ **Manual (Supervised)**: Agent will request your explicit approval before modifying files, running shell commands, or executing docker containers.'
+                  : newMode === 'plan'
+                  ? '📋 **Plan-First (Architect)**: Agent will analyze the codebase and construct a structured plan before making file changes.'
+                  : '⚡ **Auto (Autonomous)**: Agent will autonomously read, plan, edit, and verify tasks to completion without interruptions.'
+              }`,
+              ts: Date.now(),
+            },
+          ]);
+        } else {
+          setTimeline((t) => [
+            ...t,
+            {
+              type: 'message',
+              role: 'assistant',
+              content: `⚙️ **Current Execution Mode**: \`${executionMode.toUpperCase()}\`\n\n• \`/mode auto\` — ⚡ **Autonomous**: Full-speed agent loop without interactive pauses.\n• \`/mode manual\` — 🛡️ **Supervised**: Prompts for approval on every file edit and command execution.\n• \`/mode plan\` — 📋 **Architect**: Formulates structured multi-step plan before making edits.\n\n*You can also switch modes anytime using the Mode toggle above the prompt box.*`,
+              ts: Date.now(),
+            },
+          ]);
+        }
+        return;
+      }
+
       text = command.prompt?.(slash.args) ?? slash.args;
       if (!text.trim()) return;
     }
@@ -511,6 +834,7 @@ export default function ChatPanel({
         projectId,
         activeFilePath,
         model: selectedModel,
+        mode: executionMode,
       }),
     });
 
@@ -625,7 +949,7 @@ export default function ChatPanel({
           {/* Live agent status while a turn is running */}
           {loading && (
             <div className="agent-status-row">
-              <StatusIndicator status={agentStatus} />
+              <StatusIndicator status={agentStatus} elapsedSeconds={elapsedSeconds} />
             </div>
           )}
           <div ref={endRef} />
@@ -648,9 +972,27 @@ export default function ChatPanel({
               {plan.map((t) => (
                 <div key={t.id} className={`plan-task plan-task--${t.status}`}>
                   <span className="plan-task-mark">
-                    {t.status === 'completed' ? '✓' : t.status === 'in_progress' ? '●' : '○'}
+                    {t.status === 'completed' ? (
+                      <span className="plan-check">✓</span>
+                    ) : t.status === 'in_progress' ? (
+                      loading ? (
+                        <svg className="plan-spinner" viewBox="0 0 16 16" fill="none" width={12} height={12}>
+                          <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2.5" strokeOpacity="0.25" />
+                          <path d="M14 8a6 6 0 00-6-6" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+                        </svg>
+                      ) : (
+                        <span className="plan-paused-dot">●</span>
+                      )
+                    ) : (
+                      <span className="plan-pending-circle">○</span>
+                    )}
                   </span>
                   <span className="plan-task-title">{t.title}</span>
+                  {t.status === 'in_progress' && (
+                    <span className={`plan-task-tag ${loading ? 'plan-task-tag--running' : 'plan-task-tag--paused'}`}>
+                      {loading ? 'RUNNING' : 'PAUSED'}
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
@@ -658,18 +1000,139 @@ export default function ChatPanel({
         </div>
       )}
 
-      {/* ── Continue banner after an interrupted turn ────────────────────── */}
-      {!loading && (lastDoneReason === 'max_steps' || lastDoneReason === 'timeout') && (
+      {/* ── Prominent Live Agent Activity Card (Visible whenever agent is running) ── */}
+      {loading && (
+        <div className="agent-live-card">
+          <div className="agent-live-glow-beam" />
+          <div className="agent-live-content">
+            <div className="agent-live-logo-box">
+              <span className="agent-live-radar-ring" />
+              <svg viewBox="0 0 24 24" fill="none" width={16} height={16} className="agent-live-bolt">
+                <path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z" fill="currentColor" />
+              </svg>
+            </div>
+            <div className="agent-live-info">
+              <div className="agent-live-row-top">
+                <span className="agent-live-badge">AGENT ACTIVE</span>
+                <span className="agent-live-timer">
+                  ⏱ {Math.floor(elapsedSeconds / 60)}:{(elapsedSeconds % 60).toString().padStart(2, '0')}
+                </span>
+                <span className="agent-live-status-pill">{agentStatus}</span>
+              </div>
+              <div className="agent-live-desc">
+                {currentToolInfo ? (
+                  <span>
+                    Executing <strong>{currentToolInfo.name}</strong>
+                    {currentToolInfo.detail && <span className="agent-live-detail"> · {currentToolInfo.detail}</span>}
+                  </span>
+                ) : (
+                  <span>
+                    {agentStatus === 'planning' ? 'Analyzing requirements and planning next action…'
+                      : agentStatus === 'writing' ? 'Writing code modifications to workspace…'
+                      : agentStatus === 'reading' ? 'Reading project workspace files…'
+                      : agentStatus === 'linting' ? 'Verifying code syntax & running linter…'
+                      : agentStatus === 'testing' ? 'Executing automated tests…'
+                      : agentStatus === 'compacting' ? 'Compacting conversation context…'
+                      : agentStatus === 'waiting' ? 'Waiting for your response…'
+                      : 'Synthesizing response and executing steps…'}
+                  </span>
+                )}
+              </div>
+            </div>
+            <button
+              type="button"
+              className="agent-live-stop-btn"
+              onClick={cancelRun}
+              title="Stop agent turn (Esc)"
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor" width={10} height={10}>
+                <rect x="5" y="5" width="14" height="14" rx="2" />
+              </svg>
+              Stop
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Plan Continuation Card (When paused/stopped with uncompleted tasks) ── */}
+      {!loading && plan.length > 0 && plan.some((t) => t.status !== 'completed') && (
+        <div className="plan-continue-card">
+          <div className="plan-continue-top">
+            <div className="plan-continue-badge-wrap">
+              <span className="plan-continue-paused-dot" />
+              <span className="plan-continue-badge-text">
+                {lastDoneReason === 'max_steps' || lastDoneReason === 'timeout'
+                  ? 'TURN LIMIT REACHED'
+                  : 'PAUSED · READY FOR NEXT STEP'}
+              </span>
+            </div>
+            <span className="plan-continue-count">
+              {plan.filter((t) => t.status === 'completed').length}/{plan.length} TASKS DONE
+            </span>
+          </div>
+
+          {(() => {
+            const nextTask = plan.find((t) => t.status === 'in_progress') || plan.find((t) => t.status === 'pending');
+            return nextTask ? (
+              <div className="plan-continue-next-row">
+                <span className="plan-continue-next-label">Next Task:</span>
+                <span className="plan-continue-next-title">{nextTask.title}</span>
+              </div>
+            ) : null;
+          })()}
+
+          <div className="plan-continue-btn-row">
+            <button
+              type="button"
+              className="plan-continue-btn plan-continue-btn--primary"
+              onClick={() => {
+                setLastDoneReason(null);
+                const nextTask = plan.find((t) => t.status === 'in_progress') || plan.find((t) => t.status === 'pending');
+                const nextInstruction = nextTask
+                  ? `Continue executing the plan. Next task is: "${nextTask.title}". Please proceed with implementing and verifying.`
+                  : 'Continue working through the remaining tasks in the plan until complete.';
+                executePrompt(nextInstruction, history);
+              }}
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor" width={12} height={12}>
+                <path d="M8 5v14l11-7z" />
+              </svg>
+              Continue Next Task
+            </button>
+            <button
+              type="button"
+              className="plan-continue-btn plan-continue-btn--ghost"
+              onClick={() => {
+                const nextTask = plan.find((t) => t.status === 'in_progress') || plan.find((t) => t.status === 'pending');
+                setInput(nextTask ? `Regarding task "${nextTask.title}": ` : 'Continue: ');
+                (document.querySelector('.input-textarea') as HTMLTextAreaElement)?.focus();
+              }}
+            >
+              Custom Instructions…
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Plan Completed Celebration Banner ── */}
+      {!loading && plan.length > 0 && plan.every((t) => t.status === 'completed') && (
+        <div className="plan-completed-banner">
+          <span className="plan-completed-check">✓</span>
+          <span className="plan-completed-text">All {plan.length} plan tasks completed successfully!</span>
+        </div>
+      )}
+
+      {/* ── Continue banner after an interrupted turn (fallback when no plan) ── */}
+      {!loading && plan.length === 0 && (lastDoneReason === 'max_steps' || lastDoneReason === 'timeout') && (
         <div className="continue-banner">
           <span>
-            The turn hit its {lastDoneReason === 'timeout' ? 'time' : 'step'} limit —
-            the plan is saved.
+            The turn hit its {lastDoneReason === 'timeout' ? 'time' : 'step'} limit.
           </span>
           <button
             className="continue-btn"
             onClick={() => {
               setLastDoneReason(null);
-              setInput('Continue working through the plan from where you left off.');
+              setInput('Continue from where you left off.');
               (document.querySelector('.input-textarea') as HTMLTextAreaElement)?.focus();
             }}
           >
@@ -678,21 +1141,63 @@ export default function ChatPanel({
         </div>
       )}
 
-      {/* ── Prompt template pills (above input) ──────────────────────────── */}
+      {/* ── Prompt template pills & execution mode selector (above input) ─ */}
       <div className="slash-pills">
+        {/* Execution Mode Selector */}
+        <div className="mode-toggle-group">
+          <button
+            type="button"
+            className={`mode-toggle-btn ${executionMode === 'auto' ? 'mode-toggle-btn--active' : ''}`}
+            title="Auto Mode: Autonomous execution without pauses"
+            onClick={() => handleModeChange('auto')}
+          >
+            ⚡ Auto
+          </button>
+          <button
+            type="button"
+            className={`mode-toggle-btn ${executionMode === 'manual' ? 'mode-toggle-btn--active' : ''}`}
+            title="Manual Mode: Requires human approval before running file edits and shell/docker commands"
+            onClick={() => handleModeChange('manual')}
+          >
+            🛡️ Manual
+          </button>
+          <button
+            type="button"
+            className={`mode-toggle-btn ${executionMode === 'plan' ? 'mode-toggle-btn--active' : ''}`}
+            title="Plan First Mode: Agent formulates architectural plan before editing"
+            onClick={() => handleModeChange('plan')}
+          >
+            📋 Plan
+          </button>
+        </div>
+        <div className="slash-pills-divider" />
         {PROMPT_TEMPLATES.map((tpl) => (
           <button
             key={tpl.label}
             className="slash-pill"
             title={tpl.hint}
             onClick={() => {
-              setInput(tpl.prompt);
-              (document.querySelector('.input-textarea') as HTMLTextAreaElement)?.focus();
+              if (tpl.prompt.startsWith('/')) {
+                executePrompt(tpl.prompt, history);
+              } else {
+                setInput(tpl.prompt);
+                (document.querySelector('.input-textarea') as HTMLTextAreaElement)?.focus();
+              }
             }}
           >
             {tpl.label}
           </button>
         ))}
+        <div
+          className="context-badge-pill"
+          title={`Context Usage: ${contextInfo.tokens.toLocaleString()} / 2,000,000 tokens (${((contextInfo.tokens / (contextInfo.limit || 2_000_000)) * 100).toFixed(2)}%). 2M token limit active.`}
+          onClick={() => executePrompt('/context', history)}
+        >
+          <span className="context-indicator-dot" />
+          <span className="context-badge-text">
+            {contextInfo.tokens >= 1000 ? `${(contextInfo.tokens / 1000).toFixed(1)}k` : contextInfo.tokens} / 2.0M tokens
+          </span>
+        </div>
       </div>
 
       {/* ── Message Input (Bottom prompt widget) ────────────────────────── */}
@@ -942,11 +1447,11 @@ export default function ChatPanel({
         /* Scrollable Timeline area */
         .chat-timeline {
           flex: 1;
-          min-height: 0;
+          min-height: 120px;
           overflow-y: auto;
           display: flex;
           flex-direction: column;
-          gap: 12px;
+          gap: 10px;
           padding-right: 4px;
         }
 
@@ -1039,32 +1544,382 @@ export default function ChatPanel({
         .plan-toggle { color: var(--text-muted); font-size: 11px; }
 
         .plan-tasks {
-          padding: 2px 12px 10px;
+          padding: 2px 12px 8px;
           display: flex;
           flex-direction: column;
-          gap: 4px;
-          max-height: 160px;
+          gap: 3px;
+          max-height: 125px;
           overflow-y: auto;
         }
 
         .plan-task {
           display: flex;
-          align-items: baseline;
+          align-items: center;
           gap: 8px;
           font-size: 12px;
           line-height: 1.4;
+          padding: 4px 6px;
+          border-radius: var(--radius-sm);
+          transition: background var(--transition-fast);
         }
 
-        .plan-task-mark { flex-shrink: 0; width: 12px; }
-        .plan-task--completed .plan-task-mark { color: var(--success); }
+        .plan-task-mark {
+          flex-shrink: 0;
+          width: 14px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .plan-check { color: var(--success); font-weight: bold; }
+        .plan-paused-dot { color: var(--warning, #f59e0b); font-size: 13px; }
+        .plan-pending-circle { color: var(--text-disabled); font-size: 12px; }
+
+        .plan-spinner {
+          animation: spin 0.85s linear infinite;
+          color: var(--brand);
+          flex-shrink: 0;
+        }
+
+        .plan-task-title {
+          flex: 1;
+        }
+
         .plan-task--completed .plan-task-title {
           color: var(--text-muted);
           text-decoration: line-through;
         }
-        .plan-task--in_progress .plan-task-mark { color: var(--brand); }
-        .plan-task--in_progress .plan-task-title { color: var(--text-primary); font-weight: 500; }
-        .plan-task--pending .plan-task-mark { color: var(--text-disabled); }
-        .plan-task--pending .plan-task-title { color: var(--text-secondary); }
+
+        .plan-task--in_progress {
+          background: rgba(255, 107, 0, 0.05);
+          border: 1px solid rgba(255, 107, 0, 0.15);
+        }
+
+        .plan-task--in_progress .plan-task-title {
+          color: var(--text-primary);
+          font-weight: 600;
+        }
+
+        .plan-task--pending .plan-task-title {
+          color: var(--text-secondary);
+        }
+
+        .plan-task-tag {
+          font-size: 8.5px;
+          font-weight: 700;
+          letter-spacing: 0.06em;
+          padding: 1px 6px;
+          border-radius: 10px;
+          flex-shrink: 0;
+          text-transform: uppercase;
+        }
+
+        .plan-task-tag--running {
+          background: var(--brand);
+          color: #fff;
+          box-shadow: 0 0 6px rgba(255, 107, 0, 0.4);
+          animation: pulse-soft 1.2s infinite;
+        }
+
+        .plan-task-tag--paused {
+          background: rgba(245, 158, 11, 0.18);
+          color: var(--warning, #f59e0b);
+          border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+
+        /* ── Live Agent Activity Card ── */
+        .agent-live-card {
+          position: relative;
+          background: var(--bg-surface);
+          border: 1px solid var(--accent-border, rgba(255, 107, 0, 0.4));
+          border-radius: var(--radius-md);
+          overflow: hidden;
+          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12), 0 0 15px rgba(255, 107, 0, 0.12);
+          flex-shrink: 0;
+        }
+
+        .agent-live-glow-beam {
+          height: 2px;
+          width: 100%;
+          background: linear-gradient(90deg, transparent, var(--brand), #ff9800, transparent);
+          background-size: 200% 100%;
+          animation: live-beam-scan 2s linear infinite;
+        }
+
+        @keyframes live-beam-scan {
+          0% { background-position: -200% 0; }
+          100% { background-position: 200% 0; }
+        }
+
+        .agent-live-content {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 10px 14px;
+        }
+
+        .agent-live-logo-box {
+          position: relative;
+          width: 32px;
+          height: 32px;
+          border-radius: 8px;
+          background: var(--brand);
+          color: #000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 0 12px rgba(255, 107, 0, 0.4);
+          flex-shrink: 0;
+        }
+
+        .agent-live-radar-ring {
+          position: absolute;
+          inset: -4px;
+          border-radius: 12px;
+          border: 1.5px solid var(--brand);
+          opacity: 0;
+          animation: radar-wave 1.8s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+        }
+
+        @keyframes radar-wave {
+          0% { transform: scale(0.9); opacity: 0.8; }
+          100% { transform: scale(1.4); opacity: 0; }
+        }
+
+        .agent-live-bolt {
+          animation: bolt-pulse 1.2s ease-in-out infinite alternate;
+        }
+
+        @keyframes bolt-pulse {
+          0% { transform: scale(0.95); opacity: 0.9; }
+          100% { transform: scale(1.1); opacity: 1; }
+        }
+
+        .agent-live-info {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          gap: 3px;
+          min-width: 0;
+        }
+
+        .agent-live-row-top {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .agent-live-title {
+          font-family: var(--font-brand);
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0.05em;
+          color: var(--brand);
+        }
+
+        .agent-live-timer {
+          font-family: var(--font-mono);
+          font-size: 10.5px;
+          font-weight: 600;
+          color: var(--text-primary);
+          background: var(--bg-elevated);
+          border: 1px solid var(--border-subtle);
+          padding: 1px 6px;
+          border-radius: 4px;
+        }
+
+        .agent-live-status-pill {
+          font-size: 9px;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          color: var(--text-secondary);
+          background: var(--bg-elevated);
+          border: 1px solid var(--border-subtle);
+          padding: 1px 6px;
+          border-radius: 10px;
+        }
+
+        .agent-live-desc {
+          font-size: 11.5px;
+          color: var(--text-secondary);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .agent-live-tool-name {
+          color: var(--brand);
+          font-family: var(--font-mono);
+        }
+
+        .agent-live-detail {
+          color: var(--text-muted);
+          font-family: var(--font-mono);
+          font-size: 10.5px;
+        }
+
+        .agent-live-stop-btn {
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          padding: 5px 12px;
+          background: rgba(255, 69, 58, 0.12);
+          color: var(--error, #ef4444);
+          border: 1px solid rgba(255, 69, 58, 0.35);
+          border-radius: var(--radius-sm);
+          font-size: 11px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all var(--transition-fast);
+          flex-shrink: 0;
+        }
+
+        .agent-live-stop-btn:hover {
+          background: var(--error, #ef4444);
+          color: #fff;
+          box-shadow: 0 0 10px rgba(255, 69, 58, 0.4);
+        }
+
+        /* ── Plan Continuation Card ── */
+        .plan-continue-card {
+          background: var(--bg-surface);
+          border: 1px solid var(--accent-border, rgba(255, 107, 0, 0.35));
+          border-radius: var(--radius-md);
+          padding: 12px 14px;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          flex-shrink: 0;
+          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+        }
+
+        .plan-continue-top {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+        }
+
+        .plan-continue-badge-wrap {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+
+        .plan-continue-paused-dot {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: var(--warning, #d97706);
+          box-shadow: 0 0 6px var(--warning, #d97706);
+        }
+
+        .plan-continue-badge-text {
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0.04em;
+          color: var(--warning, #d97706);
+        }
+
+        .plan-continue-count {
+          font-size: 10px;
+          font-weight: 700;
+          color: var(--text-secondary);
+          background: var(--bg-elevated);
+          border: 1px solid var(--border-subtle);
+          padding: 2px 8px;
+          border-radius: 10px;
+        }
+
+        .plan-continue-next-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 12px;
+          color: var(--text-primary);
+          background: var(--bg-elevated);
+          padding: 7px 10px;
+          border-radius: var(--radius-sm);
+          border: 1px solid var(--border-base);
+        }
+
+        .plan-continue-next-label {
+          color: var(--brand);
+          font-size: 10px;
+          text-transform: uppercase;
+          font-weight: 700;
+          letter-spacing: 0.05em;
+          flex-shrink: 0;
+        }
+
+        .plan-continue-next-title {
+          color: var(--text-primary);
+          font-weight: 600;
+        }
+
+        .plan-continue-btn-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .plan-continue-btn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          font-size: 12px;
+          font-weight: 600;
+          border-radius: var(--radius-sm);
+          padding: 7px 14px;
+          cursor: pointer;
+          transition: all var(--transition-fast);
+        }
+
+        .plan-continue-btn--primary {
+          background: var(--brand);
+          color: #fff;
+          border: none;
+          box-shadow: 0 0 12px rgba(255, 107, 0, 0.3);
+          flex: 1.2;
+        }
+
+        .plan-continue-btn--primary:hover {
+          filter: brightness(1.15);
+          box-shadow: 0 0 18px rgba(255, 107, 0, 0.5);
+        }
+
+        .plan-continue-btn--ghost {
+          background: rgba(255, 255, 255, 0.04);
+          color: var(--text-secondary);
+          border: 1px solid var(--border-base);
+          flex: 1;
+        }
+
+        .plan-continue-btn--ghost:hover {
+          background: var(--bg-hover);
+          color: var(--text-primary);
+        }
+
+        .plan-completed-banner {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 12px;
+          background: rgba(48, 209, 88, 0.08);
+          border: 1px solid rgba(48, 209, 88, 0.3);
+          border-radius: var(--radius-md);
+          color: var(--success);
+          font-size: 12px;
+          font-weight: 600;
+          flex-shrink: 0;
+        }
+
+        .plan-completed-check {
+          font-size: 14px;
+          font-weight: bold;
+        }
 
         /* ── Continue banner ── */
         .continue-banner {
@@ -1305,6 +2160,82 @@ export default function ChatPanel({
           background: rgba(255,255,255,0.06);
           border-color: var(--border-base);
           color: var(--text-primary);
+        }
+        .context-badge-pill {
+          margin-left: auto;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 4px 10px;
+          background: rgba(0, 229, 255, 0.05);
+          border: 1px solid rgba(0, 229, 255, 0.2);
+          border-radius: var(--radius-full);
+          font-size: 10px;
+          font-family: var(--font-mono);
+          color: #00e5ff;
+          cursor: pointer;
+          transition: all var(--transition-fast);
+          user-select: none;
+        }
+        .context-badge-pill:hover {
+          background: rgba(0, 229, 255, 0.12);
+          border-color: rgba(0, 229, 255, 0.4);
+          box-shadow: 0 0 10px rgba(0, 229, 255, 0.15);
+        }
+        .context-indicator-dot {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: #00e5ff;
+          box-shadow: 0 0 6px #00e5ff;
+          display: inline-block;
+        }
+        .context-badge-text {
+          white-space: nowrap;
+          letter-spacing: 0.02em;
+        }
+
+        /* Execution Mode Switcher */
+        .mode-toggle-group {
+          display: inline-flex;
+          align-items: center;
+          background: rgba(255, 255, 255, 0.035);
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-full);
+          padding: 2px;
+          gap: 2px;
+        }
+        .mode-toggle-btn {
+          background: transparent;
+          border: none;
+          color: var(--text-muted);
+          font-size: 10px;
+          font-weight: 500;
+          padding: 3px 8px;
+          border-radius: var(--radius-full);
+          cursor: pointer;
+          transition: all var(--transition-fast);
+          display: inline-flex;
+          align-items: center;
+          gap: 3px;
+          user-select: none;
+        }
+        .mode-toggle-btn:hover {
+          color: var(--text-primary);
+          background: rgba(255, 255, 255, 0.05);
+        }
+        .mode-toggle-btn--active {
+          background: rgba(255, 107, 0, 0.16);
+          color: #ff9d42;
+          font-weight: 600;
+          box-shadow: 0 0 8px rgba(255, 107, 0, 0.2);
+        }
+        .slash-pills-divider {
+          width: 1px;
+          height: 16px;
+          background: var(--border-subtle);
+          margin: 0 2px;
+          align-self: center;
         }
       `}</style>
 

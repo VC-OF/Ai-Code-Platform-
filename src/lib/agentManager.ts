@@ -100,7 +100,8 @@ class AgentManager {
     projectId: string,
     messages: { role: 'system' | 'user' | 'assistant'; content: string }[],
     activeFilePath?: string,
-    requestedModel?: string
+    requestedModel?: string,
+    executionMode: 'auto' | 'manual' | 'plan' = 'auto'
   ): ReadableStream<Uint8Array> {
     // Atomic guard: if an agent is already running for this project,
     // subscribe to it instead of starting a second one
@@ -263,7 +264,7 @@ class AgentManager {
 
         // MCP servers contribute extra tools (mcp_<server>_<tool>)
         const mcpTools = await getMcpToolSchemas().catch(() => []);
-        const skills = await loadSkills(project.workspace);
+        const skills = await loadSkills(project.workspace, { includeGlobal: true });
 
         // Persisted plan from earlier turns → resume context
         const currentPlan = planDb.get(projectId);
@@ -282,6 +283,7 @@ class AgentManager {
           agentsMemory,
           harness: createHarness(project.kind),
           skills,
+          mode: executionMode,
         });
 
         await runAgentLoop({
@@ -306,6 +308,7 @@ class AgentManager {
           waitForUserInput,
           drainQueuedMessages: () => agent.queuedMessages.splice(0),
           currentPlan,
+          executionMode,
         });
 
       } catch (err) {

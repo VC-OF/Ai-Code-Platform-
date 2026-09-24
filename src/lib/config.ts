@@ -22,7 +22,7 @@ const envSchema = z.object({
   DEFAULT_LLM_PROVIDER: z.enum(['ollama', 'openai', 'openrouter'])
     .default('ollama'),
   DEFAULT_MODEL: z.string()
-    .default('qwen2.5-coder:32b'),
+    .default('nemotron-3-ultra:cloud'),
   DEFAULT_TEMPERATURE: z.coerce.number()
     .min(0).max(2)
     .default(0.2),
@@ -32,6 +32,13 @@ const envSchema = z.object({
   AGENT_TIMEOUT_MS: z.coerce.number()
     .int().min(5000)
     .default(300_000),  // 5 minutes
+  
+  // Context limit (tokens)
+  CONTEXT_WINDOW: z.coerce.number().int().default(2_000_000),
+
+  // Docker sandbox settings
+  SANDBOX_MODE: z.enum(['local', 'docker']).default('docker'),
+  SANDBOX_IMAGE: z.string().default('node:20-slim'),
   
   // Preview server
   PREVIEW_PORT_MIN: z.coerce.number().int().default(3100),

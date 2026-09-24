@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useCommandPaletteStore } from '@/hooks/useCommandPalette';
 import type { Project } from '@/types';
+import type { AgentStatus } from '@/components/StatusIndicator';
 
 interface TopBarProps {
   project?:       Project | null;
@@ -11,6 +12,7 @@ interface TopBarProps {
   onSidebarToggle?: () => void;
   selectedModel?: string;
   onModelChange?: (m: string) => void;
+  agentStatus?:   AgentStatus;
 }
 
 export default function TopBar({
@@ -20,10 +22,23 @@ export default function TopBar({
   onSidebarToggle,
   selectedModel,
   onModelChange,
+  agentStatus,
 }: TopBarProps) {
   const [isDark, setIsDark] = useState(false);
   const [healthy, setHealthy] = useState<boolean | null>(null);
+  const [dockerAvailable, setDockerAvailable] = useState<boolean | null>(null);
+  const [execMode, setExecMode] = useState<string>('auto');
   const openPalette = useCommandPaletteStore((s) => s.setOpen);
+
+  // Sync execution mode from localStorage
+  useEffect(() => {
+    const updateMode = () => {
+      setExecMode(localStorage.getItem('oc-execution-mode') || 'auto');
+    };
+    updateMode();
+    const interval = setInterval(updateMode, 1500);
+    return () => clearInterval(interval);
+  }, []);
 
   // Apply saved theme on mount (external-system sync from localStorage)
   useEffect(() => {
@@ -34,14 +49,20 @@ export default function TopBar({
     document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
   }, []);
 
-  // Live backend health for the status badge (was a hardcoded "Online")
+  // Live backend health & docker status
   useEffect(() => {
     let cancelled = false;
-    const check = () =>
+    const check = () => {
       fetch('/api/health')
         .then((r) => r.json())
         .then((d) => !cancelled && setHealthy(d?.status === 'healthy'))
         .catch(() => !cancelled && setHealthy(false));
+
+      fetch('/api/docker/status')
+        .then((r) => r.json())
+        .then((d) => !cancelled && setDockerAvailable(d?.available === true))
+        .catch(() => !cancelled && setDockerAvailable(false));
+    };
     check();
     const t = setInterval(check, 15_000);
     return () => {
@@ -86,38 +107,51 @@ export default function TopBar({
             onChange={(e) => onModelChange?.(e.target.value)}
             className="model-select text-xs px-2 py-1 rounded border outline-none w-56 cursor-pointer transition-colors"
           >
-              <optgroup label="Groq Models">
-                <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile</option>
-                <option value="llama-3.1-8b-instant">llama-3.1-8b-instant</option>
-                <option value="meta-llama/llama-4-scout-17b-16e-instruct">meta-llama/llama-4-scout-17b-16e-instruct</option>
-                <option value="qwen/qwen3-32b">qwen/qwen3-32b</option>
-                <option value="qwen/qwen3.6-27b">qwen/qwen3.6-27b</option>
+              <optgroup label="Ollama Cloud (Free & Available)">
+                <option value="nemotron-3-ultra:cloud">nemotron-3-ultra:cloud (Default)</option>
+                <option value="nemotron-3-super:cloud">nemotron-3-super:cloud</option>
+              </optgroup>
+              <optgroup label="Groq Models (Available)">
                 <option value="openai/gpt-oss-120b">openai/gpt-oss-120b</option>
                 <option value="openai/gpt-oss-20b">openai/gpt-oss-20b</option>
-                <option value="groq/compound">groq/compound</option>
-                <option value="groq/compound-mini">groq/compound-mini</option>
+                <option value="qwen/qwen3.8-27b">qwen/qwen3.8-27b</option>
                 <option value="allam-2-7b">allam-2-7b</option>
               </optgroup>
-              <optgroup label="Ollama Cloud Models">
-                <option value="minimax-m3:cloud">minimax-m3:cloud</option>
-                <option value="qwen3-coder-next:cloud">qwen3-coder-next:cloud</option>
-                <option value="glm-5.2:cloud">glm-5.2:cloud</option>
-                <option value="nemotron-3-ultra:cloud">nemotron-3-ultra:cloud</option>
-              </optgroup>
-              <optgroup label="Local Ollama Models">
-                <option value="deepseek-r1:latest">deepseek-r1:latest</option>
-                <option value="deepseek-r1:8b">deepseek-r1:8b</option>
-                <option value="llama3.1:latest">llama3.1:latest</option>
-              </optgroup>
-              <optgroup label="OpenRouter (needs OPENROUTER_API_KEY)">
-                <option value="openrouter:meta-llama/llama-3.3-70b-instruct:free">llama-3.3-70b (free)</option>
-                <option value="openrouter:qwen/qwen-2.5-coder-32b-instruct:free">qwen-2.5-coder-32b (free)</option>
-                <option value="openrouter:deepseek/deepseek-chat-v3-0324:free">deepseek-v3 (free)</option>
-              </optgroup>
-              <optgroup label="LM Studio (local)">
-                <option value="lmstudio:local-model">currently loaded model</option>
-              </optgroup>
           </select>
+          <span
+            className="text-[10px] text-emerald-400 font-mono font-medium px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 whitespace-nowrap"
+            title="Active model context window limit: 2 Million tokens"
+          >
+            2M Context
+          </span>
+          <span
+            className={`text-[10px] font-mono font-medium px-2 py-0.5 rounded border whitespace-nowrap cursor-default transition-colors ${
+              dockerAvailable === null
+                ? 'text-zinc-500 bg-zinc-500/10 border-zinc-500/20'
+                : dockerAvailable
+                ? 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20'
+                : 'text-zinc-500 bg-zinc-500/10 border-zinc-500/20'
+            }`}
+            title={
+              dockerAvailable
+                ? 'Docker Sandbox Active: Isolated container execution ready (node:20-slim)'
+                : 'Docker Offline: Using Host sandbox'
+            }
+          >
+            {dockerAvailable === null ? '🐳 Docker…' : dockerAvailable ? '🐳 Docker: Active' : '🐳 Docker: Offline'}
+          </span>
+          <span
+            className={`text-[10px] font-mono font-medium px-2 py-0.5 rounded border whitespace-nowrap cursor-default transition-colors ${
+              execMode === 'manual'
+                ? 'text-amber-400 bg-amber-500/10 border-amber-500/20'
+                : execMode === 'plan'
+                ? 'text-blue-400 bg-blue-500/10 border-blue-500/20'
+                : 'text-orange-400 bg-orange-500/10 border-orange-500/20'
+            }`}
+            title={`Active Execution Mode: ${execMode.toUpperCase()}. Switch mode in the chat controls or with /mode.`}
+          >
+            {execMode === 'manual' ? '🛡️ Manual' : execMode === 'plan' ? '📋 Plan' : '⚡ Auto'}
+          </span>
         </div>
       </div>
 
@@ -142,13 +176,26 @@ export default function TopBar({
 
       {/* Right: Actions */}
       <div className="topbar-right">
-        {/* Live backend health badge */}
-        <div className={`system-status ${healthy === false ? 'system-status--down' : ''}`}>
-          <span className={`status-dot ${healthy === false ? 'status-dot--down' : ''}`} />
-          <span>
-            {healthy === null ? 'Checking…' : healthy ? 'System Online' : 'Backend Unreachable'}
-          </span>
-        </div>
+        {/* Live agent status badge if running */}
+        {agentStatus && agentStatus !== 'done' && agentStatus !== 'error' ? (
+          <div className="system-status system-status--agent-active" title={`Agent is actively ${agentStatus}`}>
+            <svg className="agent-spin-icon" viewBox="0 0 16 16" fill="none" width={12} height={12}>
+              <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2.5" strokeOpacity="0.25" />
+              <path d="M14 8a6 6 0 00-6-6" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+            </svg>
+            <span className="agent-status-label">
+              ⚡ Agent {agentStatus === 'planning' ? 'Planning…' : agentStatus === 'writing' ? 'Writing…' : agentStatus === 'reading' ? 'Reading…' : agentStatus === 'running' ? 'Running…' : `${agentStatus}…`}
+            </span>
+          </div>
+        ) : (
+          /* Live backend health badge */
+          <div className={`system-status ${healthy === false ? 'system-status--down' : ''}`}>
+            <span className={`status-dot ${healthy === false ? 'status-dot--down' : ''}`} />
+            <span>
+              {healthy === null ? 'Checking…' : healthy ? 'System Online' : 'Backend Unreachable'}
+            </span>
+          </div>
+        )}
 
         {/* Theme toggle — dark/light */}
         <button className="icon-btn" title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'} onClick={toggleTheme}>
@@ -318,6 +365,33 @@ export default function TopBar({
         .system-status--down {
           color: var(--error);
           border-color: rgba(255, 69, 58, 0.3);
+        }
+
+        .system-status--agent-active {
+          color: var(--brand) !important;
+          background: var(--brand-glow) !important;
+          border-color: var(--accent-border) !important;
+          box-shadow: 0 0 12px rgba(255, 107, 0, 0.22);
+          animation: status-glow 2s ease-in-out infinite;
+        }
+
+        .agent-spin-icon {
+          animation: spin 0.85s linear infinite;
+          flex-shrink: 0;
+        }
+
+        .agent-status-label {
+          font-weight: 600;
+          letter-spacing: 0.02em;
+        }
+
+        @keyframes status-glow {
+          0%, 100% { box-shadow: 0 0 8px rgba(255, 107, 0, 0.2); }
+          50% { box-shadow: 0 0 16px rgba(255, 107, 0, 0.4); }
+        }
+
+        @keyframes spin {
+          100% { transform: rotate(360deg); }
         }
 
         .icon-btn {

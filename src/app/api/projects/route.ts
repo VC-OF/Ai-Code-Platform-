@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
 
     const projects = await getProjects();
     // sort by updatedAt descending
-    projects.sort((a, b) => b.updatedAt - a.createdAt);
+    projects.sort((a, b) => b.updatedAt - a.updatedAt);
     return NextResponse.json({ projects });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
