@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-type Status = "stopped" | "starting" | "running" | "error";
+type Status = "stopped" | "starting" | "running" | "error" | "unavailable";
 type Device = "desktop" | "tablet" | "mobile";
 
 export default function PreviewTab({
@@ -13,6 +13,9 @@ export default function PreviewTab({
   projectId: string;
 }) {
   const [status, setStatus] = useState<Status>("stopped");
+  // Why there is nothing to preview (status "unavailable") / why it failed
+  const [unavailable, setUnavailable] = useState<{ reason?: string; hint?: string; kind?: string } | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
   const [url, setUrl] = useState("");
   const [logs, setLogs] = useState<string[]>([]);
   const [iframeKey, setIframeKey] = useState(0);
@@ -108,6 +111,10 @@ export default function PreviewTab({
       statusRef.current = data.status;
       setUrl(data.url);
       setLogs(data.logs || []);
+      setUnavailable(
+        data.status === "unavailable" ? { reason: data.reason, hint: data.hint, kind: data.kind } : null
+      );
+      setFailure(data.status === "error" ? data.error || null : null);
     } catch {
       // Ignore transient polling failures
     }
@@ -450,16 +457,41 @@ export default function PreviewTab({
                   </svg>
                 </div>
                 <h3 className="preview-offline-title">
-                  {status === "starting" ? "Starting preview server" : "Preview server offline"}
+                  {status === "starting"
+                    ? "Starting preview server"
+                    : status === "unavailable"
+                      ? unavailable?.kind === "unsupported"
+                        ? "This project can't be previewed here"
+                        : "Nothing to run yet"
+                      : status === "error"
+                        ? "Preview failed to start"
+                        : "Preview server offline"}
                 </h3>
                 <p className="preview-offline-desc">
                   {status === "starting"
-                    ? "The development server is starting up."
-                    : "Start the preview server to see your app update live as changes are made."}
+                    ? "The development server is starting up. Installing dependencies can take a minute the first time."
+                    : status === "unavailable"
+                      ? unavailable?.reason || "There's no app in this project yet."
+                      : status === "error"
+                        ? "The dev server exited with an error. The last lines of its output are below."
+                        : "Start the preview server to see your app update live as changes are made."}
                 </p>
+                {status === "unavailable" && unavailable?.hint && (
+                  <p className="preview-offline-hint">{unavailable.hint}</p>
+                )}
+                {status === "error" && failure && (
+                  <pre className="preview-offline-error mono">{failure}</pre>
+                )}
                 {status !== "starting" && (
-                  <button className="start-server-btn" onClick={start}>
-                    Start preview server
+                  <button
+                    className={status === "unavailable" ? "check-again-btn" : "start-server-btn"}
+                    onClick={start}
+                  >
+                    {status === "unavailable"
+                      ? "Check again"
+                      : status === "error"
+                        ? "Try again"
+                        : "Start preview server"}
                   </button>
                 )}
               </div>
@@ -597,7 +629,7 @@ export default function PreviewTab({
                   Running at <span className="mono">{url}</span>
                 </>
               ) : (
-                `Server ${status}`
+                status === "unavailable" ? "Nothing to run" : `Server ${status}`
               )}
             </span>
           )}
@@ -938,6 +970,51 @@ export default function PreviewTab({
           border-radius: var(--radius-md);
           cursor: pointer;
           transition: background var(--transition-fast);
+        }
+        .preview-offline:has(.preview-offline-error) {
+          max-width: 560px;
+        }
+        .preview-offline-hint {
+          font-size: 12px;
+          color: var(--text-secondary);
+          line-height: 1.5;
+          margin: -6px 0 14px;
+          padding: 8px 10px;
+          border-radius: var(--radius-md);
+          background: var(--bg-elevated);
+          border: 1px solid var(--border-subtle);
+          text-align: left;
+        }
+        .preview-offline-error {
+          width: 100%;
+          max-height: 180px;
+          overflow: auto;
+          margin: -6px 0 14px;
+          padding: 8px 10px;
+          font-size: 11px;
+          line-height: 1.45;
+          text-align: left;
+          white-space: pre-wrap;
+          word-break: break-word;
+          color: var(--text-primary);
+          background: var(--bg-elevated);
+          border: 1px solid var(--border-subtle);
+          border-left: 2px solid var(--error);
+          border-radius: var(--radius-md);
+        }
+        .check-again-btn {
+          background: transparent;
+          border: 1px solid var(--border-subtle);
+          color: var(--text-primary);
+          font-family: var(--font-sans);
+          font-weight: 500;
+          font-size: 12px;
+          padding: 6px 12px;
+          border-radius: var(--radius-md);
+          cursor: pointer;
+        }
+        .check-again-btn:hover {
+          background: var(--bg-elevated);
         }
         .start-server-btn:hover {
           background: var(--accent-dim);
