@@ -100,12 +100,12 @@ export default function TopBar({
           <span className="brand-name">Open Code</span>
           <span className="brand-sub">Agent Workspace</span>
         </div>
-        <div className="ml-4 flex items-center gap-2">
-          <span className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider">Model:</span>
+        <div className="topbar-cluster flex items-center gap-1.5 shrink min-w-0">
           <select
             value={selectedModel}
             onChange={(e) => onModelChange?.(e.target.value)}
-            className="model-select text-xs px-2 py-1 rounded border outline-none w-56 cursor-pointer transition-colors"
+            className="model-select text-xs px-2 py-1 rounded border outline-none max-w-[150px] sm:max-w-[190px] cursor-pointer transition-colors truncate"
+            title={`Active Model: ${selectedModel}`}
           >
               <optgroup label="Ollama Cloud (Free & Available)">
                 <option value="nemotron-3-ultra:cloud">nemotron-3-ultra:cloud (Default)</option>
@@ -118,19 +118,22 @@ export default function TopBar({
                 <option value="allam-2-7b">allam-2-7b</option>
               </optgroup>
           </select>
+
           <span
-            className="text-[10px] text-emerald-400 font-mono font-medium px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 whitespace-nowrap"
+            className="topbar-badge topbar-badge--context"
             title="Active model context window limit: 2 Million tokens"
           >
-            2M Context
+            <span className="hidden sm:inline">2M Context</span>
+            <span className="inline sm:hidden">2M</span>
           </span>
+
           <span
-            className={`text-[10px] font-mono font-medium px-2 py-0.5 rounded border whitespace-nowrap cursor-default transition-colors ${
+            className={`topbar-badge ${
               dockerAvailable === null
-                ? 'text-zinc-500 bg-zinc-500/10 border-zinc-500/20'
+                ? 'topbar-badge--neutral'
                 : dockerAvailable
-                ? 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20'
-                : 'text-zinc-500 bg-zinc-500/10 border-zinc-500/20'
+                ? 'topbar-badge--cyan'
+                : 'topbar-badge--neutral'
             }`}
             title={
               dockerAvailable
@@ -138,15 +141,21 @@ export default function TopBar({
                 : 'Docker Offline: Using Host sandbox'
             }
           >
-            {dockerAvailable === null ? '🐳 Docker…' : dockerAvailable ? '🐳 Docker: Active' : '🐳 Docker: Offline'}
+            <span className="hidden sm:inline">
+              {dockerAvailable === null ? '🐳 Docker…' : dockerAvailable ? '🐳 Docker: Active' : '🐳 Docker: Off'}
+            </span>
+            <span className="inline sm:hidden">
+              {dockerAvailable ? '🐳 Active' : '🐳 Off'}
+            </span>
           </span>
+
           <span
-            className={`text-[10px] font-mono font-medium px-2 py-0.5 rounded border whitespace-nowrap cursor-default transition-colors ${
+            className={`topbar-badge ${
               execMode === 'manual'
-                ? 'text-amber-400 bg-amber-500/10 border-amber-500/20'
+                ? 'topbar-badge--amber'
                 : execMode === 'plan'
-                ? 'text-blue-400 bg-blue-500/10 border-blue-500/20'
-                : 'text-orange-400 bg-orange-500/10 border-orange-500/20'
+                ? 'topbar-badge--blue'
+                : 'topbar-badge--orange'
             }`}
             title={`Active Execution Mode: ${execMode.toUpperCase()}. Switch mode in the chat controls or with /mode.`}
           >
@@ -223,19 +232,24 @@ export default function TopBar({
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 0 24px;
+          padding: 0 16px;
+          gap: 12px;
           background: var(--bg-surface);
           backdrop-filter: blur(20px);
           -webkit-backdrop-filter: blur(20px);
           border-bottom: 1px solid var(--border-subtle);
           flex-shrink: 0;
           width: 100%;
+          min-width: 0;
+          overflow: hidden;
         }
 
         .topbar-left {
           display: flex;
           align-items: center;
-          gap: 12px;
+          gap: 10px;
+          min-width: 0;
+          flex-shrink: 1;
         }
 
         .brand-logo {
@@ -247,6 +261,7 @@ export default function TopBar({
           align-items: center;
           justify-content: center;
           box-shadow: none;
+          flex-shrink: 0;
         }
 
         .model-select {
@@ -268,35 +283,102 @@ export default function TopBar({
         .brand-text {
           display: flex;
           flex-direction: column;
+          flex-shrink: 0;
         }
 
         .brand-name {
           font-family: var(--font-brand);
-          font-size: 13.5px;
+          font-size: 13px;
           font-weight: 600;
           color: var(--text-primary);
           line-height: 1.2;
+          white-space: nowrap;
         }
 
         .brand-sub {
-          font-size: 10px;
+          font-size: 9.5px;
           color: var(--text-muted);
+          white-space: nowrap;
+        }
+
+        @media (max-width: 1100px) {
+          .brand-sub {
+            display: none;
+          }
+        }
+
+        .topbar-cluster {
+          margin-left: 6px;
+        }
+
+        .topbar-badge {
+          font-size: 10px;
+          font-family: var(--font-mono);
+          font-weight: 500;
+          padding: 2.5px 7px;
+          border-radius: var(--radius-sm);
+          border: 1px solid transparent;
+          white-space: nowrap;
+          cursor: default;
+          transition: all var(--transition-fast);
+          display: inline-flex;
+          align-items: center;
+          gap: 3px;
+          flex-shrink: 0;
+          user-select: none;
+        }
+
+        .topbar-badge--context {
+          color: #34d399;
+          background: rgba(16, 185, 129, 0.1);
+          border-color: rgba(16, 185, 129, 0.25);
+        }
+
+        .topbar-badge--cyan {
+          color: #22d3ee;
+          background: rgba(6, 182, 212, 0.1);
+          border-color: rgba(6, 182, 212, 0.25);
+        }
+
+        .topbar-badge--neutral {
+          color: var(--text-muted);
+          background: rgba(255, 255, 255, 0.04);
+          border-color: var(--border-subtle);
+        }
+
+        .topbar-badge--amber {
+          color: #fbbf24;
+          background: rgba(245, 158, 11, 0.1);
+          border-color: rgba(245, 158, 11, 0.25);
+        }
+
+        .topbar-badge--blue {
+          color: #60a5fa;
+          background: rgba(59, 130, 246, 0.1);
+          border-color: rgba(59, 130, 246, 0.25);
+        }
+
+        .topbar-badge--orange {
+          color: #fb923c;
+          background: rgba(249, 115, 22, 0.1);
+          border-color: rgba(249, 115, 22, 0.25);
         }
 
         .topbar-middle {
           flex: 1;
-          max-width: 440px;
-          margin: 0 24px;
+          max-width: 360px;
+          min-width: 110px;
+          margin: 0 8px;
         }
 
         .global-search {
           display: flex;
           align-items: center;
-          gap: 8px;
+          gap: 7px;
           background: var(--bg-surface);
           border: 1px solid var(--border-base);
           border-radius: var(--radius-md);
-          padding: 6px 12px;
+          padding: 5px 10px;
           width: 100%;
           cursor: pointer;
           transition: all var(--transition-fast);
@@ -316,11 +398,14 @@ export default function TopBar({
           flex: 1;
           text-align: left;
           color: var(--text-muted);
-          font-size: 11.5px;
+          font-size: 11px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
 
         .search-kbd {
-          font-size: 9.5px;
+          font-size: 9px;
           color: var(--text-muted);
           background: var(--bg-deep);
           border: 1px solid var(--border-subtle);
@@ -333,7 +418,8 @@ export default function TopBar({
         .topbar-right {
           display: flex;
           align-items: center;
-          gap: 14px;
+          gap: 10px;
+          flex-shrink: 0;
         }
 
         .system-status {

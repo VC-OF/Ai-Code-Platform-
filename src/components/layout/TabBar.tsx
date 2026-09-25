@@ -3,12 +3,14 @@
 import type { ActiveTab } from '@/app/page';
 
 interface TabBarProps {
-  active:       ActiveTab;
-  onChange:     (t: ActiveTab) => void;
-  changedFiles: string[];
+  active:            ActiveTab;
+  onChange:          (t: ActiveTab) => void;
+  changedFiles:      string[];
   /** Build Mode projects (arbitrary folders) don't get a live-preview tab —
    *  there's no assumption the folder is even a runnable web app. */
-  showPreview?: boolean;
+  showPreview?:      boolean;
+  explorerOpen?:     boolean;
+  onExplorerToggle?: () => void;
 }
 
 const TABS: Array<{
@@ -26,6 +28,8 @@ export default function TabBar({
   onChange,
   changedFiles,
   showPreview = true,
+  explorerOpen = true,
+  onExplorerToggle,
 }: TabBarProps) {
   const tabs = showPreview ? TABS : TABS.filter((t) => t.id !== 'preview');
   return (
@@ -48,6 +52,29 @@ export default function TabBar({
             )}
           </button>
         ))}
+      </div>
+
+      <div className="tabbar-right-controls">
+        <div className="tabbar-hints">
+          <span className="kbd-hint">
+            <kbd>Ctrl</kbd>+<kbd>K</kbd> palette
+          </span>
+        </div>
+
+        {onExplorerToggle && (
+          <button
+            type="button"
+            className={`tabbar-action-btn ${explorerOpen ? 'tabbar-action-btn--active' : ''}`}
+            onClick={onExplorerToggle}
+            title={explorerOpen ? "Hide File Explorer (maximize editor width)" : "Show File Explorer"}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13}>
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <path d="M15 3v18" />
+            </svg>
+            <span className="tabbar-action-text">{explorerOpen ? 'Hide Files' : 'Files'}</span>
+          </button>
+        )}
       </div>
 
 
@@ -120,10 +147,22 @@ export default function TabBar({
           margin-left: 2px;
         }
 
+        .tabbar-right-controls {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+
         .tabbar-hints {
           display: flex;
           align-items: center;
           gap: 8px;
+        }
+
+        @media (max-width: 1024px) {
+          .tabbar-hints {
+            display: none;
+          }
         }
 
         .kbd-hint {
@@ -142,6 +181,38 @@ export default function TabBar({
           font-size: 9px;
           font-family: var(--font-mono);
           color: var(--text-muted);
+        }
+
+        .tabbar-action-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          padding: 3px 8px;
+          border-radius: var(--radius-sm);
+          background: var(--bg-base);
+          border: 1px solid var(--border-subtle);
+          color: var(--text-secondary);
+          font-size: 11px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all var(--transition-fast);
+          user-select: none;
+        }
+
+        .tabbar-action-btn:hover {
+          background: var(--bg-hover);
+          color: var(--text-primary);
+          border-color: var(--border-base);
+        }
+
+        .tabbar-action-btn--active {
+          color: var(--brand);
+          border-color: rgba(255, 107, 0, 0.3);
+          background: rgba(255, 107, 0, 0.08);
+        }
+
+        .tabbar-action-text {
+          font-size: 10.5px;
         }
       `}</style>
     </div>

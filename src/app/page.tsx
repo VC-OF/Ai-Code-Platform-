@@ -51,6 +51,23 @@ export default function App() {
   const [previewToken,  setPreviewToken]  = useState(0);
   const [projects,      setProjects]      = useState<Project[]>([]);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
+  const [explorerOpen,  setExplorerOpen]  = useState(true);
+
+  // Sync explorer open/closed preference from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('oc-explorer-open');
+    if (saved !== null) {
+      setExplorerOpen(saved === 'true');
+    }
+  }, []);
+
+  const toggleExplorer = useCallback(() => {
+    setExplorerOpen((prev) => {
+      const next = !prev;
+      localStorage.setItem('oc-explorer-open', String(next));
+      return next;
+    });
+  }, []);
 
   // Media query mobile detector
   const isMobile = useIsMobile('md');
@@ -293,7 +310,7 @@ export default function App() {
                 />
 
                 {/* ── Column 2: Main Area (Metrics + Workspace Tabs) ──────── */}
-                <div className="workspace-column-middle">
+                <div className={`workspace-column-middle ${!explorerOpen ? 'workspace-column-middle--full' : ''}`}>
                   {/* Tab Switcher & Content view */}
                   <div className="editor-tab-workspace">
                     <TabBar
@@ -301,6 +318,8 @@ export default function App() {
                       onChange={setActiveTab}
                       changedFiles={filesChanged}
                       showPreview={activeProject.kind !== 'build'}
+                      explorerOpen={explorerOpen}
+                      onExplorerToggle={toggleExplorer}
                     />
 
                     <div className="panel-area">
@@ -326,14 +345,16 @@ export default function App() {
                 </div>
 
                 {/* ── Column 3: File Explorer (Right Column) ──────────────── */}
-                <div className="workspace-column-right">
-                  <FileExplorer
-                    projectId={activeProject.id}
-                    activeFile={activeFile}
-                    onFileSelect={handleFileSelect}
-                    refreshKey={refreshExplorerKey}
-                  />
-                </div>
+                {explorerOpen && (
+                  <div className="workspace-column-right">
+                    <FileExplorer
+                      projectId={activeProject.id}
+                      activeFile={activeFile}
+                      onFileSelect={handleFileSelect}
+                      refreshKey={refreshExplorerKey}
+                    />
+                  </div>
+                )}
               </div>
 
               {/* ── Bottom Execution / Control Footer Bar ──────────────────── */}
@@ -508,6 +529,10 @@ export default function App() {
           padding: 12px 0;
         }
 
+        .workspace-column-middle--full {
+          padding: 12px 12px 12px 0;
+        }
+
         .workspace-column-right {
           width: 260px;
           flex-shrink: 0;
@@ -525,11 +550,13 @@ export default function App() {
           border-radius: var(--radius-sm);
           overflow: hidden;
           background: var(--bg-deep);
+          min-width: 0;
         }
 
         .panel-area {
           flex: 1;
           overflow: hidden;
+          min-width: 0;
         }
 
         /* Footer execution bar */
@@ -544,20 +571,27 @@ export default function App() {
           justify-content: space-between;
           padding: 0 16px;
           flex-shrink: 0;
+          min-width: 0;
+          overflow: hidden;
         }
 
         .footer-left-controls,
-        .footer-middle-progress,
         .footer-right-actions {
           display: flex;
           flex-direction: column;
           gap: 6px;
+          flex-shrink: 0;
         }
 
         .footer-middle-progress {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
           flex: 1;
-          max-width: 460px;
-          margin: 0 24px;
+          max-width: 440px;
+          min-width: 0;
+          margin: 0 16px;
+          overflow: hidden;
         }
 
         .footer-section-label {

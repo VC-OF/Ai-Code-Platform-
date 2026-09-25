@@ -1023,41 +1023,60 @@ export default function CodeTab({
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 0 12px;
+          padding: 0 10px;
           background: rgba(14, 17, 23, 0.7);
           border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
           flex-shrink: 0;
+          min-width: 0;
+          overflow: hidden;
+          gap: 8px;
         }
 
         .breadcrumb-path {
           display: flex;
           align-items: center;
-          gap: 6px;
+          gap: 4px;
           font-family: var(--font-mono, monospace);
           font-size: 11px;
+          min-width: 0;
+          flex: 1;
+          overflow: hidden;
+          white-space: nowrap;
         }
 
         .breadcrumb-file-icon {
           font-weight: 700;
           font-size: 10.5px;
           margin-right: 2px;
+          flex-shrink: 0;
         }
 
         .path-seg {
           display: flex;
           align-items: center;
-          gap: 6px;
+          gap: 4px;
+          min-width: 0;
+          flex-shrink: 1;
         }
 
         .path-sep {
           color: var(--text-disabled, #484f58);
           font-size: 11px;
+          flex-shrink: 0;
         }
         .path-folder {
           color: var(--text-muted, #8b949e);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          max-width: 90px;
+          white-space: nowrap;
         }
         .path-file {
           color: var(--text-primary, #e6edf3);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          flex-shrink: 0;
         }
 
         .modified-badge {
@@ -1069,12 +1088,14 @@ export default function CodeTab({
           border-radius: 3px;
           font-weight: 600;
           margin-left: 6px;
+          flex-shrink: 0;
         }
 
         .editor-actions {
           display: flex;
           align-items: center;
-          gap: 6px;
+          gap: 5px;
+          flex-shrink: 0;
         }
 
         .tool-action-btn {

@@ -1141,62 +1141,68 @@ export default function ChatPanel({
         </div>
       )}
 
-      {/* ── Prompt template pills & execution mode selector (above input) ─ */}
-      <div className="slash-pills">
-        {/* Execution Mode Selector */}
-        <div className="mode-toggle-group">
-          <button
-            type="button"
-            className={`mode-toggle-btn ${executionMode === 'auto' ? 'mode-toggle-btn--active' : ''}`}
-            title="Auto Mode: Autonomous execution without pauses"
-            onClick={() => handleModeChange('auto')}
+      {/* ── Chat Controls: Tier 1 Utility Bar (Mode & 2M Context) + Tier 2 Horizontal Chips ─ */}
+      <div className="chat-controls-container">
+        {/* Tier 1: Execution Mode & Context Counter */}
+        <div className="chat-utility-bar">
+          <div className="mode-toggle-group">
+            <button
+              type="button"
+              className={`mode-toggle-btn ${executionMode === 'auto' ? 'mode-toggle-btn--active' : ''}`}
+              title="Auto Mode: Autonomous execution without pauses"
+              onClick={() => handleModeChange('auto')}
+            >
+              ⚡ Auto
+            </button>
+            <button
+              type="button"
+              className={`mode-toggle-btn ${executionMode === 'manual' ? 'mode-toggle-btn--active' : ''}`}
+              title="Manual Mode: Requires human approval before running file edits and shell/docker commands"
+              onClick={() => handleModeChange('manual')}
+            >
+              🛡️ Manual
+            </button>
+            <button
+              type="button"
+              className={`mode-toggle-btn ${executionMode === 'plan' ? 'mode-toggle-btn--active' : ''}`}
+              title="Plan First Mode: Agent formulates architectural plan before editing"
+              onClick={() => handleModeChange('plan')}
+            >
+              📋 Plan
+            </button>
+          </div>
+
+          <div
+            className="context-badge-pill"
+            title={`Context Usage: ${contextInfo.tokens.toLocaleString()} / 2,000,000 tokens (${((contextInfo.tokens / (contextInfo.limit || 2_000_000)) * 100).toFixed(2)}%). 2M token limit active.`}
+            onClick={() => executePrompt('/context', history)}
           >
-            ⚡ Auto
-          </button>
-          <button
-            type="button"
-            className={`mode-toggle-btn ${executionMode === 'manual' ? 'mode-toggle-btn--active' : ''}`}
-            title="Manual Mode: Requires human approval before running file edits and shell/docker commands"
-            onClick={() => handleModeChange('manual')}
-          >
-            🛡️ Manual
-          </button>
-          <button
-            type="button"
-            className={`mode-toggle-btn ${executionMode === 'plan' ? 'mode-toggle-btn--active' : ''}`}
-            title="Plan First Mode: Agent formulates architectural plan before editing"
-            onClick={() => handleModeChange('plan')}
-          >
-            📋 Plan
-          </button>
+            <span className="context-indicator-dot" />
+            <span className="context-badge-text">
+              {contextInfo.tokens >= 1000 ? `${(contextInfo.tokens / 1000).toFixed(1)}k` : contextInfo.tokens} / 2.0M tokens
+            </span>
+          </div>
         </div>
-        <div className="slash-pills-divider" />
-        {PROMPT_TEMPLATES.map((tpl) => (
-          <button
-            key={tpl.label}
-            className="slash-pill"
-            title={tpl.hint}
-            onClick={() => {
-              if (tpl.prompt.startsWith('/')) {
-                executePrompt(tpl.prompt, history);
-              } else {
-                setInput(tpl.prompt);
-                (document.querySelector('.input-textarea') as HTMLTextAreaElement)?.focus();
-              }
-            }}
-          >
-            {tpl.label}
-          </button>
-        ))}
-        <div
-          className="context-badge-pill"
-          title={`Context Usage: ${contextInfo.tokens.toLocaleString()} / 2,000,000 tokens (${((contextInfo.tokens / (contextInfo.limit || 2_000_000)) * 100).toFixed(2)}%). 2M token limit active.`}
-          onClick={() => executePrompt('/context', history)}
-        >
-          <span className="context-indicator-dot" />
-          <span className="context-badge-text">
-            {contextInfo.tokens >= 1000 ? `${(contextInfo.tokens / 1000).toFixed(1)}k` : contextInfo.tokens} / 2.0M tokens
-          </span>
+
+        {/* Tier 2: Single-Row Horizontal Action Chips */}
+        <div className="prompt-chips-track">
+          {PROMPT_TEMPLATES.map((tpl) => (
+            <button
+              key={tpl.label}
+              className="prompt-chip-btn"
+              title={tpl.hint}
+              onClick={() => {
+                if (tpl.prompt.startsWith('/')) {
+                  executePrompt(tpl.prompt, history);
+                } else {
+                  setInput(tpl.prompt);
+                  (document.querySelector('.input-textarea') as HTMLTextAreaElement)?.focus();
+                }
+              }}
+            >
+              {tpl.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -2138,61 +2144,22 @@ export default function ChatPanel({
         .slash-cmd  { font-family: var(--font-mono); font-size: 11px; color: var(--brand); min-width: 90px; }
         .slash-desc { font-size: 11px; color: var(--text-muted); }
 
-        /* Slash pills row */
-        .slash-pills {
+        /* ── Chat Controls: Tier 1 Utility Bar + Tier 2 Horizontal Chips ── */
+        .chat-controls-container {
           display: flex;
-          gap: 5px;
-          flex-wrap: wrap;
-          flex-shrink: 0;
-        }
-        .slash-pill {
-          padding: 4px 10px;
-          background: rgba(255,255,255,0.03);
-          border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-full);
-          font-size: 10.5px;
-          color: var(--text-secondary);
-          cursor: pointer;
-          font-family: var(--font-mono);
-          transition: all var(--transition-fast);
-        }
-        .slash-pill:hover {
-          background: rgba(255,255,255,0.06);
-          border-color: var(--border-base);
-          color: var(--text-primary);
-        }
-        .context-badge-pill {
-          margin-left: auto;
-          display: inline-flex;
-          align-items: center;
+          flex-direction: column;
           gap: 6px;
-          padding: 4px 10px;
-          background: rgba(0, 229, 255, 0.05);
-          border: 1px solid rgba(0, 229, 255, 0.2);
-          border-radius: var(--radius-full);
-          font-size: 10px;
-          font-family: var(--font-mono);
-          color: #00e5ff;
-          cursor: pointer;
-          transition: all var(--transition-fast);
-          user-select: none;
+          flex-shrink: 0;
+          width: 100%;
         }
-        .context-badge-pill:hover {
-          background: rgba(0, 229, 255, 0.12);
-          border-color: rgba(0, 229, 255, 0.4);
-          box-shadow: 0 0 10px rgba(0, 229, 255, 0.15);
-        }
-        .context-indicator-dot {
-          width: 6px;
-          height: 6px;
-          border-radius: 50%;
-          background: #00e5ff;
-          box-shadow: 0 0 6px #00e5ff;
-          display: inline-block;
-        }
-        .context-badge-text {
-          white-space: nowrap;
-          letter-spacing: 0.02em;
+
+        .chat-utility-bar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+          width: 100%;
+          min-height: 28px;
         }
 
         /* Execution Mode Switcher */
@@ -2204,6 +2171,7 @@ export default function ChatPanel({
           border-radius: var(--radius-full);
           padding: 2px;
           gap: 2px;
+          flex-shrink: 0;
         }
         .mode-toggle-btn {
           background: transparent;
@@ -2211,7 +2179,7 @@ export default function ChatPanel({
           color: var(--text-muted);
           font-size: 10px;
           font-weight: 500;
-          padding: 3px 8px;
+          padding: 2.5px 7px;
           border-radius: var(--radius-full);
           cursor: pointer;
           transition: all var(--transition-fast);
@@ -2219,6 +2187,7 @@ export default function ChatPanel({
           align-items: center;
           gap: 3px;
           user-select: none;
+          white-space: nowrap;
         }
         .mode-toggle-btn:hover {
           color: var(--text-primary);
@@ -2230,12 +2199,76 @@ export default function ChatPanel({
           font-weight: 600;
           box-shadow: 0 0 8px rgba(255, 107, 0, 0.2);
         }
-        .slash-pills-divider {
-          width: 1px;
-          height: 16px;
-          background: var(--border-subtle);
-          margin: 0 2px;
-          align-self: center;
+
+        .context-badge-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 3px 9px;
+          background: rgba(0, 229, 255, 0.05);
+          border: 1px solid rgba(0, 229, 255, 0.2);
+          border-radius: var(--radius-full);
+          font-size: 9.5px;
+          font-family: var(--font-mono);
+          color: #00e5ff;
+          cursor: pointer;
+          transition: all var(--transition-fast);
+          user-select: none;
+          white-space: nowrap;
+          flex-shrink: 0;
+        }
+        .context-badge-pill:hover {
+          background: rgba(0, 229, 255, 0.12);
+          border-color: rgba(0, 229, 255, 0.4);
+          box-shadow: 0 0 10px rgba(0, 229, 255, 0.15);
+        }
+        .context-indicator-dot {
+          width: 5.5px;
+          height: 5.5px;
+          border-radius: 50%;
+          background: #00e5ff;
+          box-shadow: 0 0 6px #00e5ff;
+          display: inline-block;
+        }
+        .context-badge-text {
+          white-space: nowrap;
+          letter-spacing: 0.02em;
+        }
+
+        /* Tier 2: Horizontal Prompt Action Chips */
+        .prompt-chips-track {
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          overflow-x: auto;
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+          padding: 2px 2px;
+          width: 100%;
+          mask-image: linear-gradient(to right, transparent, black 6px, black calc(100% - 6px), transparent);
+          -webkit-mask-image: linear-gradient(to right, transparent, black 6px, black calc(100% - 6px), transparent);
+        }
+        .prompt-chips-track::-webkit-scrollbar {
+          display: none;
+        }
+
+        .prompt-chip-btn {
+          padding: 3.5px 9px;
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-full);
+          font-size: 10.5px;
+          color: var(--text-secondary);
+          cursor: pointer;
+          font-family: var(--font-mono);
+          transition: all var(--transition-fast);
+          white-space: nowrap;
+          flex-shrink: 0;
+        }
+        .prompt-chip-btn:hover {
+          background: rgba(255, 255, 255, 0.07);
+          border-color: var(--border-base);
+          color: var(--text-primary);
         }
       `}</style>
 
