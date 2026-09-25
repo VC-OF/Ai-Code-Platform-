@@ -20,8 +20,14 @@ export interface RunningAgent {
   pendingInput?: { question: string; resolve: (answer: string) => void };
 }
 
+// Run state lives on globalThis so a module re-evaluation (dev HMR, or a
+// route bundle with its own copy) still sees agents that are running — a
+// fresh Map forgot them while their workspace locks stayed held. Only the
+// state is shared, not the instance, so code edits still take effect.
+const sharedState = globalThis as unknown as { __ocActiveAgents?: Map<string, RunningAgent> };
+
 class AgentManager {
-  private activeAgents = new Map<string, RunningAgent>();
+  private activeAgents = (sharedState.__ocActiveAgents ??= new Map<string, RunningAgent>());
 
   getRunningAgent(projectId: string): RunningAgent | undefined {
     return this.activeAgents.get(projectId);

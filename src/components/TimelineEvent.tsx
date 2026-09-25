@@ -1,4 +1,5 @@
 import React from 'react';
+import { browserToolLabel } from './browserToolLabels';
 
 interface TimelineEventProps {
   event: {
@@ -8,7 +9,7 @@ interface TimelineEventProps {
     plan?: string;
     toolName?: string;
     args?: Record<string, unknown>;
-    result?: { success?: boolean; summary?: string };
+    result?: { success?: boolean; summary?: string; screenshotUrl?: string; screenshot?: string };
     durationMs?: number;
     error?: string;
     suggestion?: string;
@@ -53,7 +54,17 @@ export function TimelineEvent({ event }: TimelineEventProps) {
         </div>
       );
 
-    case 'tool_start':
+    case 'tool_start': {
+      const browserLabel = browserToolLabel(event.toolName, event.args);
+      if (browserLabel) {
+        return (
+          <div className={ROW}>
+            <span className={`${DOT} bg-[var(--accent)]`} />
+            <span className="min-w-0 truncate text-[var(--text-primary)]">{browserLabel}</span>
+            <span className={TIME}>{timeStr}</span>
+          </div>
+        );
+      }
       return (
         <div className={ROW}>
           <span className={`${DOT} bg-[var(--accent)]`} />
@@ -66,6 +77,7 @@ export function TimelineEvent({ event }: TimelineEventProps) {
           <span className={TIME}>{timeStr}</span>
         </div>
       );
+    }
 
     case 'tool_end':
       return (
@@ -76,6 +88,16 @@ export function TimelineEvent({ event }: TimelineEventProps) {
           </span>
           <span className="min-w-0 truncate">{event.result?.summary}</span>
           <span className={TIME}>{((event.durationMs ?? 0) / 1000).toFixed(2)}s</span>
+          {event.result?.screenshotUrl && (
+            <a href={event.result.screenshotUrl} target="_blank" rel="noreferrer" title={event.result.screenshot} className="shrink-0">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={event.result.screenshotUrl}
+                alt="Browser screenshot"
+                className="h-12 w-auto rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-elevated)] hover:border-[var(--accent)] transition-colors"
+              />
+            </a>
+          )}
         </div>
       );
 

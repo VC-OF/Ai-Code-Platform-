@@ -5,7 +5,13 @@ import {
   detectPortFromLog,
   withPort,
   EMPTY_REASON,
+  checkComposeConfig,
+  pickComposeWebPort,
+  isInsideWorkspace,
+  pickPythonEntry,
   type NodePlan,
+  type ServicePlan,
+  type CliPlan,
 } from "@/lib/previewPlan";
 
 const pkg = (scripts: Record<string, string>, deps: Record<string, string> = {}, extra = {}) =>
@@ -264,5 +270,235 @@ describe("detectPortFromLog", () => {
     ["nothing here", null],
   ])("%s → %s", (line, port) => {
     expect(detectPortFromLog(line)).toBe(port);
+  });
+});
+
+// ─── Docker-backed plans ─────────────────────────────────────────────────────
+const docker = { docker: true, pythonAvailable: true };
+
+describe("detectRunPlan — docker compose", () => {
+  it("root docker-compose.yml → compose", async () => {
+    const p = await plan({ "docker-compose.yml": "services: {}", "README.md": "" });
+    expect(p).toEqual({ kind: "compose", dir: "", file: "docker-compose.yml" });
+  });
+
+  it("compose.yaml in a direct child dir → compose", async () => {
+    const p = await plan({ "deploy/compose.yaml": "services: {}" });
+    expect(p).toEqual({ kind: "compose", dir: "deploy", file: "deploy/compose.yaml" });
+  });
+
+  it("non-standard name (docker-compose.db.yml) is not a compose plan", async () => {
+    const p = await plan({ "docker-compose.db.yml": "services: {}", "gen.py": "print(1)" }, docker);
+    expect(p.kind).toBe("cli");
+  });
+
+  it("a runnable frontend wins over a compose file", async () => {
+    const p = await plan({
+      "docker-compose.yml": "services: {}",
+      "package.json": pkg({ dev: "vite" }, { vite: "^6" }),
+      "src/main.js": "",
+    });
+    expect(p.kind).toBe("node");
+  });
+
+  it("skipCompose falls through to the next detector", async () => {
+    const p = await plan(
+      {
+        "docker-compose.yml": "services: {}",
+        "apps/api/package.json": pkg({ dev: "tsx watch src/server.ts" }),
+        "apps/api/src/server.ts": "",
+      },
+      { ...docker, skipCompose: true }
+    );
+    expect(p.kind).toBe("node");
+  });
+});
+
+describe("checkComposeConfig — security", () => {
+  const root = "C:\\ws\\proj";
+  const cfg = (svc: Record<string, unknown>) => ({ services: { web: { image: "nginx", ...svc } } });
+
+  it("accepts named volumes, in-workspace binds and ports", () => {
+    const r = checkComposeConfig(
+      cfg({
+        volumes: [
+          { type: "volume", source: "pgdata", target: "/data" },
+          { type: "bind", source: "C:\\ws\\proj\\storage", target: "/app/storage" },
+          "./site:/usr/share/nginx/html:ro",
+        ],
+        ports: [{ target: 80, published: "3000", protocol: "tcp" }, "5432:5432"],
+      }),
+      root
+    );
+    expect(r.ok).toBe(true);
+    expect(r.ports).toEqual([
+      { service: "web", target: 80, published: 3000 },
+      { service: "web", target: 5432, published: 5432 },
+    ]);
+  });
+
+  it.each([
+    [{ privileged: true }, /privileged/],
+    [{ network_mode: "host" }, /network_mode: host/],
+    [{ pid: "host" }, /pid: host/],
+    [{ cap_add: ["SYS_ADMIN"] }, /capabilities/],
+    [{ devices: ["/dev/kvm:/dev/kvm"] }, /devices/],
+    [{ volumes: [{ type: "bind", source: "C:\\Users\\me", target: "/x" }] }, /outside the project/],
+    [{ volumes: [{ type: "bind", source: "C:\\ws\\proj\\..\\other", target: "/x" }] }, /outside the project/],
+    [{ volumes: ["../../:/host"] }, /outside the project/],
+    [{ volumes: ["~/.ssh:/root/.ssh"] }, /outside the project/],
+    [{ volumes: ["/var/run/docker.sock:/var/run/docker.sock"] }, /Docker socket/],
+    [{ volumes: [{ type: "bind", source: "//./pipe/docker_engine", target: "/x" }] }, /outside the project/],
+  ])("refuses %j", (svc, msg) => {
+    const r = checkComposeConfig(cfg(svc), root);
+    expect(r.ok).toBe(false);
+    expect(r.problems.join("\n")).toMatch(msg);
+  });
+
+  it("refuses an empty stack", () => {
+    expect(checkComposeConfig({ services: {} }, root).ok).toBe(false);
+  });
+
+  it("isInsideWorkspace handles case, separators and prefixes", () => {
+    expect(isInsideWorkspace("c:/WS/proj/data", root)).toBe(true);
+    expect(isInsideWorkspace("C:\\ws\\proj2", root)).toBe(false);
+    expect(isInsideWorkspace("/srv/app/x", "/srv/app")).toBe(true);
+    expect(isInsideWorkspace("/srv/application", "/srv/app")).toBe(false);
+  });
+
+  it("pickComposeWebPort prefers web-named services and skips databases", () => {
+    expect(
+      pickComposeWebPort([
+        { service: "postgres", target: 5432, published: 5432 },
+        { service: "api", target: 4000, published: 4000 },
+        { service: "web", target: 80, published: 5173 },
+      ])
+    ).toMatchObject({ service: "web" });
+    expect(pickComposeWebPort([{ service: "db", target: 5432, published: 5432 }])).toBeNull();
+    expect(pickComposeWebPort([{ service: "api", target: 4000, published: 4000 }])).toMatchObject({ service: "api" });
+  });
+});
+
+describe("detectRunPlan — API-only backends (docker)", () => {
+  it("Node backend/ only → api-only node plan", async () => {
+    const p = (await plan(
+      { "backend/package.json": pkg({ start: "node server.js" }), "backend/server.js": "" },
+      docker
+    )) as NodePlan;
+    expect(p.kind).toBe("node");
+    expect(p.apiOnly).toBe(true);
+    expect(p.web).toMatchObject({ dir: "backend", cmd: "npm", args: ["run", "start"], portFromLogs: false });
+    expect(p.installDirs).toEqual(["backend"]);
+  });
+
+  it("Node API inside npm workspaces installs at the root", async () => {
+    const p = (await plan(
+      {
+        "package.json": pkg({ dev: "concurrently a b" }, {}, { workspaces: ["apps/*"] }),
+        "apps/api/package.json": pkg({ dev: "tsx watch src/server.ts" }, { "@prisma/client": "5" }),
+        "apps/api/src/server.ts": "",
+      },
+      docker
+    )) as NodePlan;
+    expect(p.apiOnly).toBe(true);
+    expect(p.installDirs).toEqual([""]);
+    expect(p.prismaDirs).toEqual(["apps/api"]);
+  });
+
+  it("backend without source → none (nothing to run)", async () => {
+    const p = await plan({ "backend/package.json": pkg({ start: "node server.js" }) }, docker);
+    expect(p.kind).toBe("none");
+  });
+
+  it("Spring Boot (mvnw, multi-module) → java service", async () => {
+    const p = (await plan(
+      {
+        ".java-version": "21",
+        "backend/mvnw": "#!/bin/sh",
+        "backend/pom.xml":
+          "<project><parent><artifactId>spring-boot-starter-parent</artifactId></parent><packaging>pom</packaging><modules><module>lib</module><module>app</module></modules></project>",
+        "backend/app/src/main/java/App.java": "@SpringBootApplication class App {}",
+        "backend/lib/src/main/java/Lib.java": "class Lib {}",
+      },
+      docker
+    )) as ServicePlan;
+    expect(p).toMatchObject({
+      kind: "service",
+      lang: "java",
+      dir: "backend",
+      tool: "maven",
+      wrapper: true,
+      module: "app",
+      javaVersion: 21,
+    });
+  });
+
+  it("single-module Spring Boot pom → java service without module", async () => {
+    const p = (await plan(
+      { "pom.xml": "<project><dependency>spring-boot-starter-web</dependency><java.version>17</java.version></project>" },
+      docker
+    )) as ServicePlan;
+    expect(p).toMatchObject({ kind: "service", lang: "java", dir: "", wrapper: false, javaVersion: 17 });
+    expect(p.module).toBeUndefined();
+  });
+
+  it("Go net/http server → go service (hard-coded port detected)", async () => {
+    const p = (await plan(
+      { "go.mod": "module x", "main.go": 'package main\nfunc main(){ http.ListenAndServe(":8080", nil) }' },
+      docker
+    )) as ServicePlan;
+    expect(p).toMatchObject({ kind: "service", lang: "go", fixedPort: 8080 });
+  });
+
+  it("Go server reading PORT → no fixed port", async () => {
+    const p = (await plan(
+      {
+        "go.mod": "module x",
+        "main.go": 'package main\nfunc main(){ p := os.Getenv("PORT"); http.ListenAndServe(":"+p, nil) }',
+      },
+      docker
+    )) as ServicePlan;
+    expect(p.kind).toBe("service");
+    expect(p.fixedPort).toBeUndefined();
+  });
+
+  it("Flask app in backend/ → python plan in that dir", async () => {
+    const p = await plan({ "backend/app.py": "from flask import Flask" }, docker);
+    expect(p).toMatchObject({ kind: "python", framework: "flask", dir: "backend" });
+  });
+
+  it("host mode keeps the old unsupported answer for API-only Node", async () => {
+    const p = await plan({ "backend/package.json": pkg({ start: "node s.js" }), "backend/s.js": "" });
+    expect(p.kind).toBe("unsupported");
+  });
+});
+
+describe("detectRunPlan — CLI programs (docker)", () => {
+  it("Rust crate → cli cargo run", async () => {
+    const p = (await plan({ "Cargo.toml": "[package]", "src/main.rs": "fn main(){}" }, docker)) as CliPlan;
+    expect(p).toMatchObject({ kind: "cli", lang: "rust", command: "cargo run" });
+  });
+
+  it("Go program without a server → cli go run", async () => {
+    const p = await plan({ "go.mod": "module x", "main.go": "package main\nfunc main(){}" }, docker);
+    expect(p).toMatchObject({ kind: "cli", lang: "go", command: "go run ." });
+  });
+
+  it("plain Python scripts → cli with the obvious entry", async () => {
+    const p = (await plan(
+      {
+        "b_tool.py": "print(1)",
+        "a_lib.py": "x = 1",
+        "c.py": 'if __name__ == "__main__":\n  pass',
+        "requirements.txt": "",
+      },
+      docker
+    )) as CliPlan;
+    expect(p).toMatchObject({ kind: "cli", lang: "python", entry: "c.py", hasRequirements: true, command: "python c.py" });
+  });
+
+  it("pickPythonEntry prefers main.py", async () => {
+    ws = await createWorkspace({ "main.py": "", "z.py": "" });
+    expect(pickPythonEntry(ws.root)).toBe("main.py");
   });
 });

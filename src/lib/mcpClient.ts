@@ -240,7 +240,8 @@ class StdioMcpClient {
 
 // ─── Registry ────────────────────────────────────────────────────────────────
 
-const clients = new Map<string, StdioMcpClient>();
+const gm = globalThis as unknown as { __ocMcpClients?: Map<string, StdioMcpClient> };
+const clients = (gm.__ocMcpClients ??= new Map<string, StdioMcpClient>());
 
 async function getClient(serverName: string): Promise<StdioMcpClient | null> {
   const existing = clients.get(serverName);

@@ -8,6 +8,7 @@ import {
   type CheckPlan,
 } from "./stackVerify";
 import { webSearch, fetchUrl, htmlToText } from "./webTools";
+import { BROWSER_TOOL_SCHEMAS, isBrowserTool, executeBrowserTool } from "./browserTools";
 import { generateImage } from "./imageGen";
 import { getPreviewLogs, getPreviewStatus } from "./previewManager";
 import { callMcpTool, demangleName } from "./mcpClient";
@@ -511,6 +512,7 @@ export const TOOL_SCHEMAS = [
       },
     },
   },
+  ...BROWSER_TOOL_SCHEMAS,
 ] as const;
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
@@ -518,9 +520,13 @@ export const TOOL_SCHEMAS = [
 const MAX_READ_CHARS = 32_000;
 const MAX_OUTPUT_CHARS = 8_000;
 
-function truncate(s: string, max = MAX_OUTPUT_CHARS): string {
+export function truncate(s: string, max = MAX_OUTPUT_CHARS): string {
   if (s.length <= max) return s;
-  return s.slice(0, max) + `\n...[truncated ${s.length - max} chars]`;
+  // Keep head AND tail: build/test runners print their summary and final
+  // failures last, which a head-only cut silently dropped
+  const head = Math.floor(max * 0.4);
+  const tail = max - head;
+  return `${s.slice(0, head)}\n...[truncated ${s.length - max} chars]...\n${s.slice(-tail)}`;
 }
 
 // ─── Turn context ──────────────────────────────────────────────────────────────
@@ -595,6 +601,9 @@ export async function executeTool(
 ): Promise<ToolResult> {
   try {
     // MCP tools (mcp_<server>_<tool>) route to their external server
+    if (isBrowserTool(name)) {
+      return await executeBrowserTool(name, args, workspace, projectIdForWorkspace(workspace));
+    }
     if (demangleName(name)) {
       const output = await callMcpTool(name, args);
       return {
@@ -1341,8 +1350,12 @@ export async function executeTool(
         return {
           success: true,
           output: truncate(output),
+          // "passed (0 total)" hid runs where the runner discovered no tests
+          // (e.g. JUnit 5 without a JUnit-Platform-aware surefire)
           summary: passed
-            ? `Tests ✓ passed (${total} total)`
+            ? total > 0
+              ? `Tests ✓ passed (${total} total)`
+              : "Tests ✓ exited 0, but no test count was reported — confirm tests were actually discovered and run"
             : `Tests ✗ failed (${failed}/${total} failing)`,
           structured,
         };

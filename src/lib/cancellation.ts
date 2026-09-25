@@ -68,8 +68,11 @@ export class CancelledError extends Error {
 
 // ─── Active stream registry ───────────────────────────────────────────────────
 // Tracks one cancellation source per project
+// Shared via globalThis so every module copy sees the same sources
+const sharedSources = globalThis as unknown as { __ocStreamSources?: Map<string, CancellationSource> };
+
 class StreamRegistry {
-  private sources = new Map<string, CancellationSource>();
+  private sources = (sharedSources.__ocStreamSources ??= new Map<string, CancellationSource>());
 
   // Register a new stream, cancelling any existing one
   register(projectId: string): CancellationSource {

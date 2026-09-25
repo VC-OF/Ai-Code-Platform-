@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-type Status = "stopped" | "starting" | "running" | "error" | "unavailable";
+type Status = "stopped" | "starting" | "running" | "error" | "unavailable" | "exited";
 type Device = "desktop" | "tablet" | "mobile";
 
 export default function PreviewTab({
@@ -16,6 +16,9 @@ export default function PreviewTab({
   // Why there is nothing to preview (status "unavailable") / why it failed
   const [unavailable, setUnavailable] = useState<{ reason?: string; hint?: string; kind?: string } | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  // CLI projects ("Run in Docker") and notes such as "API server — no web UI"
+  const [cli, setCli] = useState<{ command: string; exitCode?: number | null } | null>(null);
+  const [note, setNote] = useState<string | null>(null);
   const [url, setUrl] = useState("");
   const [logs, setLogs] = useState<string[]>([]);
   const [iframeKey, setIframeKey] = useState(0);
@@ -115,6 +118,8 @@ export default function PreviewTab({
         data.status === "unavailable" ? { reason: data.reason, hint: data.hint, kind: data.kind } : null
       );
       setFailure(data.status === "error" ? data.error || null : null);
+      setCli(data.kind === "cli" && data.command ? { command: data.command, exitCode: data.exitCode } : null);
+      setNote(data.note || null);
     } catch {
       // Ignore transient polling failures
     }
@@ -141,6 +146,17 @@ export default function PreviewTab({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "start", projectId }),
+    });
+    refresh();
+  }
+
+  async function runCli() {
+    setStatus("running");
+    statusRef.current = "running";
+    await fetch("/api/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "run", projectId }),
     });
     refresh();
   }
@@ -411,8 +427,9 @@ export default function PreviewTab({
       {previewSubTab === "browser" && (
         <div className="preview-layout">
           <div className="preview-canvas">
-            {status === "running" ? (
+            {status === "running" && url && !cli ? (
               <div className={`preview-frame-wrapper ${device}`}>
+                {note && <div className="preview-note">{note}</div>}
                 {inspecting && (
                   <div className="inspect-banner">
                     Click any element to reference it in chat. Press Esc to cancel.
@@ -457,7 +474,13 @@ export default function PreviewTab({
                   </svg>
                 </div>
                 <h3 className="preview-offline-title">
-                  {status === "starting"
+                  {cli && status === "running"
+                    ? "Running in Docker"
+                    : cli && status === "exited"
+                      ? `Finished with exit code ${cli.exitCode ?? "?"}`
+                      : cli && status === "unavailable"
+                        ? "This is a command-line program"
+                        : status === "starting"
                     ? "Starting preview server"
                     : status === "unavailable"
                       ? unavailable?.kind === "unsupported"
@@ -468,7 +491,9 @@ export default function PreviewTab({
                         : "Preview server offline"}
                 </h3>
                 <p className="preview-offline-desc">
-                  {status === "starting"
+                  {cli && (status === "running" || status === "exited")
+                    ? <>Output of <code className="mono">{cli.command}</code> is shown in the terminal below.</>
+                    : status === "starting"
                     ? "The development server is starting up. Installing dependencies can take a minute the first time."
                     : status === "unavailable"
                       ? unavailable?.reason || "There's no app in this project yet."
@@ -482,7 +507,17 @@ export default function PreviewTab({
                 {status === "error" && failure && (
                   <pre className="preview-offline-error mono">{failure}</pre>
                 )}
-                {status !== "starting" && (
+                {cli && status !== "running" && (
+                  <button className="start-server-btn" onClick={runCli}>
+                    {status === "exited" ? "Run again" : "Run in Docker"}
+                  </button>
+                )}
+                {cli && status === "running" && (
+                  <button className="check-again-btn" onClick={stop}>
+                    Stop
+                  </button>
+                )}
+                {status !== "starting" && !(cli && status !== "unavailable") && (
                   <button
                     className={status === "unavailable" ? "check-again-btn" : "start-server-btn"}
                     onClick={start}
@@ -973,6 +1008,13 @@ export default function PreviewTab({
         }
         .preview-offline:has(.preview-offline-error) {
           max-width: 560px;
+        }
+        .preview-note {
+          padding: 6px 10px;
+          font-size: 12px;
+          color: var(--text-secondary);
+          background: var(--bg-elevated);
+          border-bottom: 1px solid var(--border-subtle);
         }
         .preview-offline-hint {
           font-size: 12px;

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { BROWSER_ZOD_SCHEMAS } from './browserTools';
 
 const toolSchemas = {
   read_file: z.object({
@@ -129,6 +130,7 @@ const toolSchemas = {
     network: z.enum(['none', 'bridge']).optional(),
   }),
   docker_status: z.object({}).optional(),
+  ...BROWSER_ZOD_SCHEMAS,
 };
 
 export type ToolName = keyof typeof toolSchemas;

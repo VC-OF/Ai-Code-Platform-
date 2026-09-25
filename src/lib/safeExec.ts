@@ -179,6 +179,9 @@ const PACKAGE_INSTALL_PATTERN =
 // Network is also granted to toolchain builds above (cargo/go/mvn/gradle)
 // because they resolve dependencies on demand.
 
+/** $HOME inside sandbox containers (throwaway; caches live on /cache). */
+export const SANDBOX_HOME = '/tmp/home';
+
 export function isDockerMode(): boolean {
   return process.env.SANDBOX_MODE === 'docker';
 }
@@ -218,8 +221,14 @@ function buildDockerInvocation(
       // Shared cargo/go/pip/maven caches (paths set by the polyglot image ENV)
       ...sandboxCacheArgs(),
       '-w', '/workspace',
-      '-e', 'HOME=/workspace',
-      '-e', 'npm_config_cache=/workspace/.npm-cache',
+      // HOME must NOT be the project dir: `cargo init/new` refuses to create
+      // a package in $HOME. User-level installs still persist in the
+      // workspace via PYTHONUSERBASE.
+      '-e', `HOME=${SANDBOX_HOME}`,
+      '-e', 'PYTHONUSERBASE=/workspace/.local',
+      // npm cache on the shared Linux cache volume, not the bind-mounted
+      // workspace: a cold install went from ~4 min to ~1 min on Windows
+      '-e', 'npm_config_cache=/cache/npm',
       '-e', 'CI=true',
       ...envFlags,
       image,
@@ -349,8 +358,11 @@ export async function safeExec(
   return new Promise((resolve, reject) => {
     let timedOut = false;
     let settled = false;
-    let stdout = '';
-    let stderr = '';
+    // Output is capped (head + tail) but the process is NOT killed when it
+    // is chatty — killing turned verbose-but-passing builds/tests into
+    // failures and lost the summary they print last
+    const stdoutBuf = new CappedOutput(LIMITS.maxOutputLen);
+    const stderrBuf = new CappedOutput(LIMITS.maxOutputLen);
 
     const proc = crossSpawn(invocation.bin, invocation.args, {
       cwd,
@@ -383,28 +395,16 @@ export async function safeExec(
       opts.signal?.removeEventListener('abort', onAbort);
     };
 
-    proc.stdout?.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString();
-      if (stdout.length > LIMITS.maxOutputLen) {
-        stdout = stdout.slice(0, LIMITS.maxOutputLen) + '\n[output truncated]';
-        proc.kill('SIGTERM');
-      }
-    });
-
-    proc.stderr?.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString();
-      if (stderr.length > LIMITS.maxOutputLen) {
-        stderr = stderr.slice(0, LIMITS.maxOutputLen) + '\n[output truncated]';
-      }
-    });
+    proc.stdout?.on('data', (chunk: Buffer) => stdoutBuf.push(chunk.toString()));
+    proc.stderr?.on('data', (chunk: Buffer) => stderrBuf.push(chunk.toString()));
 
     proc.on('close', (code: number | null) => {
       if (settled) return;
       settled = true;
       cleanup();
       resolve({
-        stdout: stdout.trimEnd(),
-        stderr: stderr.trimEnd(),
+        stdout: stdoutBuf.toString().trimEnd(),
+        stderr: stderrBuf.toString().trimEnd(),
         code: code ?? 1,
         timedOut,
       });
@@ -417,6 +417,41 @@ export async function safeExec(
       reject(new CommandError(`Process error: ${err.message}`));
     });
   });
+}
+
+// ─── Bounded output buffer ───────────────────────────────────────────────────
+/** Keeps the first 40% and the last 60% of a stream once it exceeds `max`. */
+export class CappedOutput {
+  private head = '';
+  private tail = '';
+  private dropped = 0;
+  private readonly headMax: number;
+  private readonly tailMax: number;
+
+  constructor(max: number) {
+    this.headMax = Math.floor(max * 0.4);
+    this.tailMax = max - this.headMax;
+  }
+
+  push(chunk: string): void {
+    if (this.head.length < this.headMax) {
+      const room = this.headMax - this.head.length;
+      this.head += chunk.slice(0, room);
+      chunk = chunk.slice(room);
+    }
+    if (!chunk) return;
+    this.tail += chunk;
+    if (this.tail.length > this.tailMax) {
+      this.dropped += this.tail.length - this.tailMax;
+      this.tail = this.tail.slice(-this.tailMax);
+    }
+  }
+
+  toString(): string {
+    return this.dropped
+      ? `${this.head}\n[... ${this.dropped} chars of output truncated ...]\n${this.tail}`
+      : this.head + this.tail;
+  }
 }
 
 // ─── Command parser (handles quoted strings) ─────────────────────────────────

@@ -194,7 +194,10 @@ export async function execInDocker(
     '-w',
     '/workspace',
     '-e',
-    'HOME=/workspace',
+    // Not the project dir: `cargo init/new` refuses to run in $HOME
+    'HOME=/tmp/home',
+    '-e',
+    'PYTHONUSERBASE=/workspace/.local',
     '-e',
     'CI=true',
     ...envFlags,

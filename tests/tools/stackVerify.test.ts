@@ -154,4 +154,14 @@ describe('run_command timeout', () => {
     expect(resolveCommandTimeoutMs('ls', 900)).toBe(900_000);
     expect(resolveCommandTimeoutMs('ls', 5000)).toBe(900_000);
   });
+
+  it('never gives installs/builds less than 300s, even inside a cd chain', () => {
+    expect(resolveCommandTimeoutMs('npm install', 120)).toBe(300_000);
+    expect(resolveCommandTimeoutMs('cd client && npm install')).toBe(300_000);
+    expect(resolveCommandTimeoutMs('cd server && npm i express', 60)).toBe(300_000);
+    expect(resolveCommandTimeoutMs('npx vitest run')).toBe(300_000);
+    expect(resolveCommandTimeoutMs('python3 -m venv .venv && .venv/bin/pip install -e .')).toBe(300_000);
+    expect(resolveCommandTimeoutMs('mvn test', 600)).toBe(600_000);
+    expect(resolveCommandTimeoutMs('ls -la', 10)).toBe(10_000);
+  });
 });

@@ -39,6 +39,8 @@ export interface NodePlan {
   kind: "node";
   framework: Framework;
   web: ProcessSpec;
+  /** The "web" process is an API-only backend (no frontend in the project) */
+  apiOnly?: boolean;
   /** Optional API server started alongside the frontend */
   api?: ProcessSpec;
   /** Dirs (relative) whose deps must be installed before starting */
@@ -81,12 +83,68 @@ export interface UnsupportedPlan {
   hint: string;
 }
 
-export type RunPlan = NodePlan | StaticPlan | PythonPlan | NonePlan | UnsupportedPlan;
+/** A docker compose stack (always runs through docker, even in host mode) */
+export interface ComposePlan {
+  kind: "compose";
+  /** Compose file, relative to the workspace root (may be in a direct child dir) */
+  file: string;
+  /** Directory of the compose file, relative to root ("" = root) */
+  dir: string;
+}
+
+/** An API-only backend (no web UI) in a language other than Node */
+export interface ServicePlan {
+  kind: "service";
+  lang: "java" | "go";
+  /** Directory relative to root */
+  dir: string;
+  /** Java: build tool; Go: always "go" */
+  tool: "maven" | "gradle" | "go";
+  /** Java: wrapper script present (mvnw / gradlew) */
+  wrapper: boolean;
+  /** Java: Maven module (relative to dir) holding the Spring Boot app, for multi-module builds */
+  module?: string;
+  /** Java: required JDK major version */
+  javaVersion?: number;
+  /** Go: port hard-coded in the source (published instead of PORT) */
+  fixedPort?: number;
+}
+
+/** A command-line program: not previewable, but runnable on demand */
+export interface CliPlan {
+  kind: "cli";
+  lang: "rust" | "python" | "go";
+  /** Directory relative to root */
+  dir: string;
+  /** Human readable command, e.g. "cargo run" */
+  command: string;
+  /** Python: entry script */
+  entry?: string;
+  hasRequirements?: boolean;
+  reason: string;
+}
+
+export type RunPlan =
+  | NodePlan
+  | StaticPlan
+  | PythonPlan
+  | ComposePlan
+  | ServicePlan
+  | CliPlan
+  | NonePlan
+  | UnsupportedPlan;
 
 export interface DetectOptions {
   /** Whether a Python interpreter can be used (host check or docker image) */
   pythonAvailable?: boolean;
+  /** Docker is used for previews: enables compose / Java / Go / CLI plans */
+  docker?: boolean;
+  /** Ignore compose files (e.g. `docker compose config` rejected the file) */
+  skipCompose?: boolean;
 }
+
+/** Shown in the preview for backends without a web UI */
+export const API_ONLY_NOTE = "API server — no web UI; showing the root response";
 
 export const EMPTY_REASON =
   "This project has no app yet. Ask the agent to build something first.";
@@ -298,35 +356,343 @@ function findStatic(root: string): StaticPlan | null {
 }
 
 // ─── Python ──────────────────────────────────────────────────────────────────
-function detectPythonWeb(root: string): PythonPlan | null {
-  const reqs = (() => {
-    try {
-      return fs.readFileSync(path.join(root, "requirements.txt"), "utf8").toLowerCase();
-    } catch {
-      return "";
-    }
-  })();
-  if (isFile(path.join(root, "manage.py"))) {
-    return { kind: "python", framework: "django", dir: "", entry: "manage.py", hasRequirements: !!reqs };
+const PY_DIRS = ["", "backend", "server", "api", "app", "src"];
+
+function readText(p: string): string {
+  try {
+    return fs.readFileSync(p, "utf8");
+  } catch {
+    return "";
+  }
+}
+
+function detectPythonWebIn(root: string, dir: string): PythonPlan | null {
+  const abs = dir ? path.join(root, dir) : root;
+  const reqs = readText(path.join(abs, "requirements.txt")).toLowerCase();
+  if (isFile(path.join(abs, "manage.py"))) {
+    return { kind: "python", framework: "django", dir, entry: "manage.py", hasRequirements: !!reqs };
   }
   for (const entry of ["app.py", "main.py", "server.py", "wsgi.py"]) {
-    const file = path.join(root, entry);
+    const file = path.join(abs, entry);
     if (!isFile(file)) continue;
-    let src = "";
-    try {
-      src = fs.readFileSync(file, "utf8");
-    } catch {}
+    const src = readText(file);
     if (/\bfrom\s+fastapi\b|\bimport\s+fastapi\b/.test(src) || (reqs.includes("fastapi") && !/flask/.test(src))) {
-      return { kind: "python", framework: "fastapi", dir: "", entry, hasRequirements: !!reqs };
+      return { kind: "python", framework: "fastapi", dir, entry, hasRequirements: !!reqs };
     }
     if (/\bfrom\s+flask\b|\bimport\s+flask\b/.test(src) || reqs.includes("flask")) {
-      return { kind: "python", framework: "flask", dir: "", entry, hasRequirements: !!reqs };
+      return { kind: "python", framework: "flask", dir, entry, hasRequirements: !!reqs };
     }
   }
   return null;
 }
 
-// ─── Non-web project types ───────────────────────────────────────────────────
+function detectPythonWeb(root: string): PythonPlan | null {
+  for (const d of PY_DIRS) {
+    if (d && !isDir(path.join(root, d))) continue;
+    const plan = detectPythonWebIn(root, d);
+    if (plan) return plan;
+  }
+  return null;
+}
+
+/** Pick the script a plain Python project would be run with */
+export function pickPythonEntry(dir: string): string | null {
+  const py = listDir(dir)
+    .filter((f) => f.endsWith(".py") && isFile(path.join(dir, f)))
+    .sort();
+  if (!py.length) return null;
+  for (const f of ["main.py", "app.py", "run.py", "cli.py", "__main__.py"]) if (py.includes(f)) return f;
+  const guarded = py.find((f) => /__name__\s*==\s*["']__main__["']/.test(readText(path.join(dir, f))));
+  return guarded ?? py[0];
+}
+
+// ─── Docker Compose ──────────────────────────────────────────────────────────
+export const COMPOSE_FILES = ["compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"];
+
+function findCompose(root: string): ComposePlan | null {
+  const inDir = (dir: string): ComposePlan | null => {
+    const abs = dir ? path.join(root, dir) : root;
+    const f = COMPOSE_FILES.find((n) => isFile(path.join(abs, n)));
+    return f ? { kind: "compose", dir, file: dir ? `${dir}/${f}` : f } : null;
+  };
+  const top = inDir("");
+  if (top) return top;
+  for (const d of listDir(root).sort()) {
+    if (d.startsWith(".") || d === "node_modules" || !isDir(path.join(root, d))) continue;
+    const hit = inDir(d);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+export interface ComposePort {
+  service: string;
+  /** Port inside the container */
+  target: number;
+  /** Host port (undefined = docker picks one) */
+  published?: number;
+}
+
+export interface ComposeCheck {
+  ok: boolean;
+  /** Why the stack was refused (security) */
+  problems: string[];
+  ports: ComposePort[];
+}
+
+type AnyObj = Record<string, unknown>;
+const asObj = (v: unknown): AnyObj => (v && typeof v === "object" && !Array.isArray(v) ? (v as AnyObj) : {});
+
+/** Normalise a host path for comparison (forward slashes, no trailing slash, `..` resolved) */
+function normHostPath(p: string): string {
+  let n = p.replace(/\\/g, "/");
+  const drive = /^[a-z]:/i.test(n);
+  n = path.posix.normalize(n).replace(/\/+$/, "");
+  return drive ? n.toLowerCase() : n;
+}
+
+/** Is host path `p` the workspace root or inside it? (relative paths resolve against root) */
+export function isInsideWorkspace(p: string, root: string): boolean {
+  const abs = /^[a-z]:|^[\\/]/i.test(p) ? p : `${root.replace(/\\/g, "/")}/${p}`;
+  const r = normHostPath(root);
+  const t = normHostPath(abs);
+  const rc = /^[a-z]:/i.test(root) ? r.toLowerCase() : r;
+  const tc = /^[a-z]:/i.test(root) ? t.toLowerCase() : t;
+  return tc === rc || tc.startsWith(rc + "/");
+}
+
+/**
+ * Security + port analysis of a compose model. Designed for the *normalized*
+ * JSON printed by `docker compose config --format json` (absolute bind
+ * sources, long-form ports) but also accepts short syntax. Refuses anything
+ * that could escape the workspace / sandbox.
+ */
+export function checkComposeConfig(config: unknown, workspaceRoot: string): ComposeCheck {
+  const problems: string[] = [];
+  const ports: ComposePort[] = [];
+  const services = asObj(asObj(config).services);
+  if (!Object.keys(services).length) problems.push("the compose file defines no services");
+  for (const [name, raw] of Object.entries(services)) {
+    const svc = asObj(raw);
+    if (svc.privileged === true || svc.privileged === "true") problems.push(`service "${name}" uses privileged: true`);
+    if (svc.network_mode === "host") problems.push(`service "${name}" uses network_mode: host`);
+    if (svc.pid === "host") problems.push(`service "${name}" uses pid: host`);
+    if (svc.ipc === "host") problems.push(`service "${name}" uses ipc: host`);
+    if (svc.userns_mode === "host") problems.push(`service "${name}" uses userns_mode: host`);
+    if (Array.isArray(svc.devices) && svc.devices.length) problems.push(`service "${name}" maps host devices`);
+    const caps = Array.isArray(svc.cap_add) ? svc.cap_add.map((c) => String(c).toUpperCase()) : [];
+    if (caps.some((c) => c === "ALL" || c === "SYS_ADMIN" || c === "CAP_SYS_ADMIN")) {
+      problems.push(`service "${name}" adds dangerous capabilities (${caps.join(", ")})`);
+    }
+    const secOpt = Array.isArray(svc.security_opt) ? svc.security_opt.map(String) : [];
+    if (secOpt.some((o) => /unconfined/i.test(o))) problems.push(`service "${name}" disables seccomp/apparmor`);
+
+    const vols = Array.isArray(svc.volumes) ? svc.volumes : [];
+    for (const v of vols) {
+      let type = "";
+      let source = "";
+      if (typeof v === "string") {
+        // short syntax "src:dst[:mode]" (Windows sources start with "C:")
+        const parts = v.split(":");
+        if (/^[a-z]$/i.test(parts[0]) && parts.length > 2) parts.splice(0, 2, `${parts[0]}:${parts[1]}`);
+        source = parts.length > 1 ? parts[0] : "";
+        type = !source ? "volume" : /^[.~/\\]|^[a-z]:/i.test(source) ? "bind" : "volume";
+      } else {
+        const o = asObj(v);
+        type = String(o.type ?? "");
+        source = String(o.source ?? "");
+      }
+      if (/docker\.sock/i.test(source)) {
+        problems.push(`service "${name}" mounts the Docker socket`);
+      } else if (type === "bind") {
+        if (source.startsWith("~") || !isInsideWorkspace(source, workspaceRoot)) {
+          problems.push(`service "${name}" bind-mounts a host path outside the project (${source})`);
+        }
+      } else if (type && type !== "volume" && type !== "tmpfs") {
+        problems.push(`service "${name}" uses an unsupported volume type (${type})`);
+      }
+    }
+
+    const plist = Array.isArray(svc.ports) ? svc.ports : [];
+    for (const p of plist) {
+      if (typeof p === "string" || typeof p === "number") {
+        // short syntax "[ip:]host:container[/proto]"
+        const [spec, proto] = String(p).split("/");
+        if (proto && proto !== "tcp") continue;
+        const parts = spec.split(":");
+        const target = Number(parts[parts.length - 1]);
+        const published = parts.length >= 2 ? Number(parts[parts.length - 2]) : undefined;
+        if (Number.isInteger(target)) ports.push({ service: name, target, published: published || undefined });
+      } else {
+        const o = asObj(p);
+        if (o.protocol && o.protocol !== "tcp") continue;
+        const target = Number(o.target);
+        const pub = o.published != null && o.published !== "" ? Number(String(o.published).split("-")[0]) : undefined;
+        if (Number.isInteger(target)) ports.push({ service: name, target, published: pub || undefined });
+      }
+    }
+  }
+  return { ok: problems.length === 0, problems, ports };
+}
+
+/** Ports that are databases/caches/brokers, never the web UI */
+const NON_HTTP_PORTS = new Set([
+  5432, 3306, 6379, 27017, 9042, 5672, 1433, 1521, 11211, 9200, 9300, 2181, 9092, 4222, 25, 587, 1025,
+]);
+const WEB_NAMES = ["web", "frontend", "app", "client", "ui", "nginx", "gateway", "site"];
+
+/** Choose the port the preview should show (null = no HTTP-looking port) */
+export function pickComposeWebPort(ports: ComposePort[]): ComposePort | null {
+  const web = ports.filter((p) => !NON_HTTP_PORTS.has(p.target));
+  if (!web.length) return null;
+  for (const n of WEB_NAMES) {
+    const hit = web.find((p) => p.service.toLowerCase() === n);
+    if (hit) return hit;
+  }
+  return web.find((p) => WEB_NAMES.some((n) => p.service.toLowerCase().includes(n))) ?? web[0];
+}
+
+// ─── Java / Go backends ──────────────────────────────────────────────────────
+const JAVA_DIRS = ["", "backend", "server", "api", "app"];
+
+function javaVersion(root: string, dir: string, build: string): number | undefined {
+  const abs = dir ? path.join(root, dir) : root;
+  for (const f of [path.join(abs, ".java-version"), path.join(root, ".java-version")]) {
+    const m = readText(f).trim().match(/^(?:1\.)?(\d+)/);
+    if (m) return Number(m[1]);
+  }
+  const m =
+    build.match(/<java\.version>\s*(?:1\.)?(\d+)/) ??
+    build.match(/<maven\.compiler\.(?:release|target)>\s*(?:1\.)?(\d+)/) ??
+    build.match(/languageVersion\s*(?:=|\.set\()\s*JavaLanguageVersion\.of\((\d+)\)/) ??
+    build.match(/sourceCompatibility\s*=\s*['"]?(?:JavaVersion\.VERSION_)?(?:1[._])?(\d+)/);
+  return m ? Number(m[1]) : undefined;
+}
+
+/** Find the Maven module (relative dir) holding the @SpringBootApplication class */
+function findBootModule(abs: string, pom: string): string | undefined {
+  const modules = Array.from(pom.matchAll(/<module>\s*([^<\s]+)\s*<\/module>/g)).map((m) => m[1]);
+  const hasBootMain = (d: string, depth = 0): boolean => {
+    if (depth > 12) return false;
+    for (const f of listDir(d)) {
+      if (f === "target" || f.startsWith(".")) continue;
+      const p = path.join(d, f);
+      if (isDir(p)) {
+        if (hasBootMain(p, depth + 1)) return true;
+      } else if (f.endsWith(".java") && /@SpringBootApplication/.test(readText(p))) {
+        return true;
+      }
+    }
+    return false;
+  };
+  for (const m of modules) if (hasBootMain(path.join(abs, m, "src", "main"))) return m;
+  // Conventional names, even if missing on disk (the build then reports it)
+  return modules.find((m) => /^(app|application|api|server|web|boot)$/i.test(m)) ?? modules[modules.length - 1];
+}
+
+function detectJava(root: string): ServicePlan | UnsupportedPlan | null {
+  for (const dir of JAVA_DIRS) {
+    const abs = dir ? path.join(root, dir) : root;
+    const pom = readText(path.join(abs, "pom.xml"));
+    const gradle = readText(path.join(abs, "build.gradle")) || readText(path.join(abs, "build.gradle.kts"));
+    if (!pom && !gradle) continue;
+    if (!/spring-boot|org\.springframework\.boot/.test(pom || gradle)) {
+      return {
+        kind: "unsupported",
+        reason: "This is a Java project without Spring Boot, so there is no web server to preview.",
+        hint: pom ? "Build it from the terminal with `mvn package`." : "Run it from the terminal with `./gradlew run`.",
+      };
+    }
+    if (pom) {
+      const multi = /<packaging>\s*pom\s*<\/packaging>/.test(pom) && /<modules>/.test(pom);
+      return {
+        kind: "service",
+        lang: "java",
+        dir,
+        tool: "maven",
+        wrapper: isFile(path.join(abs, "mvnw")),
+        module: multi ? findBootModule(abs, pom) : undefined,
+        javaVersion: javaVersion(root, dir, pom),
+      };
+    }
+    return {
+      kind: "service",
+      lang: "java",
+      dir,
+      tool: "gradle",
+      wrapper: isFile(path.join(abs, "gradlew")),
+      javaVersion: javaVersion(root, dir, gradle),
+    };
+  }
+  return null;
+}
+
+const GO_SERVER = /\.ListenAndServe(TLS)?\(|\bgin\.(Default|New)\(|\becho\.New\(|\bfiber\.New\(|\bchi\.NewRouter\(/;
+
+function detectGo(root: string): ServicePlan | CliPlan | null {
+  for (const dir of ["", "backend", "server", "api"]) {
+    const abs = dir ? path.join(root, dir) : root;
+    if (!isFile(path.join(abs, "go.mod"))) continue;
+    let server = false;
+    let usesEnv = false;
+    let fixedPort: number | undefined;
+    const walk = (d: string, depth: number) => {
+      if (depth > 6) return;
+      for (const f of listDir(d)) {
+        if (f === "vendor" || f.startsWith(".") || f === "node_modules") continue;
+        const p = path.join(d, f);
+        if (isDir(p)) walk(p, depth + 1);
+        else if (f.endsWith(".go") && !f.endsWith("_test.go")) {
+          const src = readText(p);
+          if (GO_SERVER.test(src)) server = true;
+          if (/Getenv\(\s*"PORT"\s*\)|LookupEnv\(\s*"PORT"\s*\)/.test(src)) usesEnv = true;
+          const m = src.match(/(?:ListenAndServe(?:TLS)?|\.Run|\.Start|\.Listen)\(\s*"(?:0\.0\.0\.0)?:(\d{2,5})"/);
+          if (m && fixedPort === undefined) fixedPort = Number(m[1]);
+        }
+      }
+    };
+    walk(abs, 0);
+    if (server) {
+      return { kind: "service", lang: "go", dir, tool: "go", wrapper: false, fixedPort: usesEnv ? undefined : fixedPort };
+    }
+    return {
+      kind: "cli",
+      lang: "go",
+      dir,
+      command: "go run .",
+      reason: "This is a Go command-line program, not a web server, so there is no page to preview.",
+    };
+  }
+  return null;
+}
+
+/** Non-web programs that can be run on demand in a container (docker mode) */
+function detectCli(root: string): CliPlan | null {
+  if (isFile(path.join(root, "Cargo.toml"))) {
+    return {
+      kind: "cli",
+      lang: "rust",
+      dir: "",
+      command: "cargo run",
+      reason: "This is a Rust command-line program, not a web app, so there is no page to preview.",
+    };
+  }
+  const entry = pickPythonEntry(root);
+  if (entry) {
+    return {
+      kind: "cli",
+      lang: "python",
+      dir: "",
+      entry,
+      hasRequirements: isFile(path.join(root, "requirements.txt")),
+      command: `python ${entry}`,
+      reason: "This project contains Python scripts but no Flask, FastAPI or Django web app to preview.",
+    };
+  }
+  return null;
+}
+
+// ─── Non-web project types (host mode) ───────────────────────────────────────
 function detectUnsupported(root: string): UnsupportedPlan | null {
   const has = (f: string) => isFile(path.join(root, f));
   const inBackend = (f: string) => isFile(path.join(root, "backend", f));
@@ -334,14 +700,14 @@ function detectUnsupported(root: string): UnsupportedPlan | null {
     return {
       kind: "unsupported",
       reason: "This is a Rust project, not a web app, so there is nothing to show in the browser.",
-      hint: "This is a Rust command-line project — run it from the terminal with `cargo run`.",
+      hint: "This is a Rust command-line project — run it from the terminal with `cargo run`, or turn on sandbox (Docker) mode to run it from here.",
     };
   }
   if (has("pom.xml") || has("build.gradle") || has("build.gradle.kts") || inBackend("pom.xml") || inBackend("build.gradle")) {
     const maven = has("pom.xml") || inBackend("pom.xml");
     return {
       kind: "unsupported",
-      reason: "This is a Java project. The preview can only run JavaScript and static web apps.",
+      reason: "This is a Java project. Java previews run only in sandbox (Docker) mode.",
       hint: maven
         ? "Run it from the terminal with `./mvnw spring-boot:run` (or `mvn spring-boot:run`) in the Maven project folder."
         : "Run it from the terminal with `./gradlew bootRun`.",
@@ -350,16 +716,16 @@ function detectUnsupported(root: string): UnsupportedPlan | null {
   if (has("go.mod")) {
     return {
       kind: "unsupported",
-      reason: "This is a Go project. The preview can only run JavaScript and static web apps.",
+      reason: "This is a Go project. Go previews run only in sandbox (Docker) mode.",
       hint: "Run it from the terminal with `go run .`.",
     };
   }
-  const py = listDir(root).filter((f) => f.endsWith(".py"));
-  if (py.length) {
+  const entry = pickPythonEntry(root);
+  if (entry) {
     return {
       kind: "unsupported",
       reason: "This project contains Python scripts but no Flask, FastAPI or Django web app to preview.",
-      hint: `Run a script from the terminal, e.g. \`python ${py[0]}\`.`,
+      hint: `Run a script from the terminal, e.g. \`python ${entry}\`.`,
     };
   }
   return null;
@@ -462,7 +828,13 @@ export function detectRunPlan(root: string, opts: DetectOptions = {}): RunPlan {
   const st = findStatic(root);
   if (st) return st;
 
-  // 3. Python web apps
+  // 3. Docker Compose stacks (always run through docker)
+  if (!opts.skipCompose) {
+    const compose = findCompose(root);
+    if (compose) return compose;
+  }
+
+  // 4. Python web apps
   const py = detectPythonWeb(root);
   if (py) {
     if (opts.pythonAvailable) return py;
@@ -473,8 +845,22 @@ export function detectRunPlan(root: string, opts: DetectOptions = {}): RunPlan {
     };
   }
 
-  // 4. Backend-only JS projects
+  // 5. Backend-only JS projects
   const backendOnly = findBackend(root, "__none__", null);
+  if (backendOnly && opts.docker) {
+    // npm workspaces: install at the root so local packages resolve
+    const installDirs = rootPkg?.workspaces ? [""] : [backendOnly.dir];
+    const prismaDirs =
+      hasDep(backendOnly.pkg, "prisma") || hasDep(backendOnly.pkg, "@prisma/client") ? [backendOnly.dir] : [];
+    const prismaSqliteDirs = prismaDirs.filter((d) =>
+      /provider\s*=\s*"sqlite"/.test(readText(path.join(root, d, "prisma", "schema.prisma")))
+    );
+    const web: ProcessSpec = {
+      ...buildApiSpec(backendOnly.dir, backendOnly.pkg, backendOnly.script),
+      env: { HOST: "0.0.0.0" },
+    };
+    return { kind: "node", framework: "unknown", web, apiOnly: true, installDirs, prismaDirs, prismaSqliteDirs };
+  }
   if (backendOnly) {
     return {
       kind: "unsupported",
@@ -483,7 +869,15 @@ export function detectRunPlan(root: string, opts: DetectOptions = {}): RunPlan {
     };
   }
 
-  // 5. Other languages / non-web projects
+  // 6. Other languages / non-web projects
+  if (opts.docker) {
+    const java = detectJava(root);
+    if (java) return java;
+    const go = detectGo(root);
+    if (go) return go;
+    const cli = detectCli(root);
+    if (cli) return cli;
+  }
   const unsupported = detectUnsupported(root);
   if (unsupported) return unsupported;
 

@@ -55,7 +55,7 @@ function isPrivateIpv6(ip: string): boolean {
   );
 }
 
-async function assertPublicHost(url: URL): Promise<void> {
+export async function assertPublicHost(url: URL): Promise<void> {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error(`Only http/https URLs are allowed (got ${url.protocol})`);
   }

@@ -256,7 +256,10 @@ export async function testPlan(
     case 'maven':
       return {
         stack, label: 'Java (Maven)', timeoutMs: BUILD_TIMEOUT_MS,
-        candidates: [{ probe: 'mvn -v', command: p ? `mvn -q -B test -Dtest=${p}` : 'mvn -q -B test' }],
+        // Not -q: quiet mode hides surefire's "Tests run: N" summary on
+        // success, so a run where no test executed looked like a pass.
+        // -ntp drops the download-progress noise instead.
+        candidates: [{ probe: 'mvn -v', command: p ? `mvn -B -ntp test -Dtest=${p}` : 'mvn -B -ntp test' }],
       };
     case 'gradle': {
       const t = p ? ` --tests ${p}` : '';
@@ -300,14 +303,24 @@ export function parseTestCounts(stack: Stack, output: string): { total: number; 
   return { total, failed };
 }
 
+// Matched per shell segment, so `cd client && npm install` counts too
 const SLOW_COMMAND =
-  /^(npm|pnpm|yarn|bun)\s+(install|ci|add|run\s+build)\b|^(cargo|mvn|gradle|\.\/gradlew|dotnet)\b|^go\s+(build|test|mod|get|install)\b|\bpip3?\s+install\b|^uv\s/;
+  /^(npm|pnpm|yarn|bun)\s+(install|i|ci|add|run\s+build)\b|^npx\s|^(cargo|mvn|gradle|\.\/gradlew|dotnet)\b|^go\s+(build|test|mod|get|install)\b|\bpip3?\s+install\b|^uv\s|^(\S*\/)?python3?\s+-m\s+(pip|venv)\b/;
+const SLOW_FLOOR_MS = 300_000;
 
-/** run_command timeout: explicit timeout_seconds (clamped 1–900) > slow-command default (300s) > 60s. */
+export function isSlowCommand(command: string): boolean {
+  return command.split(/&&|\|\||;|\|/).some((seg) => SLOW_COMMAND.test(seg.trim()));
+}
+
+/** run_command timeout: explicit timeout_seconds (clamped 1–900) > slow-command default (300s) > 60s.
+ *  Installs/builds never get less than 300s: models routinely guess 60–120s,
+ *  and a cold `npm install` on a Windows bind mount takes longer than that. */
 export function resolveCommandTimeoutMs(command: string, timeoutSeconds?: unknown): number {
+  const slow = isSlowCommand(command);
   const n = Number(timeoutSeconds);
   if (timeoutSeconds !== undefined && timeoutSeconds !== null && Number.isFinite(n) && n > 0) {
-    return Math.min(900, Math.max(1, Math.round(n))) * 1000;
+    const ms = Math.min(900, Math.max(1, Math.round(n))) * 1000;
+    return slow ? Math.max(ms, SLOW_FLOOR_MS) : ms;
   }
-  return SLOW_COMMAND.test(command.trim()) ? 300_000 : 60_000;
+  return slow ? SLOW_FLOOR_MS : 60_000;
 }
