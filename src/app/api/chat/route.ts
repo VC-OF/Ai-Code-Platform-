@@ -16,6 +16,7 @@ export async function POST(req: NextRequest) {
     const messages = body.messages as { role: 'system' | 'user' | 'assistant'; content: string }[];
     const activeFilePath: string | undefined = body.activeFilePath;
     const model: string | undefined = body.model;
+    const mode = (body.mode as 'auto' | 'manual' | 'plan') || 'auto';
 
     if (!projectId) {
       return Response.json({ error: 'projectId is required' }, { status: 400 });
@@ -62,7 +63,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Start background agent loop and return subscription stream
-    const stream = agentManager.startAgent(projectId, messages || [], activeFilePath, model);
+    const stream = agentManager.startAgent(projectId, messages || [], activeFilePath, model, mode);
 
     return new Response(stream, {
       headers: {

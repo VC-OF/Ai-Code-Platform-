@@ -12,7 +12,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { action, projectId = "default" } = await req.json();
+  const body = await req.json().catch(() => null);
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const { action, projectId = "default" } = body;
   if (action === "start") {
     const result = await startPreview(projectId);
     return NextResponse.json(result);

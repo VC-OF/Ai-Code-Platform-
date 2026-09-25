@@ -323,13 +323,13 @@ export default function MessageInput({
 
       <style jsx>{`
         .input-area {
-            background: var(--bg-surface);
+          background: var(--bg-surface);
           border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-sm);
-          padding: 12px;
+          border-radius: var(--radius-md);
+          padding: 8px 12px;
           display: flex;
           flex-direction: column;
-          gap: 10px;
+          gap: 6px;
           flex-shrink: 0;
         }
 

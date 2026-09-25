@@ -107,13 +107,18 @@ export function TimelineEvent({ event }: TimelineEventProps) {
             C
           </div>
           <div className="flex-1 flex justify-between items-center">
-            <div className="text-xs text-slate-700 dark:text-slate-300">
-              Checkpoint created:{' '}
-              <span className="font-mono bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-slate-800 dark:text-slate-200">
-                {event.sha?.slice(0, 7)}
-              </span>
+            <div className="text-xs text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+              <span>Checkpoint created:</span>
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new CustomEvent('oc-open-review-modal'))}
+                className="font-mono bg-slate-100 dark:bg-slate-800 hover:bg-emerald-500/20 px-1 py-0.5 rounded text-slate-800 dark:text-slate-200 hover:text-emerald-400 cursor-pointer transition-colors"
+                title="Open checkoints & diff viewer"
+              >
+                {event.sha?.slice(0, 7)} ↗
+              </button>
               {typeof event.filesChanged === 'number' && event.filesChanged > 0 && (
-                <span className="ml-1.5 text-slate-500 font-medium">({event.filesChanged} files modified)</span>
+                <span className="text-slate-500 font-medium">({event.filesChanged} files modified)</span>
               )}
             </div>
             <span className="text-[10px] text-slate-400 font-mono">{timeStr}</span>
@@ -163,11 +168,25 @@ export function TimelineEvent({ event }: TimelineEventProps) {
           <div className="flex-shrink-0 w-5 h-5 rounded-full bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 flex items-center justify-center text-[10px] font-bold">
             ?
           </div>
-          <div className="flex-1 flex justify-between items-center">
-            <div className="text-xs text-slate-700 dark:text-slate-300">
-              Agent asked: <span className="font-medium">{event.question}</span>
+          <div className="flex-1 flex flex-col gap-1.5">
+            <div className="flex justify-between items-center">
+              <div className="text-xs text-slate-700 dark:text-slate-300">
+                Agent asked: <span className="font-medium text-slate-900 dark:text-slate-100">{event.question}</span>
+              </div>
+              <span className="text-[10px] text-slate-400 font-mono">{timeStr}</span>
             </div>
-            <span className="text-[10px] text-slate-400 font-mono">{timeStr}</span>
+            {Array.isArray((event as { options?: unknown }).options) && ((event as { options?: string[] }).options ?? []).length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-0.5">
+                {((event as { options?: string[] }).options ?? []).map((opt: string, i: number) => (
+                  <span
+                    key={i}
+                    className="text-[10.5px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700/60"
+                  >
+                    {opt}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       );
@@ -189,8 +208,21 @@ export function TimelineEvent({ event }: TimelineEventProps) {
             ✓
           </div>
           <div className="flex-1">
-            <div className="text-xs font-semibold">Agent turn complete</div>
-            <div className="text-[10px] text-slate-400 mt-1 flex gap-3">
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-semibold">Agent turn complete</div>
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new CustomEvent('oc-open-review-modal'))}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-400 text-[11px] font-medium transition-colors border border-indigo-500/20 cursor-pointer"
+                title="Review modified files and git checkpoints"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>
+                </svg>
+                <span>Review Diffs & Rollback</span>
+              </button>
+            </div>
+            <div className="text-[10px] text-slate-400 mt-1 flex flex-wrap gap-x-3 gap-y-1">
               <span>Duration: {((event.durationMs ?? 0) / 1000).toFixed(1)}s</span>
               <span>Reason: {event.reason}</span>
               {Array.isArray(event.filesChanged) && event.filesChanged.length > 0 && (

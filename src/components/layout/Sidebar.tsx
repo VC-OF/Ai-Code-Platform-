@@ -26,6 +26,7 @@ export default function Sidebar({
     fetch('/api/projects')
       .then((r) => r.json())
       .then((data) => setProjects(data.projects || []))
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
@@ -39,10 +40,12 @@ export default function Sidebar({
       const res = await fetch('/api/projects', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ title: newName.trim() }),
+        body:    JSON.stringify({ title: newName.trim(), template: 'react-vite' }),
       });
+      if (!res.ok) return;
       const data = await res.json();
       const project = data.project;
+      if (!project) return;
       setProjects((p) => [project, ...p]);
       onProjectSelect(project);
       setNewName('');
@@ -53,7 +56,8 @@ export default function Sidebar({
   const deleteProject = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm('Delete this project?')) return;
-    await fetch(`/api/projects?id=${id}`, { method: 'DELETE' });
+    const res = await fetch(`/api/projects?id=${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => null);
+    if (!res?.ok) return;
     setProjects((p) => p.filter((x) => x.id !== id));
     if (activeProject?.id === id) onProjectSelect(null);
   };
@@ -343,8 +347,6 @@ function ProjectItem({
   onClick:  () => void;
   onDelete: (e: React.MouseEvent) => void;
 }) {
-  const [hovered, setHovered] = useState(false);
-
   const initials = project.title
     .split(' ')
     .slice(0, 2)
@@ -355,8 +357,6 @@ function ProjectItem({
     <div
       className={`project-item ${active ? 'project-item--active' : ''}`}
       onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
@@ -383,15 +383,13 @@ function ProjectItem({
       </div>
 
       {/* Delete button */}
-      {hovered && (
-        <button
-          className="project-delete"
-          onClick={onDelete}
-          title="Delete project"
-        >
-          ✕
-        </button>
-      )}
+      <button
+        className="project-delete"
+        onClick={onDelete}
+        title="Delete project"
+      >
+        ✕
+      </button>
 
       <style jsx>{`
         .project-item {
@@ -497,8 +495,15 @@ function ProjectItem({
           color: var(--text-muted);
           font-size: 10px;
           cursor: pointer;
-          opacity: 1;
+          opacity: 0;
+          pointer-events: none;
           transition: all var(--transition-fast);
+        }
+
+        .project-item:hover .project-delete,
+        .project-item:focus-within .project-delete {
+          opacity: 1;
+          pointer-events: auto;
         }
 
         .project-delete:hover {

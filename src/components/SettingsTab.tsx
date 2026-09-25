@@ -190,11 +190,15 @@ export default function SettingsTab({ projectId }: { projectId: string }) {
   async function saveAgentsMd() {
     setSavingMemory(true);
     try {
-      await fetch("/api/files", {
+      const res = await fetch("/api/files", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path: "AGENTS.md", content: agentsMd, projectId }),
       });
+      if (!res.ok) {
+        window.alert("Failed to save AGENTS.md");
+        return;
+      }
       setMemorySaved(true);
       setTimeout(() => setMemorySaved(false), 2000);
     } finally {

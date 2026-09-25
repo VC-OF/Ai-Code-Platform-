@@ -22,6 +22,7 @@ const TOOLS = [
   { category: 'File System',  tool: 'delete_file',   scope: 'workspace', desc: 'Remove a file from the workspace' },
   { category: 'Search',       tool: 'grep_files',    scope: 'workspace', desc: 'Regex search across workspace files with line numbers' },
   { category: 'Search',       tool: 'glob_files',    scope: 'workspace', desc: 'Find files matching a glob pattern' },
+  { category: 'Search',       tool: 'list_files',    scope: 'workspace', desc: 'List files and folders inside the workspace directory' },
   { category: 'Web',          tool: 'web_search',    scope: 'network',   desc: 'Search the web for docs, examples, or error messages' },
   { category: 'Web',          tool: 'fetch_url',     scope: 'network',   desc: 'Fetch a public URL as readable text (private IPs blocked)' },
   { category: 'Media',        tool: 'generate_image', scope: 'network',  desc: 'Generate an image (Flux via Pollinations/HF) into the workspace' },

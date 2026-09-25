@@ -33,6 +33,14 @@ function isPrivateIpv4(ip: string): boolean {
 
 function isPrivateIpv6(ip: string): boolean {
   const lower = ip.toLowerCase();
+  // WHATWG URL normalizes [::ffff:127.0.0.1] to [::ffff:7f00:1] — decode the
+  // hex form of IPv4-mapped addresses so it can't bypass the IPv4 check
+  const mappedHex = lower.match(/^(?:0*:)*:?ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (mappedHex) {
+    const hi = parseInt(mappedHex[1], 16);
+    const lo = parseInt(mappedHex[2], 16);
+    return isPrivateIpv4(`${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`);
+  }
   return (
     lower === "::1" ||
     lower === "::" ||

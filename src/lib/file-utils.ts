@@ -53,12 +53,52 @@ export function buildTree(nodes: FlatNode[]): TreeNode[] {
 export function languageFor(filePath: string) {
   if (filePath.endsWith(".tsx") || filePath.endsWith(".ts"))
     return "typescript";
-  if (filePath.endsWith(".jsx") || filePath.endsWith(".js"))
+  if (filePath.endsWith(".jsx") || filePath.endsWith(".js") || filePath.endsWith(".mjs") || filePath.endsWith(".cjs"))
     return "javascript";
   if (filePath.endsWith(".json")) return "json";
-  if (filePath.endsWith(".css")) return "css";
+  if (filePath.endsWith(".css") || filePath.endsWith(".scss") || filePath.endsWith(".less")) return "css";
   if (filePath.endsWith(".md") || filePath.endsWith(".mdx")) return "markdown";
-  if (filePath.endsWith(".html")) return "html";
-  if (filePath.endsWith(".sh") || filePath.endsWith(".bash")) return "shell";
+  if (filePath.endsWith(".html") || filePath.endsWith(".htm")) return "html";
+  if (filePath.endsWith(".sh") || filePath.endsWith(".bash") || filePath.endsWith(".zsh")) return "shell";
+  if (filePath.endsWith(".py")) return "python";
+  if (filePath.endsWith(".sql")) return "sql";
+  if (filePath.endsWith(".yml") || filePath.endsWith(".yaml")) return "yaml";
+  if (filePath.endsWith(".xml") || filePath.endsWith(".svg")) return "xml";
   return "plaintext";
+}
+
+export function getFileIcon(filePath: string): { icon: string; color: string } {
+  const ext = filePath.split(".").pop()?.toLowerCase();
+  switch (ext) {
+    case "tsx":
+    case "ts":
+      return { icon: "TS", color: "#3178c6" };
+    case "jsx":
+    case "js":
+    case "mjs":
+    case "cjs":
+      return { icon: "JS", color: "#f7df1e" };
+    case "json":
+      return { icon: "{}", color: "#cbcb41" };
+    case "css":
+    case "scss":
+    case "less":
+      return { icon: "#", color: "#42a5f5" };
+    case "html":
+    case "htm":
+      return { icon: "<>", color: "#e44d26" };
+    case "md":
+    case "mdx":
+      return { icon: "M↓", color: "#42a5f5" };
+    case "svg":
+      return { icon: "❖", color: "#ffb74d" };
+    case "py":
+      return { icon: "🐍", color: "#3572A5" };
+    case "sh":
+    case "bash":
+    case "zsh":
+      return { icon: "$_", color: "#89e051" };
+    default:
+      return { icon: "📄", color: "#9aa3b5" };
+  }
 }

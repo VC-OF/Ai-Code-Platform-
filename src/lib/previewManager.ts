@@ -1,4 +1,4 @@
-import { spawn, exec, execSync, ChildProcessWithoutNullStreams } from "child_process";
+import { spawn, exec, execSync, execFileSync, ChildProcessWithoutNullStreams } from "child_process";
 import { promisify } from "util";
 import fs from "fs";
 import path from "path";
@@ -97,8 +97,13 @@ async function findAvailablePort(startPort: number): Promise<number> {
   throw new Error("No available ports");
 }
 
+function stripAnsi(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, "").replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, "");
+}
+
 function pushLog(instance: PreviewInstance, line: string) {
-  instance.logs.push(line);
+  instance.logs.push(stripAnsi(line));
   if (instance.logs.length > 500) instance.logs = instance.logs.slice(-500);
 }
 
@@ -127,10 +132,26 @@ export function getPreviewStatus(projectId: string) {
   };
 }
 
-export async function startPreview(projectId: string) {
+// Concurrent starts for the same project must share one boot, otherwise both
+// pass the "existing" check during the awaits below and spawn two servers
+const pendingStarts = new Map<string, Promise<ReturnType<typeof getPreviewStatus>>>();
+
+export function startPreview(projectId: string) {
+  const pending = pendingStarts.get(projectId);
+  if (pending) return pending;
+  const p = startPreviewInner(projectId).finally(() => pendingStarts.delete(projectId));
+  pendingStarts.set(projectId, p);
+  return p;
+}
+
+async function startPreviewInner(projectId: string) {
   const existing = instances.get(projectId);
-  if (existing && existing.status !== "stopped") {
-    return getPreviewStatus(projectId);
+  if (existing) {
+    if (existing.status === "running" || existing.status === "starting") {
+      return getPreviewStatus(projectId);
+    }
+    // Clean up errored or stopped instances
+    stopPreview(projectId);
   }
 
   const port = await findAvailablePort(4001);
@@ -141,33 +162,117 @@ export async function startPreview(projectId: string) {
   if (dockerMode) {
     // Remove any leftover container with this name (crashed earlier run)
     try {
-      execSync(`docker rm -f ${previewContainerName(projectId)}`, {
+      execFileSync("docker", ["rm", "-f", previewContainerName(projectId)], {
         stdio: "pipe",
       });
     } catch {}
   } else {
-    // Host mode: install deps on the host if missing
-    const nodeModulesPath = path.join(root, "node_modules");
-    if (!fs.existsSync(nodeModulesPath)) {
+    // Host mode: check package.json and ensure dev script exists
+    const pkgPath = path.join(root, "package.json");
+    if (fs.existsSync(pkgPath)) {
       try {
-        await execAsync("npm install", { cwd: root });
-      } catch (installErr) {
-        console.error("Failed to run npm install in workspace:", installErr);
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+        if (!pkg.scripts?.dev && (pkg.devDependencies?.vite || pkg.dependencies?.vite)) {
+          pkg.scripts = { ...pkg.scripts, dev: "vite" };
+          fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2), "utf8");
+        }
+      } catch {}
+
+      // Install deps on host if node_modules is missing
+      const nodeModulesPath = path.join(root, "node_modules");
+      if (!fs.existsSync(nodeModulesPath)) {
+        try {
+          await execAsync("npm install --no-audit --no-fund", { cwd: root });
+        } catch (installErr) {
+          console.error("Failed to run npm install in workspace:", installErr);
+        }
       }
     }
   }
 
-  const child = dockerMode
-    ? (spawn("docker", buildPreviewDockerArgs(projectId, root, port, secretEnv), {
-        env: process.env,
-      }) as ChildProcessWithoutNullStreams)
-    : (spawn("npm", ["run", "dev", "--", "--port", String(port)], {
-        cwd: root,
-        env: { ...process.env, ...secretEnv, PORT: String(port) },
-        shell: true,
-        // Own process group on POSIX so the whole tree can be killed together
-        detached: process.platform !== "win32",
-      }) as ChildProcessWithoutNullStreams);
+  // Determine whether we can run npm run dev
+  const pkgPath = path.join(root, "package.json");
+  let hasDevScript = false;
+  let isVite = false;
+  if (fs.existsSync(pkgPath)) {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+      hasDevScript = !!pkg.scripts?.dev;
+      isVite = !!(pkg.devDependencies?.vite || pkg.dependencies?.vite || pkg.scripts?.dev?.includes("vite"));
+    } catch {}
+  }
+
+  let child: ChildProcessWithoutNullStreams;
+
+  if (dockerMode) {
+    child = spawn("docker", buildPreviewDockerArgs(projectId, root, port, secretEnv), {
+      env: process.env,
+    }) as ChildProcessWithoutNullStreams;
+  } else if (hasDevScript) {
+    // CRITICAL: We pass --prefix so npm NEVER traverses up to parent folders
+    const npmArgs = ["run", "dev", "--prefix", root, "--", "--port", String(port)];
+    if (isVite) {
+      npmArgs.push("--host", "0.0.0.0");
+    }
+    child = spawn("npm", npmArgs, {
+      cwd: root,
+      env: { ...process.env, ...secretEnv, PORT: String(port) },
+      shell: true,
+      detached: process.platform !== "win32",
+    }) as ChildProcessWithoutNullStreams;
+  } else {
+    // Fallback static HTTP server for projects without a package dev script
+    const staticScript = `
+      const http = require('http');
+      const fs = require('fs');
+      const path = require('path');
+      const mime = {
+        '.html': 'text/html; charset=utf-8',
+        '.js': 'application/javascript; charset=utf-8',
+        '.mjs': 'application/javascript; charset=utf-8',
+        '.css': 'text/css; charset=utf-8',
+        '.json': 'application/json; charset=utf-8',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.svg': 'image/svg+xml',
+        '.ico': 'image/x-icon'
+      };
+      const rootDir = process.cwd();
+      http.createServer((req, res) => {
+        let reqPath;
+        try { reqPath = decodeURIComponent(req.url.split('?')[0]); }
+        catch { res.writeHead(400); return res.end('Bad Request'); }
+        if (reqPath === '/' || reqPath === '') reqPath = '/index.html';
+        let safePath = path.normalize(path.join(rootDir, reqPath));
+        if (safePath !== rootDir && !safePath.startsWith(rootDir + path.sep)) {
+          res.writeHead(403);
+          return res.end('Forbidden');
+        }
+        if (fs.existsSync(safePath) && fs.statSync(safePath).isDirectory()) {
+          safePath = path.join(safePath, 'index.html');
+        }
+        if (!fs.existsSync(safePath)) safePath = path.join(rootDir, 'index.html');
+        if (!fs.existsSync(safePath)) {
+          res.writeHead(404, { 'Content-Type': 'text/plain' });
+          return res.end('File not found');
+        }
+        const ext = path.extname(safePath).toLowerCase();
+        res.writeHead(200, {
+          'Content-Type': mime[ext] || 'application/octet-stream',
+          'Access-Control-Allow-Origin': '*'
+        });
+        fs.createReadStream(safePath).pipe(res);
+      }).listen(${port}, '0.0.0.0', () => {
+        console.log('ready: static server running on http://localhost:${port}');
+      });
+    `;
+    // No shell: the multi-line script must reach node as a single argv entry
+    child = spawn(process.execPath, ["-e", staticScript], {
+      cwd: root,
+      env: { ...process.env, ...secretEnv, PORT: String(port) },
+      detached: process.platform !== "win32",
+    }) as ChildProcessWithoutNullStreams;
+  }
 
   const instance: PreviewInstance = {
     child,
@@ -180,7 +285,7 @@ export async function startPreview(projectId: string) {
   instance.child.stdout.on("data", (d) => {
     const text = d.toString();
     pushLog(instance, text);
-    if (/ready|started server|compiled/i.test(text))
+    if (/ready|started server|compiled|local:|network:/i.test(text))
       instance.status = "running";
   });
 
@@ -190,7 +295,15 @@ export async function startPreview(projectId: string) {
 
   instance.child.on("exit", (code) => {
     pushLog(instance, `\n[process exited with code ${code}]`);
-    instance.status = code === 0 ? "stopped" : "error";
+    if (instance.status !== "stopped") {
+      instance.status = code === 0 ? "stopped" : "error";
+    }
+  });
+
+  // Without an 'error' listener a failed spawn (e.g. binary missing) crashes the server
+  instance.child.on("error", (err) => {
+    pushLog(instance, `\n[failed to start: ${err.message}]`);
+    instance.status = "error";
   });
 
   // Give it a moment to boot before returning
@@ -205,7 +318,7 @@ export function stopPreview(projectId: string) {
     if (isDockerMode()) {
       // The docker CLI child is just an attachment — kill the container
       try {
-        execSync(`docker kill ${previewContainerName(projectId)}`, {
+        execFileSync("docker", ["kill", previewContainerName(projectId)], {
           stdio: "pipe",
         });
       } catch {}

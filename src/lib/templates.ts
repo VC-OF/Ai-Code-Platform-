@@ -237,5 +237,6 @@ const BLANK: Template = {
 export const TEMPLATES: Template[] = [BLANK, STATIC_SITE, REACT_VITE];
 
 export function getTemplate(id?: string): Template {
+  if (!id || id === 'blank') return BLANK;
   return TEMPLATES.find((t) => t.id === id) ?? BLANK;
 }

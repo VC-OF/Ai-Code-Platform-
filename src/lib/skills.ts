@@ -1,5 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
+import os from 'os';
 
 export interface SkillDefinition {
   name: string;
@@ -13,15 +14,31 @@ const SKILL_ROOTS = [
   '.agents/skills',
   'skills',
 ] as const;
-const MAX_SKILLS = 16;
+
+const GLOBAL_SKILL_ROOTS = [
+  path.join(process.cwd(), 'skills'),
+  path.join(os.homedir(), '.gemini', 'antigravity-ide', 'builtin', 'skills'),
+  path.join(os.homedir(), '.gemini', 'config', 'skills'),
+];
+
+const MAX_SKILLS = 32;
 const MAX_SKILL_CHARS = 12_000;
 
-/** Load project-local skills without allowing a missing or malformed skill to
- * prevent the agent from starting. Project skills are intentionally explicit:
- * each skill lives in a directory containing SKILL.md. */
-export async function loadSkills(workspaceRoot: string): Promise<SkillDefinition[]> {
-  const skills: SkillDefinition[] = [];
+export interface LoadSkillsOptions {
+  includeGlobal?: boolean;
+}
 
+/** Load project-local skills and open-source Google Antigravity global skills
+ * without allowing a missing or malformed skill to prevent the agent from starting.
+ * Project skills take precedence over global skills with the same name. */
+export async function loadSkills(
+  workspaceRoot: string,
+  options?: LoadSkillsOptions
+): Promise<SkillDefinition[]> {
+  const skills: SkillDefinition[] = [];
+  const seenNames = new Set<string>();
+
+  // 1. Scan workspace-local skill directories first
   for (const root of SKILL_ROOTS) {
     if (skills.length >= MAX_SKILLS) break;
     const rootPath = path.join(workspaceRoot, root);
@@ -38,9 +55,43 @@ export async function loadSkills(workspaceRoot: string): Promise<SkillDefinition
       try {
         const raw = await fs.readFile(path.join(workspaceRoot, source), 'utf8');
         const parsed = parseSkill(raw, entry.name, source);
-        if (parsed) skills.push(parsed);
+        if (parsed && !seenNames.has(parsed.name.toLowerCase())) {
+          seenNames.add(parsed.name.toLowerCase());
+          skills.push(parsed);
+        }
       } catch {
         // A broken optional skill should not block the coding agent.
+      }
+    }
+  }
+
+  // 2. Scan global / open-source Google Antigravity skills if requested or running in application mode
+  const shouldIncludeGlobal =
+    options?.includeGlobal ?? (process.env.NODE_ENV !== 'test');
+
+  if (shouldIncludeGlobal && skills.length < MAX_SKILLS) {
+    for (const globalRoot of GLOBAL_SKILL_ROOTS) {
+      if (skills.length >= MAX_SKILLS) break;
+      let entries: { name: string; isDirectory(): boolean }[];
+      try {
+        entries = await fs.readdir(globalRoot, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+
+      for (const entry of entries) {
+        if (!entry.isDirectory() || skills.length >= MAX_SKILLS) continue;
+        const sourcePath = path.join(globalRoot, entry.name, 'SKILL.md');
+        try {
+          const raw = await fs.readFile(sourcePath, 'utf8');
+          const parsed = parseSkill(raw, entry.name, `global:${entry.name}`);
+          if (parsed && !seenNames.has(parsed.name.toLowerCase())) {
+            seenNames.add(parsed.name.toLowerCase());
+            skills.push(parsed);
+          }
+        } catch {
+          // Ignore missing or unreadable skills
+        }
       }
     }
   }
@@ -76,7 +127,7 @@ export function formatSkillsForPrompt(skills: SkillDefinition[]): string {
   if (skills.length === 0) return '';
   return [
     '## Project Skills',
-    'The following optional skills are available. Apply a skill when it matches the task; do not invent requirements from unrelated skills.',
+    'The following skills are available in context. Apply a skill when it matches the task; do not invent requirements from unrelated skills.',
     ...skills.map((skill) => `\n### ${skill.name}\n${skill.description}\nSource: ${skill.source}\n\n${skill.instructions}`),
   ].join('\n');
 }

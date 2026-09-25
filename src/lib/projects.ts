@@ -90,7 +90,7 @@ export async function getProject(id: string): Promise<Project | null> {
 
 export async function createProject(
   title: string = "New Project",
-  templateId?: string
+  templateId: string = "blank"
 ): Promise<Project> {
   await migrateLegacyJson();
   const id = "proj_" + Math.random().toString(36).substring(2, 11);
@@ -99,43 +99,51 @@ export async function createProject(
   await ensureWorkspace(id);
 
   try {
-    // Scaffolding default AGENTS.md memory file
-    let pkgManager = "npm";
-    try {
-      const filesInParent = await fs.readdir(process.cwd());
-      if (filesInParent.includes("pnpm-lock.yaml")) pkgManager = "pnpm";
-      else if (filesInParent.includes("yarn.lock")) pkgManager = "yarn";
-    } catch {}
+    // Scaffold starter template files if a non-blank template is chosen
+    const template = getTemplate(templateId);
+    if (template && Object.keys(template.files).length > 0) {
+      for (const [relPath, content] of Object.entries(template.files)) {
+        const full = path.join(workspaceRoot, relPath);
+        await fs.mkdir(path.dirname(full), { recursive: true });
+        await fs.writeFile(full, content, "utf8");
+      }
 
-    const defaultAgentsMd = `# Project conventions
+      // Scaffolding default AGENTS.md memory file for pre-scaffolded templates
+      let pkgManager = "npm";
+      try {
+        const filesInParent = await fs.readdir(process.cwd());
+        if (filesInParent.includes("pnpm-lock.yaml")) pkgManager = "pnpm";
+        else if (filesInParent.includes("yarn.lock")) pkgManager = "yarn";
+      } catch {}
+
+      const defaultAgentsMd = `# Project conventions
 - Package manager: ${pkgManager}
 - Test command: ${pkgManager} test
 - Always read a file before editing it
 - Run lint/tests after any code change before finishing a turn
 `;
-    await fs.writeFile(path.join(workspaceRoot, "AGENTS.md"), defaultAgentsMd, "utf8");
-
-    // Scaffold starter template files (if any)
-    const template = getTemplate(templateId);
-    for (const [relPath, content] of Object.entries(template.files)) {
-      const full = path.join(workspaceRoot, relPath);
-      await fs.mkdir(path.dirname(full), { recursive: true });
-      await fs.writeFile(full, content, "utf8");
+      await fs.writeFile(path.join(workspaceRoot, "AGENTS.md"), defaultAgentsMd, "utf8");
     }
 
-    await execFileAsync("git", ["init"], { cwd: workspaceRoot });
-    await execFileAsync("git", ["add", "-A"], { cwd: workspaceRoot });
-    await execFileAsync(
-      "git",
-      [
-        "-c", "user.name=Open Code",
-        "-c", "user.email=agent@opencode.local",
-        "commit", "-m", "initial", "--allow-empty",
-      ],
-      { cwd: workspaceRoot }
-    );
-  } catch {
-    // Scaffold/Git init is best-effort
+    try {
+      await execFileAsync("git", ["init"], { cwd: workspaceRoot });
+      if (template && Object.keys(template.files).length > 0) {
+        await execFileAsync("git", ["add", "-A"], { cwd: workspaceRoot });
+        await execFileAsync(
+          "git",
+          [
+            "-c", "user.name=Open Code",
+            "-c", "user.email=agent@opencode.local",
+            "commit", "-m", "initial", "--allow-empty",
+          ],
+          { cwd: workspaceRoot }
+        );
+      }
+    } catch (gitErr) {
+      console.warn("Git initialization skipped/failed:", gitErr);
+    }
+  } catch (scaffoldErr) {
+    console.error("Scaffold error in createProject:", scaffoldErr);
   }
 
   projectDb.create({

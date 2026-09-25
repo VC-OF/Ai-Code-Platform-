@@ -29,6 +29,10 @@ const toolSchemas = {
     path: z.string().min(1).max(500),
   }),
   
+  list_files: z.object({
+    path: z.string().max(500).optional().default('.'),
+  }).optional().default({ path: '.' }),
+
   glob_files: z.object({
     pattern: z.string().min(1).max(200),
   }),
@@ -96,11 +100,25 @@ const toolSchemas = {
     height: z.number().int().min(64).max(2048).optional(),
     seed: z.number().int().optional(),
   }),
+
+  create_artifact: z.object({
+    title: z.string().min(1).max(200),
+    content: z.string().min(1),
+    type: z.enum(['markdown', 'plan', 'diagram', 'diff', 'report', 'code']).optional(),
+    description: z.string().max(500).optional(),
+  }),
   
   run_lint: z.object({}).optional(),
   run_tests: z.object({
     pattern: z.string().max(200).optional(),
   }).optional(),
+  
+  docker_run: z.object({
+    command: z.string().min(1).max(2000),
+    image: z.string().max(200).optional(),
+    network: z.enum(['none', 'bridge']).optional(),
+  }),
+  docker_status: z.object({}).optional(),
 };
 
 export type ToolName = keyof typeof toolSchemas;

@@ -37,12 +37,12 @@ async function walk(
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const projectId = searchParams.get("projectId") || "default";
-  await ensureWorkspace(projectId);
 
   const filePath = searchParams.get("path");
   const version = searchParams.get("version");
 
   try {
+    await ensureWorkspace(projectId);
     if (filePath) {
       const full = safeResolve(filePath, projectId);
       const stat = await fs.stat(full);
@@ -130,6 +130,33 @@ export async function DELETE(req: NextRequest) {
     const full = safeResolve(relPath, projectId);
     await fs.rm(full, { recursive: true, force: true });
     return NextResponse.json({ success: true, path: relPath });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : String(err) },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const projectId = body.projectId || "default";
+    await ensureWorkspace(projectId);
+
+    const { oldPath, newPath } = body;
+    if (!oldPath || !newPath) {
+      return NextResponse.json(
+        { error: "Missing oldPath or newPath parameter" },
+        { status: 400 }
+      );
+    }
+
+    const oldFull = safeResolve(oldPath, projectId);
+    const newFull = safeResolve(newPath, projectId);
+    await fs.mkdir(path.dirname(newFull), { recursive: true });
+    await fs.rename(oldFull, newFull);
+    return NextResponse.json({ success: true, oldPath, newPath });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : String(err) },

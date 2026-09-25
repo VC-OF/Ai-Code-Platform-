@@ -167,7 +167,7 @@ function buildDockerInvocation(
   containerName: string,
   extraEnv?: Record<string, string>
 ): { bin: string; args: string[] } {
-  const image = process.env.SANDBOX_IMAGE || 'node:20';
+  const image = process.env.SANDBOX_IMAGE || 'node:20-slim';
   const network = PACKAGE_INSTALL_PATTERN.test(command) ? 'bridge' : 'none';
   const mount = `${path.resolve(cwd).replace(/\\/g, '/')}:/workspace`;
 
@@ -329,7 +329,7 @@ export async function safeExec(
       try { proc.kill('SIGTERM'); } catch {}
       if (dockerMode) {
         // Killing the docker CLI doesn't reliably stop the container
-        try { spawn('docker', ['kill', containerName]); } catch {}
+        try { spawn('docker', ['kill', containerName]).on('error', () => {}); } catch {}
       }
       setTimeout(() => {
         try { proc.kill('SIGKILL'); } catch {}
@@ -339,10 +339,11 @@ export async function safeExec(
     const onAbort = () => {
       try { proc.kill('SIGTERM'); } catch {}
       if (dockerMode) {
-        try { spawn('docker', ['kill', containerName]); } catch {}
+        try { spawn('docker', ['kill', containerName]).on('error', () => {}); } catch {}
       }
     };
-    opts.signal?.addEventListener('abort', onAbort, { once: true });
+    if (opts.signal?.aborted) onAbort();
+    else opts.signal?.addEventListener('abort', onAbort, { once: true });
 
     const cleanup = () => {
       clearTimeout(killTimer);

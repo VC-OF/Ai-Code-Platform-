@@ -52,7 +52,7 @@ function getFallbackModels(): string[] {
 }
 
 export function getModel() {
-  return process.env.LLM_MODEL || process.env.OPENAI_MODEL || "gpt-4o-mini";
+  return process.env.LLM_MODEL || process.env.OPENAI_MODEL || "nemotron-3-ultra:cloud";
 }
 
 export function getContextWindow(model: string): number {
@@ -95,8 +95,10 @@ async function withRetry<T>(
   if (cb.state === 'open') {
     if (Date.now() - cb.lastFailure > RECOVERY_MS) {
       cb.state = 'half-open';
+      cb.failures = 0;
     } else {
-      throw new Error(`Circuit breaker OPEN for provider: ${provider}`);
+      const remainingSec = Math.ceil((RECOVERY_MS - (Date.now() - cb.lastFailure)) / 1000);
+      throw new Error(`Provider ${provider} is cooling down after errors (${remainingSec}s remaining). Please try again shortly.`);
     }
   }
 
