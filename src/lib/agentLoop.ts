@@ -27,10 +27,17 @@ import { validateTool } from './toolValidator';
 import crypto from 'crypto';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const MAX_STEPS    = 25;
-const MAX_DURATION = 5 * 60_000;   // 5 minutes total
-const STEP_TIMEOUT = 300_000;
-const MAX_TRUNCATIONS = 3;         // consecutive cut-off replies before giving up      // 5 min per LLM call (prevents premature timeout on reasoning models)
+function envPositiveInt(name: string, fallback: number): number {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+// Per-turn limits; hitting either ends the turn in the paused state
+// ('max_steps' / 'timeout') so the user can press Continue.
+const MAX_STEPS    = envPositiveInt('AGENT_MAX_STEPS', 150);
+const MAX_DURATION = envPositiveInt('AGENT_MAX_DURATION_MIN', 60) * 60_000;
+const STEP_TIMEOUT = 300_000;      // 5 min per LLM call (prevents premature timeout on reasoning models)
+const MAX_TRUNCATIONS = 3;         // consecutive cut-off replies before giving up
+const MAX_VERIFY_NUDGES = 2;       // times we ask for run_lint/run_tests before letting the turn end
 const COMPACT_AT   = 0.60;         // Compact at 60% context
 const COMPACT_TO   = 0.40;         // Compact down to 40%
 
@@ -195,14 +202,17 @@ export async function runAgentLoop(
     let truncations = 0;
     let carriedText = '';
 
+    let hitTimeLimit = false;
+    let verifyNudges = 0;
     for (stepIndex = 1; stepIndex <= MAX_STEPS; stepIndex++) {
       // ── Safety checks ────────────────────────────────────────────────────
       cancellation.token.throwIfCancelled();
 
       const elapsed = Date.now() - startTime - pausedMs;
       if (elapsed >= MAX_DURATION) {
-        emitter.error(stepIndex, `Agent timeout after ${Math.round(elapsed / 1000)}s`, false);
-        return buildResult('timeout', stepIndex, filesChanged, totalTokens, startTime);
+        // End in the paused state (not an error) so the UI offers Continue
+        hitTimeLimit = true;
+        break;
       }
 
       // ── Mid-run steering: inject messages the user queued ────────────────
@@ -444,7 +454,8 @@ export async function runAgentLoop(
         // If no tool calls = agent is done
         if (!toolCalls || toolCalls.length === 0) {
           // Enforce verification before finishing
-          if (ctx.hasEdits && !ctx.hasRunLint && !ctx.hasRunTests) {
+          if (ctx.hasEdits && !ctx.hasRunLint && !ctx.hasRunTests && verifyNudges < MAX_VERIFY_NUDGES) {
+            verifyNudges++;
             messages.push({
               role:    'assistant',
               content: textContent || null,
@@ -657,6 +668,11 @@ export async function runAgentLoop(
             turn_index:  turnIndex,
           });
 
+          // Any verification attempt counts (skipped "no tooling" or failed
+          // runs included) so the finish gate can never loop on it
+          if (toolName === 'run_lint') ctx.hasRunLint = true;
+          if (toolName === 'run_tests') ctx.hasRunTests = true;
+
           if (toolResult.success) {
             emitter.toolEnd(
               stepIndex,
@@ -774,7 +790,7 @@ export async function runAgentLoop(
     projectDb.touch(projectId);
 
     const reason: DoneReason =
-      stepIndex > MAX_STEPS ? 'max_steps' : 'completed';
+      hitTimeLimit ? 'timeout' : stepIndex > MAX_STEPS ? 'max_steps' : 'completed';
 
     emitter.status(stepIndex, 'done');
     emitter.done(

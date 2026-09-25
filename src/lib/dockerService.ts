@@ -1,6 +1,7 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
+import { getSandboxImage, isPolyglotImageBuilt, sandboxCacheArgs, SANDBOX_BUILD_HINT } from './sandboxImage';
 
 const execFileAsync = promisify(execFile);
 
@@ -15,6 +16,9 @@ export interface DockerInfo {
   memoryGiB?: string;
   osType?: string;
   defaultImage: string;
+  /** open-code-sandbox:1 (python/rust/go/java) exists locally */
+  polyglotImageBuilt?: boolean;
+  sandboxHint?: string;
   error?: string;
 }
 
@@ -27,7 +31,6 @@ export interface DockerContainer {
   names: string;
 }
 
-const DEFAULT_SANDBOX_IMAGE = process.env.SANDBOX_IMAGE || 'node:20-slim';
 
 let cachedStatus: { info: DockerInfo; timestamp: number } | null = null;
 const CACHE_TTL_MS = 10_000;
@@ -75,7 +78,9 @@ export async function getDockerStatus(forceRefresh = false): Promise<DockerInfo>
       cpus: parsed.NCPU || undefined,
       memoryGiB,
       osType: parsed.OSType || 'linux',
-      defaultImage: DEFAULT_SANDBOX_IMAGE,
+      defaultImage: getSandboxImage(),
+      polyglotImageBuilt: isPolyglotImageBuilt(),
+      sandboxHint: isPolyglotImageBuilt() ? undefined : SANDBOX_BUILD_HINT,
     };
 
     cachedStatus = { info, timestamp: now };
@@ -87,7 +92,9 @@ export async function getDockerStatus(forceRefresh = false): Promise<DockerInfo>
       containersRunning: 0,
       containersTotal: 0,
       imagesCount: 0,
-      defaultImage: DEFAULT_SANDBOX_IMAGE,
+      defaultImage: getSandboxImage(),
+      polyglotImageBuilt: isPolyglotImageBuilt(),
+      sandboxHint: isPolyglotImageBuilt() ? undefined : SANDBOX_BUILD_HINT,
       error: errorMsg.includes('connect')
         ? 'Docker daemon is not running. Start Docker Desktop.'
         : 'Docker CLI not found or failed to execute.',
@@ -157,7 +164,7 @@ export async function execInDocker(
     timeoutMs?: number;
   }
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const image = options?.image || DEFAULT_SANDBOX_IMAGE;
+  const image = options?.image || getSandboxImage();
   const network = options?.network || 'bridge';
   const mount = formatDockerMount(workspaceRoot);
   const containerName = `opencode_exec_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -183,6 +190,7 @@ export async function execInDocker(
     '2',
     '-v',
     mount,
+    ...sandboxCacheArgs(),
     '-w',
     '/workspace',
     '-e',

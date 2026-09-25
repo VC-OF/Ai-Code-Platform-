@@ -3,6 +3,7 @@ import { spawn } from 'child_process';
 import crypto from 'crypto';
 import path from 'path';
 import { HOST_ALLOWED_BINS, HOST_ALLOWED_GIT_SUBCOMMANDS } from './permissions';
+import { getSandboxImage, sandboxCacheArgs } from './sandboxImage';
 
 // ─── Whitelist ───────────────────────────────────────────────────────────────
 const ALLOWED_BINS = new Set<string>(HOST_ALLOWED_BINS);
@@ -113,7 +114,25 @@ function validateFindArgs(args: string[]): void {
   }
 }
 
-// ─── Execution limits ────────────────────────────────────────────────────────
+// ─── Other interpreters: block inline-code flags ────────────────────────────
+// Running a workspace script (python main.py) is fine; evaluating a code
+// string passed on the command line (python -c, php -r, deno eval) on the
+// host is not. ruby -e / perl-style -e is already caught by /^-e$/.
+const INLINE_CODE_FLAGS: Record<string, RegExp> = {
+  python: /^-c/, python3: /^-c/, php: /^-r$|^--run$/, deno: /^(eval|repl)$/,
+};
+
+function validateInlineCodeArgs(bin: string, args: string[]): void {
+  const re = INLINE_CODE_FLAGS[bin];
+  if (!re) return;
+  for (const arg of args) {
+    if (re.test(arg)) {
+      throw new CommandError(`${bin} '${arg}' (inline code execution) is not allowed on the host.`);
+    }
+  }
+}
+
+// ─── Execution limits────────────────────────────────────────────────────────
 const LIMITS = {
   timeoutMs:    30_000,        // 30 seconds
   maxBuffer:    5 * 1024 * 1024, // 5 MB
@@ -153,10 +172,12 @@ export class CommandError extends Error {
  * installs, which need the registry), memory/cpu/pid caps. The allowlist
  * and argument checks above still apply before anything is containerized.
  *
- * SANDBOX_IMAGE overrides the image (default node:20 — includes git).
+ * Image: see getSandboxImage() (SANDBOX_IMAGE > open-code-sandbox:1 > node:20).
  */
 const PACKAGE_INSTALL_PATTERN =
-  /\b(npm|pnpm|yarn|bun)\b\s+(install|ci|add|update|i\b)|\bnpx\b/;
+  /\b(npm|pnpm|yarn|bun)\b\s+(install|ci|add|update|i\b)|\bnpx\b|\bpip3?\s+install\b|\bpython3?\s+-m\s+pip\s+install\b|\buv\s+(pip|sync|add|venv|lock|run)\b|\bcargo\s+(build|test|check|clippy|fetch|run|add|install|update|doc)\b|\bgo\s+(mod|get|build|test|vet|run|install)\b|\b(mvn|gradle|gradlew)\b|\bbundle\s+install\b|\bcomposer\s+(install|require|update)\b|\bdotnet\s+(restore|build|test)\b/;
+// Network is also granted to toolchain builds above (cargo/go/mvn/gradle)
+// because they resolve dependencies on demand.
 
 export function isDockerMode(): boolean {
   return process.env.SANDBOX_MODE === 'docker';
@@ -175,7 +196,7 @@ function buildDockerInvocation(
   containerName: string,
   extraEnv?: Record<string, string>
 ): { bin: string; args: string[] } {
-  const image = process.env.SANDBOX_IMAGE || 'node:20-slim';
+  const image = getSandboxImage();
   const network = PACKAGE_INSTALL_PATTERN.test(command) ? 'bridge' : 'none';
   const mount = `${path.resolve(cwd).replace(/\\/g, '/')}:/workspace`;
 
@@ -190,10 +211,12 @@ function buildDockerInvocation(
       'run', '--rm', '--init',
       '--name', containerName,
       '--network', network,
-      '--memory', '1g',
-      '--cpus', '1',
+      '--memory', '2g',
+      '--cpus', '2',
       '--pids-limit', '512',
       '-v', mount,
+      // Shared cargo/go/pip/maven caches (paths set by the polyglot image ENV)
+      ...sandboxCacheArgs(),
       '-w', '/workspace',
       '-e', 'HOME=/workspace',
       '-e', 'npm_config_cache=/workspace/.npm-cache',
@@ -289,6 +312,7 @@ export async function safeExec(
     if (bin === 'node') validateNodeArgs(args);
     if (bin === 'find') validateFindArgs(args);
     if (bin === 'git') validateGitArgs(args);
+    validateInlineCodeArgs(bin, args);
 
     // 6. Check args for dangerous patterns. Long flags accept "--flag=value"
     //    as one argument — normalize to the flag portion too, so exact-match

@@ -4,6 +4,7 @@ import { constants as fsConstants } from 'fs';
 import path from 'path';
 import { ensureWorkspace, getWorkspaceRoot } from '@/lib/workspace';
 import { isDockerMode } from '@/lib/safeExec';
+import { getSandboxImage, isPolyglotImageBuilt, SANDBOX_BUILD_HINT } from '@/lib/sandboxImage';
 import pkg from '../../../../../package.json';
 
 export const runtime = 'nodejs';
@@ -94,6 +95,9 @@ export async function GET(req: NextRequest) {
       workspace: root,
       writable,
       sandbox: isDockerMode() ? 'docker' : 'local',
+      sandboxImage: isDockerMode() ? getSandboxImage() : null,
+      polyglotImageBuilt: isDockerMode() ? isPolyglotImageBuilt() : null,
+      sandboxHint: isDockerMode() && !isPolyglotImageBuilt() ? SANDBOX_BUILD_HINT : undefined,
       version: pkg.version,
       hooks,
       hooksFile,

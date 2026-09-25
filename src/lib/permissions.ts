@@ -25,6 +25,17 @@ export const HOST_ALLOWED_BINS = [
   'jest', 'vitest', 'mocha', 'jasmine',
   // Build tools
   'vite', 'webpack', 'rollup', 'esbuild', 'turbo',
+  // Python
+  'python', 'python3', 'pip', 'pip3', 'uv', 'pytest', 'ruff',
+  // Rust
+  'cargo', 'rustc', 'rustfmt',
+  // Go
+  'go', 'gofmt',
+  // JVM
+  'java', 'javac', 'mvn', 'gradle',
+  // Other runtimes / build tools
+  'dotnet', 'deno', 'ruby', 'bundle', 'php', 'composer',
+  'make', 'cmake', 'sqlite3',
   // Git (limited)
   'git',
   // Safe UNIX utils

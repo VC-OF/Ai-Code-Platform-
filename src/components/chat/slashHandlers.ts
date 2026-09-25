@@ -95,7 +95,7 @@ const openSurface = (target: string) => window.dispatchEvent(new CustomEvent('oc
 // ─── Response types (subset of each API) ─────────────────────────────────────
 
 interface GitStatus { branch?: string; changes?: { code: string; path: string }[] }
-interface DockerStatus { available?: boolean; version?: string; sandboxModeActive?: boolean; defaultImage?: string; error?: string }
+interface DockerStatus { available?: boolean; version?: string; sandboxModeActive?: boolean; defaultImage?: string; polyglotImageBuilt?: boolean; sandboxHint?: string; error?: string }
 interface McpServer { server: string; connected: boolean; tools: string[]; error?: string }
 interface McpInfo { configured: number; configPath: string; servers: McpServer[] }
 interface Skill {
@@ -338,6 +338,14 @@ async function handleDoctor(ctx: SlashContext) {
   if (docker instanceof Error) mark('warn', `Docker: ${docker.message}`);
   else if (docker.available) mark('pass', `Docker: running${docker.version ? ` (${docker.version})` : ''}, sandbox ${docker.sandboxModeActive ? 'on' : 'off'}`);
   else mark(info instanceof Error || info.sandbox === 'docker' ? 'fail' : 'warn', `Docker: not running${docker.error ? ` (${docker.error})` : ''}`);
+  if (!(docker instanceof Error) && docker.available) {
+    mark(
+      docker.polyglotImageBuilt ? 'pass' : 'warn',
+      `Sandbox image: ${docker.defaultImage ?? 'unknown'}${docker.polyglotImageBuilt
+        ? ' (polyglot: Python/Rust/Go/Java)'
+        : ` — ${docker.sandboxHint ?? 'Run npm run sandbox:build for Python/Rust/Go/Java support'}`}`,
+    );
+  }
 
   if (providers instanceof Error) mark('fail', `Providers: ${providers.message}`);
   else {

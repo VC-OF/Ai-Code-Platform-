@@ -55,6 +55,7 @@ const toolSchemas = {
   
   run_command: z.object({
     command: z.string().min(1).max(1000),
+    timeout_seconds: z.number().int().min(1).max(900).optional(),
   }),
 
   web_search: z.object({

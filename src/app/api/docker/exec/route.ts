@@ -2,14 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { execInDocker, getDockerStatus } from '@/lib/dockerService';
 import { projectDb } from '@/lib/db';
 import { getWorkspaceRoot } from '@/lib/workspace';
+import { knownSandboxImages } from '@/lib/sandboxImage';
 
 export const runtime = 'nodejs';
 
 // Images the exec endpoint may run: the sandbox defaults used by
 // dockerService/safeExec, SANDBOX_IMAGE, plus DOCKER_ALLOWED_IMAGES (comma list).
 function allowedImages(): Set<string> {
-  const set = new Set<string>(['node:20-slim', 'node:20']);
-  if (process.env.SANDBOX_IMAGE) set.add(process.env.SANDBOX_IMAGE.trim());
+  const set = new Set<string>(knownSandboxImages());
   for (const img of (process.env.DOCKER_ALLOWED_IMAGES || '').split(',')) {
     if (img.trim()) set.add(img.trim());
   }
