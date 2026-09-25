@@ -39,8 +39,11 @@ describe('agent extensions', () => {
     expect(prompt).toContain('Base policy');
     expect(prompt).toContain('Agent Harness and Guardrails');
     expect(prompt).toContain('Use npm test');
-    expect(prompt).toContain('## Project Skills');
-    expect(prompt).toContain('Run focused tests.');
+    expect(prompt).toContain('## Skills');
+    expect(prompt).toContain('- Testing: Verify changes');
+    expect(prompt).toContain('call load_skill');
+    // Progressive loading: full instructions are not in the system prompt
+    expect(prompt).not.toContain('Run focused tests.');
   });
 
   it('does not orphan tool results during compaction', () => {

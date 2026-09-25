@@ -64,6 +64,17 @@ export function languageFor(filePath: string) {
   if (filePath.endsWith(".sql")) return "sql";
   if (filePath.endsWith(".yml") || filePath.endsWith(".yaml")) return "yaml";
   if (filePath.endsWith(".xml") || filePath.endsWith(".svg")) return "xml";
+  if (filePath.endsWith(".rs")) return "rust";
+  if (filePath.endsWith(".go")) return "go";
+  if (filePath.endsWith(".java")) return "java";
+  if (filePath.endsWith(".c") || filePath.endsWith(".h")) return "c";
+  if (filePath.endsWith(".cpp") || filePath.endsWith(".hpp") || filePath.endsWith(".cc")) return "cpp";
+  if (filePath.endsWith(".cs")) return "csharp";
+  if (filePath.endsWith(".rb")) return "ruby";
+  if (filePath.endsWith(".php")) return "php";
+  if (filePath.endsWith(".toml") || filePath.endsWith(".ini")) return "ini";
+  if (filePath.endsWith(".ps1")) return "powershell";
+  if (/(^|\/)Dockerfile$/.test(filePath)) return "dockerfile";
   return "plaintext";
 }
 

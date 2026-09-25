@@ -126,7 +126,12 @@ export default function MobileNav({
         }
 
         .mob-nav-item--active {
-          color: var(--brand) !important;
+          color: var(--text-primary) !important;
+        }
+
+        .mob-nav-item:focus-visible {
+          outline: 2px solid var(--accent);
+          outline-offset: -2px;
         }
 
         .mob-nav-icon {
@@ -143,11 +148,12 @@ export default function MobileNav({
           min-width: 16px;
           height: 16px;
           padding: 0 4px;
-          background: var(--brand);
+          background: var(--bg-overlay);
+          border: 1px solid var(--border-base);
           border-radius: var(--radius-full);
           font-size: 10px;
-          font-weight: 700;
-          color: white;
+          font-weight: 500;
+          color: var(--text-secondary);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -155,9 +161,8 @@ export default function MobileNav({
         }
 
         .mob-nav-label {
-          font-size: 10px;
+          font-size: 11px;
           font-weight: 500;
-          letter-spacing: 0.02em;
         }
       `}</style>
     </nav>

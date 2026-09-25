@@ -1,3 +1,4 @@
+import { APPROVAL_REQUIRED_TOOLS } from './permissions';
 import { execSync } from 'child_process';
 import {
   callLLM,
@@ -18,17 +19,37 @@ import {
   SUMMARIZE_SYSTEM_PROMPT,
   type ContextMessage,
 } from './contextManager';
-import { CancellationSource, CancelledError } from './cancellation';
+import { CancellationSource, CancelledError, cancellableSleep } from './cancellation';
 import { trackUsage } from './usageTracker';
 import { messageDb, checkpointDb, toolLogDb, projectDb, type PlanTask } from './db';
 import { executeTool, createTurnContext } from './tools';
 import { validateTool } from './toolValidator';
+import { normalizeToolArgs } from './toolArgNormalize';
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const MAX_STEPS    = 25;
-const MAX_DURATION = 5 * 60_000;   // 5 minutes total
+function envPositiveInt(name: string, fallback: number): number {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+// Per-turn limits; hitting either ends the turn in the paused state
+// ('max_steps' / 'timeout') so the user can press Continue.
+const MAX_STEPS    = envPositiveInt('AGENT_MAX_STEPS', 150);
+const MAX_DURATION = envPositiveInt('AGENT_MAX_DURATION_MIN', 60) * 60_000;
 const STEP_TIMEOUT = 300_000;      // 5 min per LLM call (prevents premature timeout on reasoning models)
+const MAX_TRUNCATIONS = 3;         // consecutive cut-off replies before giving up
+const MAX_LLM_RETRIES = 3;         // transient model/provider failures retried per step
+const MAX_VERIFY_NUDGES = 2;       // times we ask for run_lint/run_tests before letting the turn end
+const PLAN_INSTRUCTION =
+  '[Planning step — tools are disabled for this reply.] Write a short numbered plan (at most ~10 lines) of the ' +
+  'steps and files you will create or change to fulfil the request above. Do not write code, do not simulate ' +
+  'tool output, and do not claim anything has been done yet.';
+const EXECUTE_PLAN_INSTRUCTION =
+  'Nothing from that plan has been executed yet. Carry it out now using tool calls, then verify with run_lint/run_tests.';
+const MAX_NO_ACTION_NUDGES = 1;     // times we challenge a "done" reply from a turn that ran no tools
+const MAX_TEXT_TOOL_NUDGES = 3;    // times we correct tool calls written as plain text
 const COMPACT_AT   = 0.60;         // Compact at 60% context
 const COMPACT_TO   = 0.40;         // Compact down to 40%
 
@@ -96,6 +117,11 @@ export async function runAgentLoop(
   let finalMessage   = '';
   let checkpointed   = false;
   let pausedMs       = 0;   // Time spent waiting on ask_user — excluded from the duration cap
+  let llmRetries     = 0;   // consecutive failed model calls (reset on success)
+  let textToolNudges = 0;
+  let noActionNudges = 0;
+  let toolsExecuted  = 0;   // real tool executions this turn
+  const toolNames = tools.map((t) => (t as { function?: { name?: string } }).function?.name ?? '').filter(Boolean);
 
   // ── Build initial message list ───────────────────────────────────────────
   let messages: ContextMessage[] = buildInitialMessages(
@@ -112,6 +138,17 @@ export async function runAgentLoop(
   messages
     .slice(0, 1 + (opts.persistedCount ?? 0))
     .forEach((m) => alreadyPersisted.add(m));
+
+  // Save what this turn produced when it ends early (cancel / error) so a
+  // follow-up "continue" still sees the work done so far
+  const persistPartial = () => {
+    try {
+      const fresh = messages.filter((m) => !alreadyPersisted.has(m));
+      persistMessages(projectId, closeDanglingToolCalls(fresh), turnIndex);
+      fresh.forEach((m) => alreadyPersisted.add(m));
+      projectDb.touch(projectId);
+    } catch {}
+  };
 
   // Per-request context rides in an ephemeral tail message (never persisted,
   // never stale in history) so the system+history prefix stays byte-stable
@@ -154,19 +191,34 @@ export async function runAgentLoop(
     if (needsPlan) {
       cancellation.token.throwIfCancelled();
 
-      const planResponse = await callWithTimeout(
-        callLLM(llmConfig, messages as LLMMessage[], undefined, {
-          toolChoice: 'none',
-          signal: cancellation.token.signal,
-        }),
-        STEP_TIMEOUT
-      );
+      // The upfront plan is an optimisation — a failed/slow call must not
+      // sink the whole turn; the execution loop has its own retries
+      let planResponse: Awaited<ReturnType<typeof callLLM>> | null = null;
+      try {
+        planResponse = await callWithTimeout(
+          // Without an explicit planning instruction a tool-less reply is just
+          // an answer — models then narrate fake work ("created files, tests
+          // pass") that the loop mistook for a finished turn
+          callLLM(llmConfig, [...messages, { role: 'user', content: PLAN_INSTRUCTION }] as LLMMessage[], undefined, {
+            toolChoice: 'none',
+            signal: cancellation.token.signal,
+          }),
+          STEP_TIMEOUT
+        );
+      } catch (err) {
+        if (err instanceof CancelledError || cancellation.isCancelled) throw err;
+        const msg = err instanceof Error ? err.message : String(err);
+        emitter.error(0, `Planning call failed (${msg.slice(0, 300)}) — continuing without an upfront plan`, true);
+      }
 
-      const planText = planResponse.content ?? '';
+      const planText = planResponse?.content ?? '';
 
-      if (planText) {
+      // A "plan" that is really tool calls written as text would teach the
+      // model to keep writing calls as text — keep it out of the history
+      if (planResponse && planText && !looksLikeTextToolCall(planText, toolNames)) {
         emitter.plan(0, planText);
         messages.push({ role: 'assistant', content: planText });
+        messages.push({ role: 'user', content: EXECUTE_PLAN_INSTRUCTION } as ContextMessage);
         totalTokens += planResponse.usage.total_tokens;
 
         // Track usage
@@ -188,14 +240,22 @@ export async function runAgentLoop(
     }
 
     // ── Main execution loop ────────────────────────────────────────────────
+    // Replies cut off by the output-token cap: count in a row, and text
+    // carried over so a continued answer is shown whole
+    let truncations = 0;
+    let carriedText = '';
+
+    let hitTimeLimit = false;
+    let verifyNudges = 0;
     for (stepIndex = 1; stepIndex <= MAX_STEPS; stepIndex++) {
       // ── Safety checks ────────────────────────────────────────────────────
       cancellation.token.throwIfCancelled();
 
       const elapsed = Date.now() - startTime - pausedMs;
       if (elapsed >= MAX_DURATION) {
-        emitter.error(stepIndex, `Agent timeout after ${Math.round(elapsed / 1000)}s`, false);
-        return buildResult('timeout', stepIndex, filesChanged, totalTokens, startTime);
+        // End in the paused state (not an error) so the UI offers Continue
+        hitTimeLimit = true;
+        break;
       }
 
       // ── Mid-run steering: inject messages the user queued ────────────────
@@ -290,6 +350,7 @@ export async function runAgentLoop(
 
       // ── LLM call ──────────────────────────────────────────────────────────
       let textContent = '';
+      let inLLMCall = false;
 
       try {
         // Stream text for better UX
@@ -297,7 +358,9 @@ export async function runAgentLoop(
           | { id: string; type: 'function'; function: { name: string; arguments: string } }[]
           | null = null;
         let usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+        let finishReason: string | null = null;
 
+        inLLMCall = true;
         const stream = callLLMStream(
           llmConfig,
           messages as LLMMessage[],
@@ -315,6 +378,14 @@ export async function runAgentLoop(
         for await (const chunk of stream) {
           cancellation.token.throwIfCancelled();
 
+          if (chunk.type === 'fallback') {
+            emitter.error(
+              stepIndex,
+              `${llmConfig.model} failed (${chunk.reason}); this step uses fallback model ${chunk.model}`,
+              true
+            );
+          }
+
           if (chunk.type === 'delta' && chunk.delta) {
             textContent += chunk.delta;
             emitter.textDelta(stepIndex, chunk.delta);
@@ -331,6 +402,7 @@ export async function runAgentLoop(
           }
 
           if (chunk.type === 'done') {
+            finishReason = chunk.finishReason ?? null;
             if (chunk.usage) {
               usage = {
                 prompt_tokens:     chunk.usage.prompt_tokens,
@@ -340,6 +412,9 @@ export async function runAgentLoop(
             }
           }
         }
+
+        inLLMCall = false;
+        llmRetries = 0;
 
         // Assemble tool calls
         const accumulatedCalls = Object.values(toolCallAccumulators);
@@ -392,10 +467,90 @@ export async function runAgentLoop(
           costUsd
         );
 
+        // ── Output cut off by the token cap ─────────────────────────────────
+        if (finishReason === 'length') {
+          truncations++;
+          if (truncations > MAX_TRUNCATIONS) {
+            throw new Error(
+              `The model's reply was cut off by the output-token limit ${truncations} times in a row. ` +
+              'Raise LLM_MAX_OUTPUT_TOKENS, pick a model with a larger output limit, or ask for smaller changes.'
+            );
+          }
+
+          if (toolCalls && toolCalls.length > 0) {
+            // Truncated tool arguments are incomplete — never execute them
+            const names = toolCalls.map((tc) => tc.function.name).join(', ');
+            for (const tc of toolCalls) {
+              emitter.toolError(
+                stepIndex, tc.id, tc.function.name,
+                'Reply was cut off by the output-token limit before this call finished', true,
+                'Retrying in smaller parts'
+              );
+            }
+            messages.push({ role: 'assistant', content: textContent || null } as ContextMessage);
+            messages.push({
+              role: 'user' as const,
+              content:
+                `Your last reply was cut off by the output-token limit while writing ${names}, so nothing was applied. ` +
+                'Write large files in parts: create_file with the first ~300 lines, then append_file for each further part ' +
+                '(each under ~300 lines). For edits, use smaller edit_file or replace_lines calls.',
+            } as ContextMessage);
+          } else {
+            carriedText += textContent;
+            messages.push({ role: 'assistant', content: textContent || null } as ContextMessage);
+            messages.push({
+              role: 'user' as const,
+              content: 'Your reply was cut off by the output-token limit. Continue exactly where you stopped, without repeating anything.',
+            } as ContextMessage);
+          }
+          continue;
+        }
+        truncations = 0;
+
+        // Tool calls written as plain text (some models/servers fall back to
+        // this) would otherwise end the turn as if it were the final answer
+        if ((!toolCalls || toolCalls.length === 0) &&
+            textToolNudges < MAX_TEXT_TOOL_NUDGES &&
+            looksLikeTextToolCall(textContent, toolNames)) {
+          textToolNudges++;
+          messages.push({ role: 'assistant', content: textContent || null } as ContextMessage);
+          messages.push({
+            role: 'user' as const,
+            content:
+              'Your last reply wrote tool calls as plain text, so nothing was executed and no files changed. ' +
+              'Invoke tools through the function-calling interface (a real tool call), one or more per reply — ' +
+              'do not describe or print them.',
+          } as ContextMessage);
+          emitter.toolError(
+            stepIndex, `text-tool-${stepIndex}`, 'text_tool_call',
+            'Model wrote tool calls as plain text; asking it to use real tool calls', true
+          );
+          continue;
+        }
+
+        // A "finished" reply from a turn that never ran a tool yet claims to
+        // have created/run things is a hallucinated completion
+        if ((!toolCalls || toolCalls.length === 0) &&
+            needsPlan && toolsExecuted === 0 &&
+            noActionNudges < MAX_NO_ACTION_NUDGES &&
+            claimsCompletedWork(textContent)) {
+          noActionNudges++;
+          messages.push({ role: 'assistant', content: textContent || null } as ContextMessage);
+          messages.push({
+            role: 'user' as const,
+            content:
+              'No tool has been executed in this turn, so no files exist and nothing has been run — ' +
+              'the work you describe has not happened. Do it now with real tool calls ' +
+              '(create_file, run_command, run_tests, …). If the request needs no changes, say so plainly.',
+          } as ContextMessage);
+          continue;
+        }
+
         // If no tool calls = agent is done
         if (!toolCalls || toolCalls.length === 0) {
           // Enforce verification before finishing
-          if (ctx.hasEdits && !ctx.hasRunLint && !ctx.hasRunTests) {
+          if (ctx.hasEdits && !ctx.hasRunLint && !ctx.hasRunTests && verifyNudges < MAX_VERIFY_NUDGES) {
+            verifyNudges++;
             messages.push({
               role:    'assistant',
               content: textContent || null,
@@ -411,7 +566,7 @@ export async function runAgentLoop(
             continue; // Force another step
           }
 
-          finalMessage = textContent;
+          finalMessage = carriedText + textContent;
           break;
         }
 
@@ -442,7 +597,9 @@ export async function runAgentLoop(
               tool_name:   toolName,
               content:
                 `Error: the arguments for ${toolName} were not valid JSON. ` +
-                `Received: ${snippet}\nRe-issue the tool call with valid JSON arguments.`,
+                `Received: ${snippet}\nRe-issue the tool call with valid JSON arguments. ` +
+                'If the content is large, it was probably cut off by the output limit: ' +
+                'split it into create_file with the first part, then append_file for the rest.',
             } as ContextMessage);
             emitter.toolError(
               stepIndex, toolCallId, toolName,
@@ -451,6 +608,9 @@ export async function runAgentLoop(
             );
             continue;
           }
+
+          // Repair unambiguous alias/shape slips (e.g. TodoWrite's `content`)
+          toolArgs = normalizeToolArgs(toolName, toolArgs) as Record<string, unknown>;
 
           // Validate args with Zod
           const validation = validateTool(toolName, toolArgs);
@@ -512,6 +672,7 @@ export async function runAgentLoop(
           if (!checkpointed && (
             toolName === 'edit_file' ||
             toolName === 'create_file' ||
+            toolName === 'append_file' ||
             toolName === 'delete_file' ||
             toolName === 'replace_lines'
           )) {
@@ -538,15 +699,7 @@ export async function runAgentLoop(
           }
 
           // Manual execution mode: require approval before running mutating actions
-          const MUTATING_TOOLS = new Set([
-            'edit_file',
-            'create_file',
-            'replace_lines',
-            'delete_file',
-            'run_command',
-            'docker_run',
-            'deploy_app',
-          ]);
+          const MUTATING_TOOLS = new Set<string>(APPROVAL_REQUIRED_TOOLS);
 
           if (opts.executionMode === 'manual' && MUTATING_TOOLS.has(toolName) && opts.waitForUserInput) {
             let targetSummary = '';
@@ -593,6 +746,7 @@ export async function runAgentLoop(
           emitter.status(stepIndex, toolStatusFor(toolName));
 
           const toolStart = Date.now();
+          toolsExecuted++;
           const toolResult = await executeTool(
             toolName,
             toolArgs,
@@ -612,6 +766,11 @@ export async function runAgentLoop(
             duration_ms: toolDuration,
             turn_index:  turnIndex,
           });
+
+          // Any verification attempt counts (skipped "no tooling" or failed
+          // runs included) so the finish gate can never loop on it
+          if (toolName === 'run_lint') ctx.hasRunLint = true;
+          if (toolName === 'run_tests') ctx.hasRunTests = true;
 
           if (toolResult.success) {
             emitter.toolEnd(
@@ -678,7 +837,8 @@ export async function runAgentLoop(
               stepIndex,
               toolCallId,
               toolName,
-              toolResult.error ?? 'Unknown error',
+              // Failed commands carry their exit info in summary, not error
+              toolResult.error ?? toolResult.summary ?? 'Unknown error',
               true,
               toolResult.suggestion
             );
@@ -696,9 +856,25 @@ export async function runAgentLoop(
         emitter.status(stepIndex, 'planning');
 
       } catch (err) {
-        if (err instanceof CancelledError) {
+        // An aborted provider request after Stop surfaces as an SDK abort
+        // error, not CancelledError — it is still a user cancellation
+        if (err instanceof CancelledError || cancellation.isCancelled) {
+          persistPartial();
           emitter.status(stepIndex, 'done');
           return buildResult('user_cancelled', stepIndex, filesChanged, totalTokens, startTime);
+        }
+        // Transient provider failures (rate limits, dropped/stalled streams)
+        // happen before anything from this step is recorded — retry it
+        if (inLLMCall && llmRetries < MAX_LLM_RETRIES) {
+          llmRetries++;
+          const msg = err instanceof Error ? err.message : String(err);
+          emitter.error(
+            stepIndex,
+            `Model call failed (${msg.slice(0, 300)}) — retrying (${llmRetries}/${MAX_LLM_RETRIES})`,
+            true
+          );
+          await cancellableSleep(2_000 * 2 ** (llmRetries - 1), cancellation.token);
+          continue;
         }
         throw err;
       }
@@ -730,7 +906,7 @@ export async function runAgentLoop(
     projectDb.touch(projectId);
 
     const reason: DoneReason =
-      stepIndex > MAX_STEPS ? 'max_steps' : 'completed';
+      hitTimeLimit ? 'timeout' : stepIndex > MAX_STEPS ? 'max_steps' : 'completed';
 
     emitter.status(stepIndex, 'done');
     emitter.done(
@@ -745,10 +921,12 @@ export async function runAgentLoop(
 
   } catch (err) {
     // Cancellation during planning/compaction lands here, not in the step catch
-    if (err instanceof CancelledError) {
+    if (err instanceof CancelledError || cancellation.isCancelled) {
+      persistPartial();
       emitter.status(stepIndex, 'done');
       return buildResult('user_cancelled', stepIndex, filesChanged, totalTokens, startTime);
     }
+    persistPartial();
     const msg = err instanceof Error ? err.message : String(err);
     emitter.error(stepIndex, msg, true);
     emitter.status(stepIndex, 'error');
@@ -780,12 +958,14 @@ function buildInitialMessages(
 function toolStatusFor(toolName: string): AgentStatus {
   const map: Record<string, AgentStatus> = {
     read_file:    'reading',
+    load_skill:   'reading',
     list_files:   'reading',
     glob_files:   'reading',
     grep_files:   'reading',
     web_search:   'reading',
     fetch_url:    'reading',
     create_file:  'writing',
+    append_file:  'writing',
     edit_file:    'writing',
     delete_file:  'writing',
     replace_lines: 'writing',
@@ -797,6 +977,10 @@ function toolStatusFor(toolName: string): AgentStatus {
     read_preview_logs: 'reading',
     fetch_preview: 'reading',
     check_preview: 'testing',
+    browser_open: 'testing', browser_snapshot: 'reading', browser_click: 'testing',
+    browser_type: 'testing', browser_press: 'testing', browser_select: 'testing',
+    browser_scroll: 'reading', browser_wait: 'testing', browser_console: 'reading',
+    browser_screenshot: 'testing', browser_close: 'testing',
     update_plan:  'planning',
     deploy_app:   'running',
     ask_user:     'waiting',
@@ -804,16 +988,94 @@ function toolStatusFor(toolName: string): AgentStatus {
   return map[toolName] ?? 'planning';
 }
 
+/** Build output, dependency and cache dirs never belong in checkpoints —
+ *  `git add -A` on target/, node_modules/ or .venv/ made every checkpoint
+ *  slow and bloated the repo. Uses .git/info/exclude (local-only), so the
+ *  project's own .gitignore is left untouched. */
+export const CHECKPOINT_EXCLUDES = [
+  'node_modules/', '.npm-cache/', '.next/', 'dist/', 'build/', 'coverage/',
+  'target/', '.venv/', 'venv/', '__pycache__/', '.pytest_cache/', '.ruff_cache/',
+  '.mypy_cache/', '*.egg-info/', '.local/', '.cache/', '.gradle/', '*.class',
+];
+const EXCLUDE_MARKER = '# open-code checkpoint excludes';
+
+export function ensureCheckpointExcludes(workspace: string): void {
+  try {
+    const file = path.join(workspace, '.git', 'info', 'exclude');
+    const current = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+    if (current.includes(EXCLUDE_MARKER)) return;
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const sep = current && !current.endsWith('\n') ? '\n' : '';
+    fs.writeFileSync(file, `${current}${sep}${EXCLUDE_MARKER}\n${CHECKPOINT_EXCLUDES.join('\n')}\n`);
+  } catch {
+    // Not fatal: the checkpoint just includes more files
+  }
+}
+
 function gitCheckpoint(workspace: string, turnIndex: number, phase = 'start'): string {
   // Explicit identity so checkpoints work without global git config
   const identity =
     '-c user.name="Open Code Agent" -c user.email="agent@opencode.local"';
+  ensureCheckpointExcludes(workspace);
   execSync('git add -A', { cwd: workspace, stdio: 'pipe' });
   execSync(
     `git ${identity} commit -m "checkpoint: turn ${turnIndex} ${phase}" --allow-empty`,
     { cwd: workspace, stdio: 'pipe' }
   );
   return execSync('git rev-parse HEAD', { cwd: workspace }).toString().trim();
+}
+
+/** Heuristic: does `text` contain tool invocations written as plain text
+ *  (e.g. `<tool_call>`, `<function=create_file>`, `## create_file ##`, or a
+ *  JSON object naming a known tool) instead of native tool calls? */
+export function looksLikeTextToolCall(text: string, toolNames: string[]): boolean {
+  if (!text) return false;
+  if (/<tool_call>|<\/tool_call>|<function=|<\|tool_call|\[TOOL_CALLS\]/i.test(text)) return true;
+  if (!toolNames.length) return false;
+  const names = toolNames.filter((n) => /^[\w-]+$/.test(n)).join('|');
+  if (!names) return false;
+  const patterns = [
+    new RegExp(`^\\s*#{1,3}\\s*(${names})\\s*#{1,3}\\s*$`, 'm'),
+    new RegExp(`"(?:tool|name|tool_name|function)"\\s*:\\s*"(${names})"`),
+  ];
+  return patterns.some((re) => re.test(text));
+}
+
+/** Does a final reply claim work was done (files written, tests run)? */
+export function claimsCompletedWork(text: string): boolean {
+  return /\b(created|wrote|written|added|implemented|updated|built|generated|ran|executed|tests?\s+(?:all\s+)?pass(?:ed|es)?)\b/i.test(text);
+}
+
+/** Providers reject a history where an assistant tool call has no matching
+ *  tool result. A turn cut short mid-tool-batch leaves such calls — answer
+ *  them with a placeholder so the saved history stays valid. */
+export function closeDanglingToolCalls(messages: ContextMessage[]): ContextMessage[] {
+  const out: ContextMessage[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    out.push(m);
+    const calls = m.tool_calls as { id: string; function?: { name?: string } }[] | undefined;
+    if (m.role !== 'assistant' || !Array.isArray(calls) || calls.length === 0) continue;
+    const answered = new Set<string>();
+    let j = i + 1;
+    while (j < messages.length && messages[j].role === 'tool') {
+      answered.add(String(messages[j].tool_call_id));
+      out.push(messages[j]);
+      j++;
+    }
+    for (const tc of calls) {
+      if (!answered.has(tc.id)) {
+        out.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          tool_name: tc.function?.name,
+          content: '[Not run: the turn ended before this tool call executed]',
+        } as ContextMessage);
+      }
+    }
+    i = j - 1;
+  }
+  return out;
 }
 
 function persistMessages(

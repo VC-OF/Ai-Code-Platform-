@@ -108,7 +108,12 @@ export async function getDecryptedEnv(
   };
   const out: Record<string, string> = {};
   for (const key of Object.keys(merged)) {
-    out[key] = decrypt(merged[key]);
+    try {
+      out[key] = decrypt(merged[key]);
+    } catch (err) {
+      // Corrupt entry or key rotated: skip it rather than breaking every caller.
+      console.warn(`[settings] failed to decrypt env var "${key}", skipping:`, err instanceof Error ? err.message : err);
+    }
   }
   return out;
 }

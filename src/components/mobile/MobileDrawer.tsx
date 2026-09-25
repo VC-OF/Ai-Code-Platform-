@@ -67,11 +67,14 @@ export default function MobileDrawer({
           <div className="mob-drawer-header">
             <span className="mob-drawer-title">{title}</span>
             <button
+              type="button"
               className="mob-drawer-close"
               onClick={onClose}
               aria-label="Close"
             >
-              ✕
+              <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={2}>
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
             </button>
           </div>
         )}
@@ -86,16 +89,17 @@ export default function MobileDrawer({
         .mob-backdrop {
           position: fixed;
           inset: 0;
-          background: rgba(0, 0, 0, 0);
+          background: transparent;
+          opacity: 0;
           z-index: 100;
           pointer-events: none;
-          transition: background var(--transition-base);
+          transition: opacity var(--transition-base);
         }
 
         .mob-backdrop--open {
-          background: rgba(0, 0, 0, 0.6);
+          background: var(--text-primary);
+          opacity: 0.32;
           pointer-events: all;
-          backdrop-filter: blur(2px);
         }
 
         /* ── Left drawer ─── */
@@ -129,7 +133,7 @@ export default function MobileDrawer({
           max-height: 85vh;
           background: var(--bg-surface);
           border-top: 1px solid var(--border-subtle);
-          border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+          border-radius: var(--radius-lg) var(--radius-lg) 0 0;
           z-index: 101;
           transform: translateY(100%);
           transition: transform var(--transition-slow);
@@ -141,7 +145,7 @@ export default function MobileDrawer({
 
         .mob-drawer--bottom.mob-drawer--open {
           transform: translateY(0);
-          box-shadow: 0 -8px 32px rgba(0,0,0,0.5);
+          box-shadow: var(--shadow-lg);
         }
 
         .mob-drawer-handle-wrap {
@@ -162,14 +166,14 @@ export default function MobileDrawer({
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 14px 16px;
+          padding: 10px 12px 10px 16px;
           border-bottom: 1px solid var(--border-subtle);
           flex-shrink: 0;
         }
 
         .mob-drawer-title {
-          font-size: var(--text-base);
-          font-weight: 600;
+          font-size: 14px;
+          font-weight: 500;
           color: var(--text-primary);
         }
 
@@ -183,9 +187,12 @@ export default function MobileDrawer({
           border: none;
           color: var(--text-muted);
           cursor: pointer;
-          border-radius: var(--radius-sm);
-          font-size: 12px;
-          transition: all var(--transition-fast);
+          border-radius: var(--radius-md);
+          transition: background var(--transition-fast), color var(--transition-fast);
+        }
+
+        .mob-drawer-close:focus-visible {
+          outline: 2px solid var(--accent);
         }
 
         .mob-drawer-close:hover {

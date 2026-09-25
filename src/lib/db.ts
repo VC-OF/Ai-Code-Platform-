@@ -452,6 +452,36 @@ export const usageDb = {
       };
   },
 
+  /** Token totals per model for one project (drives /cost and /usage). */
+  getModelBreakdown(projectId: string): {
+    model: string;
+    requests: number;
+    prompt_tokens: number;
+    completion_tokens: number;
+    cost_usd: number;
+  }[] {
+    return getDb()
+      .prepare(`
+        SELECT
+          model,
+          COUNT(*)                            AS requests,
+          COALESCE(SUM(prompt_tokens), 0)     AS prompt_tokens,
+          COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
+          COALESCE(SUM(cost_usd), 0)          AS cost_usd
+        FROM usage_log
+        WHERE project_id = ?
+        GROUP BY model
+        ORDER BY prompt_tokens + completion_tokens DESC
+      `)
+      .all(projectId) as {
+        model: string;
+        requests: number;
+        prompt_tokens: number;
+        completion_tokens: number;
+        cost_usd: number;
+      }[];
+  },
+
   getByProject(projectId: string, limit = 100): DbUsageLog[] {
     return getDb()
       .prepare(`
@@ -576,7 +606,7 @@ export function dbHealthCheck(): {
     const stat = fs.statSync(DB_PATH);
 
     return { ok: true, tables, size_bytes: stat.size };
-  } catch (err) {
+  } catch {
     return { ok: false, tables: [], size_bytes: 0 };
   }
 }

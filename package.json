@@ -10,7 +10,8 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "e2e": "playwright test -c e2e/playwright.config.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "sandbox:build": "docker build -t open-code-sandbox:1 docker/sandbox"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",

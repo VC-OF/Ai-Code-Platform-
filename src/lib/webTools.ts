@@ -27,7 +27,9 @@ function isPrivateIpv4(ip: string): boolean {
     (a === 100 && b >= 64 && b <= 127) || // CGNAT
     (a === 169 && b === 254) ||
     (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168)
+    (a === 192 && b === 168) ||
+    (a === 198 && (b === 18 || b === 19)) || // 198.18.0.0/15 benchmarking
+    a >= 224 // 224.0.0.0/4 multicast + 240.0.0.0/4 reserved/broadcast
   );
 }
 
@@ -47,12 +49,13 @@ function isPrivateIpv6(ip: string): boolean {
     lower.startsWith("fc") ||
     lower.startsWith("fd") ||
     lower.startsWith("fe80") ||
+    lower.startsWith("ff") || // ff00::/8 multicast
     // IPv4-mapped (::ffff:a.b.c.d)
     (lower.includes(".") && isPrivateIpv4(lower.split(":").pop() ?? ""))
   );
 }
 
-async function assertPublicHost(url: URL): Promise<void> {
+export async function assertPublicHost(url: URL): Promise<void> {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error(`Only http/https URLs are allowed (got ${url.protocol})`);
   }

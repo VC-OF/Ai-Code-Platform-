@@ -1,15 +1,25 @@
 import { z } from 'zod';
+import { BROWSER_ZOD_SCHEMAS } from './browserTools';
 
 const toolSchemas = {
   read_file: z.object({
     path: z.string().min(1).max(500),
   }),
   
+  load_skill: z.object({
+    name: z.string().min(1).max(200),
+  }),
+
   create_file: z.object({
     path: z.string().min(1).max(500),
     content: z.string().max(500_000), // 500KB limit
   }),
   
+  append_file: z.object({
+    path: z.string().min(1).max(500),
+    content: z.string().min(1).max(500_000),
+  }),
+
   edit_file: z.object({
     path: z.string().min(1).max(500),
     oldText: z.string().min(1).max(50_000),
@@ -46,6 +56,7 @@ const toolSchemas = {
   
   run_command: z.object({
     command: z.string().min(1).max(1000),
+    timeout_seconds: z.number().int().min(1).max(900).optional(),
   }),
 
   web_search: z.object({
@@ -119,6 +130,7 @@ const toolSchemas = {
     network: z.enum(['none', 'bridge']).optional(),
   }),
   docker_status: z.object({}).optional(),
+  ...BROWSER_ZOD_SCHEMAS,
 };
 
 export type ToolName = keyof typeof toolSchemas;

@@ -33,16 +33,17 @@ export default function ResizeHandle({
   useEffect(() => () => cleanupRef.current?.(), []);
 
   const onResizeWidthRef = useRef(onResizeWidth);
-  onResizeWidthRef.current = onResizeWidth;
-
   const onToggleRef = useRef(onToggle);
-  onToggleRef.current = onToggle;
-
   const onEnsureOpenRef = useRef(onEnsureOpen);
-  onEnsureOpenRef.current = onEnsureOpen;
-
   const hasOpenPanelsRef = useRef(hasOpenPanels);
-  hasOpenPanelsRef.current = hasOpenPanels;
+
+  // Keep latest callbacks/values in refs for use inside window listeners
+  useEffect(() => {
+    onResizeWidthRef.current = onResizeWidth;
+    onToggleRef.current = onToggle;
+    onEnsureOpenRef.current = onEnsureOpen;
+    hasOpenPanelsRef.current = hasOpenPanels;
+  }, [onResizeWidth, onToggle, onEnsureOpen, hasOpenPanels]);
 
   const onMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -119,7 +120,7 @@ export default function ResizeHandle({
 
   const defaultTitle = hasOpenPanels
     ? 'Drag to resize panels • Double-click to toggle'
-    : 'Drag left or click to open Code Editor';
+    : 'Drag left or click to open code editor';
 
   return (
     <div
@@ -164,8 +165,8 @@ export default function ResizeHandle({
               e.stopPropagation();
               onToggle?.();
             }}
-            title="Click or drag left to open Code Editor"
-            aria-label="Open Code Editor"
+            title="Click or drag left to open code editor"
+            aria-label="Open code editor"
           >
             <span className="dock-btn-arrow">‹</span>
             <svg
@@ -194,46 +195,36 @@ export default function ResizeHandle({
           cursor: col-resize;
           user-select: none;
           z-index: 40;
-          transition: background 0.15s ease, box-shadow 0.15s ease;
+          transition: background var(--transition-fast, 0.15s ease);
         }
-
-        /* ── Open mode: divider bar ── */
         .resize-handle--open {
-          width: 6px;
+          width: 5px;
           flex-shrink: 0;
-          background: var(--border-subtle, rgba(255, 255, 255, 0.08));
+          background: var(--border-subtle);
         }
-
-        /* ── Edge mode: right dock tab ── */
         .resize-handle--edge {
-          width: 10px;
+          width: 8px;
           flex-shrink: 0;
           background: transparent;
         }
-
-        /* 24px wide invisible hit zone so the handle is effortless to grab from anywhere */
         .resize-handle::before {
           content: '';
           position: absolute;
           top: 0;
           bottom: 0;
-          left: -10px;
-          right: -10px;
+          left: -8px;
+          right: -8px;
           cursor: col-resize;
           z-index: 10;
         }
-
         .resize-handle:hover,
         .resize-handle--active {
-          background: var(--brand, #f97316);
-          box-shadow: 0 0 10px rgba(249, 115, 22, 0.45);
+          background: var(--border-strong);
         }
-
         .resize-handle--edge:hover,
         .resize-handle--edge.resize-handle--active {
-          background: rgba(249, 115, 22, 0.35);
+          background: var(--bg-hover);
         }
-
         .resize-handle-bar {
           width: 100%;
           height: 100%;
@@ -241,77 +232,52 @@ export default function ResizeHandle({
           flex-direction: column;
           align-items: center;
           justify-content: center;
-          gap: 12px;
           position: relative;
         }
-
         .resize-handle-dots {
           display: flex;
           flex-direction: column;
           align-items: center;
-          justify-content: center;
           gap: 3px;
-          opacity: 0.5;
-          transition: opacity 0.15s ease;
+          opacity: 0.6;
           pointer-events: none;
         }
-
-        .resize-handle:hover .resize-handle-dots,
-        .resize-handle--active .resize-handle-dots {
-          opacity: 1;
-        }
-
         .resize-handle-dots span {
           width: 3px;
           height: 3px;
           border-radius: 50%;
-          background: var(--text-muted, #8b949e);
-          transition: background 0.15s ease;
+          background: var(--text-muted);
         }
-
-        .resize-handle:hover .resize-handle-dots span,
-        .resize-handle--active .resize-handle-dots span {
-          background: #ffffff;
-        }
-
-        /* Collapse mini button on the handle bar */
         .handle-collapse-btn {
           position: absolute;
           top: 48%;
           left: 50%;
           transform: translate(-50%, -50%);
           width: 18px;
-          height: 32px;
-          border-radius: 4px;
-          background: var(--bg-surface, #1e1e24);
-          border: 1px solid var(--border-base, rgba(255, 255, 255, 0.15));
-          color: var(--text-secondary, #94a3b8);
+          height: 30px;
+          border-radius: var(--radius-md);
+          background: var(--bg-elevated);
+          border: 1px solid var(--border-base);
+          color: var(--text-secondary);
           font-size: 13px;
-          font-weight: 700;
           display: flex;
           align-items: center;
           justify-content: center;
           cursor: pointer;
           opacity: 0;
           pointer-events: auto;
-          transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+          transition: opacity var(--transition-fast, 0.15s ease);
           z-index: 25;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
         }
-
         .resize-handle:hover .handle-collapse-btn,
-        .resize-handle--active .handle-collapse-btn {
+        .resize-handle--active .handle-collapse-btn,
+        .handle-collapse-btn:focus-visible {
           opacity: 1;
         }
-
         .handle-collapse-btn:hover {
-          background: var(--brand, #f97316);
-          color: #ffffff;
-          border-color: var(--brand, #f97316);
-          transform: translate(-50%, -50%) scale(1.08);
+          background: var(--bg-hover);
+          color: var(--text-primary);
         }
-
-        /* ── Edge Dock Tab (When chat is full-page) ── */
         .resize-handle-edge-tab {
           position: absolute;
           right: 0;
@@ -319,51 +285,34 @@ export default function ResizeHandle({
           transform: translateY(-50%);
           z-index: 35;
         }
-
         .handle-dock-btn {
           display: flex;
           align-items: center;
           gap: 5px;
-          padding: 7px 11px 7px 8px;
-          background: var(--bg-surface, #1c1d22);
-          border: 1px solid var(--border-strong, rgba(255, 255, 255, 0.2));
+          padding: 6px 10px 6px 8px;
+          background: var(--bg-surface);
+          border: 1px solid var(--border-base);
           border-right: none;
-          border-radius: 18px 0 0 18px;
-          color: var(--text-secondary, #cbd5e1);
-          font-size: 11px;
-          font-weight: 600;
+          border-radius: var(--radius-md) 0 0 var(--radius-md);
+          color: var(--text-secondary);
+          font-size: 12px;
           cursor: pointer;
-          box-shadow: -3px 4px 14px rgba(0, 0, 0, 0.25);
-          transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+          transition: background var(--transition-fast, 0.15s ease), color var(--transition-fast, 0.15s ease);
           white-space: nowrap;
         }
-
         .handle-dock-btn:hover {
-          background: var(--bg-elevated, #27282f);
-          color: var(--brand, #f97316);
-          border-color: var(--brand, #f97316);
-          box-shadow: -4px 6px 18px rgba(249, 115, 22, 0.3);
-          transform: translateX(-4px);
+          background: var(--bg-hover);
+          color: var(--text-primary);
         }
-
+        .handle-btn:focus-visible {
+          outline: 2px solid var(--accent);
+          outline-offset: 1px;
+        }
         .dock-btn-arrow {
-          font-size: 14px;
-          font-weight: 700;
-          color: var(--brand, #f97316);
-          transition: transform 0.2s ease;
+          font-size: 13px;
         }
-
-        .handle-dock-btn:hover .dock-btn-arrow {
-          transform: translateX(-2px);
-        }
-
         .dock-btn-icon {
           flex-shrink: 0;
-        }
-
-        .dock-btn-label {
-          font-family: var(--font-brand, inherit);
-          letter-spacing: 0.02em;
         }
       `}</style>
     </div>

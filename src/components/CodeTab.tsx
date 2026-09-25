@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useLayoutEffect, useState, useRef, useCallback } from "react";
+import type { BeforeMount } from "@monaco-editor/react";
 import dynamic from "next/dynamic";
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
@@ -13,6 +14,63 @@ const MonacoDiffEditor = dynamic(
 );
 
 import { languageFor, getFileIcon } from "@/lib/file-utils";
+
+const EDITOR_FONT = "'JetBrains Mono', 'SFMono-Regular', ui-monospace, Consolas, monospace";
+
+// Warm-neutral Monaco themes matching the design tokens
+const defineEditorThemes: BeforeMount = (monaco) => {
+  monaco.editor.defineTheme("oc-dark", {
+    base: "vs-dark",
+    inherit: true,
+    rules: [{ token: "comment", foreground: "7d7b74", fontStyle: "italic" }],
+    colors: {
+      "editor.background": "#262624",
+      "editor.foreground": "#eceae3",
+      "editorLineNumber.foreground": "#65635d",
+      "editorLineNumber.activeForeground": "#c3c0b6",
+      "editor.lineHighlightBackground": "#2c2b29",
+      "editor.lineHighlightBorder": "#00000000",
+      "editor.selectionBackground": "#d977572e",
+      "editor.inactiveSelectionBackground": "#d977571a",
+      "editorCursor.foreground": "#d97757",
+      "editorIndentGuide.background1": "#34332f",
+      "editorWhitespace.foreground": "#3a3936",
+      "editorGutter.background": "#262624",
+      "minimap.background": "#262624",
+      "scrollbarSlider.background": "#eceae31a",
+      "scrollbarSlider.hoverBackground": "#eceae333",
+      "editorWidget.background": "#30302e",
+      "editorWidget.border": "#eceae31f",
+      "diffEditor.insertedTextBackground": "#7fb88f22",
+      "diffEditor.removedTextBackground": "#e5776b22",
+    },
+  });
+  monaco.editor.defineTheme("oc-light", {
+    base: "vs",
+    inherit: true,
+    rules: [{ token: "comment", foreground: "8a887f", fontStyle: "italic" }],
+    colors: {
+      "editor.background": "#ffffff",
+      "editor.foreground": "#1f1e1d",
+      "editorLineNumber.foreground": "#a8a69e",
+      "editorLineNumber.activeForeground": "#3d3c38",
+      "editor.lineHighlightBackground": "#f5f4ef",
+      "editor.lineHighlightBorder": "#00000000",
+      "editor.selectionBackground": "#d977572e",
+      "editor.inactiveSelectionBackground": "#d977571a",
+      "editorCursor.foreground": "#c6613f",
+      "editorIndentGuide.background1": "#ebe9e1",
+      "editorGutter.background": "#ffffff",
+      "minimap.background": "#ffffff",
+      "scrollbarSlider.background": "#1f1e1d1a",
+      "scrollbarSlider.hoverBackground": "#1f1e1d33",
+      "editorWidget.background": "#f5f4ef",
+      "editorWidget.border": "#1f1e1d1f",
+      "diffEditor.insertedTextBackground": "#2f7d4f1c",
+      "diffEditor.removedTextBackground": "#b53b2f1c",
+    },
+  });
+};
 
 interface CodeTabProps {
   refreshKey: number;
@@ -49,10 +107,15 @@ export default function CodeTab({
   const [splitContent, setSplitContent] = useState("");
 
   const [showDiff, setShowDiff] = useState(false);
-  const [loadingFile, setLoadingFile] = useState(false);
   const [savingFile, setSavingFile] = useState(false);
   const [revertingFile, setRevertingFile] = useState(false);
-  const [editorTheme, setEditorTheme] = useState<"vs" | "vs-dark">("vs-dark");
+  const [editorTheme, setEditorTheme] = useState<"oc-light" | "oc-dark">(() =>
+    typeof document !== "undefined" &&
+    document.documentElement.getAttribute("data-theme") === "light"
+      ? "oc-light"
+      : "oc-dark"
+  );
+  const [diffModified, setDiffModified] = useState("");
 
   // Editor configuration
   const [wordWrap, setWordWrap] = useState<"on" | "off">("on");
@@ -100,11 +163,12 @@ export default function CodeTab({
     window.dispatchEvent(new CustomEvent("oc-inject-prompt", { detail: { prompt } }));
   }, [activePath, selectedCodeRange]);
 
-  // Antigravity-style Inline Edit (Ctrl+I) state
+  // Inline edit (Ctrl+I) state
   const [showInlineEdit, setShowInlineEdit] = useState(false);
   const [inlinePrompt, setInlinePrompt] = useState('');
   const [inlineLoading, setInlineLoading] = useState(false);
   const [inlineProposed, setInlineProposed] = useState<string | null>(null);
+  const [inlineOriginal, setInlineOriginal] = useState('');
   const inlineRangeRef = useRef<{ startLine: number; startCol: number; endLine: number; endCol: number } | null>(null);
   const inlineOriginalTextRef = useRef<string>('');
   const inlinePathRef = useRef<string | null>(null);
@@ -137,16 +201,22 @@ export default function CodeTab({
     }
     inlineOriginalTextRef.current = text;
     inlinePathRef.current = activePath;
+    setInlineOriginal(text);
     setInlineProposed(null);
     setShowInlineEdit(true);
   }, [activePath]);
   // Monaco commands are registered once on mount; route through a ref so they see the current activePath
   const openInlineEditRef = useRef(handleOpenInlineEdit);
-  openInlineEditRef.current = handleOpenInlineEdit;
+  const activePathRef = useRef(activePath);
+  useLayoutEffect(() => {
+    openInlineEditRef.current = handleOpenInlineEdit;
+    activePathRef.current = activePath;
+  }, [handleOpenInlineEdit, activePath]);
 
   const handleRunInlineEdit = useCallback(async (customInstruction?: string) => {
     const instruction = customInstruction || inlinePrompt;
     if (!instruction.trim() || !activePath) return;
+    const requestPath = activePath;
     setInlineLoading(true);
     try {
       const res = await fetch('/api/ai/inline', {
@@ -159,6 +229,8 @@ export default function CodeTab({
         }),
       });
       const data = await res.json();
+      // The user switched files while generating; the proposal belongs to the old file
+      if (activePathRef.current !== requestPath) return;
       if (data.success && data.replacement !== undefined) {
         setInlineProposed(data.replacement);
       } else {
@@ -199,24 +271,22 @@ export default function CodeTab({
     setInlinePrompt('');
   }, []);
 
-  // Close the inline edit if the active file changes; its captured range belongs to the old file
-  useEffect(() => {
-    if (inlinePathRef.current && inlinePathRef.current !== activePath) {
-      inlinePathRef.current = null;
-      inlineRangeRef.current = null;
-      setShowInlineEdit(false);
-      setInlineProposed(null);
-      setInlinePrompt('');
-    }
-  }, [activePath]);
+  // Close the inline edit if the active file changes; its captured range belongs to the old file.
+  // (Render-time adjustment; handleAcceptInlineEdit also guards on inlinePathRef.)
+  const [inlineResetPath, setInlineResetPath] = useState(activePath);
+  if (inlineResetPath !== activePath) {
+    setInlineResetPath(activePath);
+    setShowInlineEdit(false);
+    setInlineProposed(null);
+    setInlinePrompt('');
+  }
 
   // Theme observer
   useEffect(() => {
     const updateTheme = () => {
       const theme = document.documentElement.getAttribute("data-theme");
-      setEditorTheme(theme === "light" ? "vs" : "vs-dark");
+      setEditorTheme(theme === "light" ? "oc-light" : "oc-dark");
     };
-    updateTheme();
     const observer = new MutationObserver(updateTheme);
     observer.observe(document.documentElement, {
       attributes: true,
@@ -226,17 +296,15 @@ export default function CodeTab({
   }, []);
 
   // Sync external activeFile prop to openTabs and activePath
-  useEffect(() => {
+  // (Render-time adjustment keyed on the prop, instead of an effect.)
+  const [syncedActiveFile, setSyncedActiveFile] = useState<string | null | undefined>(undefined);
+  if (syncedActiveFile !== activeFile) {
+    setSyncedActiveFile(activeFile);
     if (activeFile) {
-      setOpenTabs((prev) => {
-        if (!prev.includes(activeFile)) {
-          return [...prev, activeFile];
-        }
-        return prev;
-      });
+      setOpenTabs((prev) => (prev.includes(activeFile) ? prev : [...prev, activeFile]));
       setActivePath(activeFile);
     }
-  }, [activeFile]);
+  }
 
   // Load project files list for Quick Open palette
   const loadProjectFiles = useCallback(async () => {
@@ -253,27 +321,57 @@ export default function CodeTab({
   }, [projectId]);
 
   useEffect(() => {
-    loadProjectFiles();
-  }, [loadProjectFiles, refreshKey]);
+    let cancelled = false;
+    fetch(`/api/files?projectId=${encodeURIComponent(projectId)}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled || !data.tree) return;
+        const filesOnly = (data.tree as { path: string; isDirectory: boolean }[])
+          .filter((item) => !item.isDirectory)
+          .map((item) => item.path.replace(/\\/g, "/"));
+        setAllProjectFiles(filesOnly);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, refreshKey]);
+
+  // Reset the diff view whenever the file (or its on-disk version) changes
+  const loadKey = `${projectId}|${activePath ?? ""}|${refreshKey}`;
+  const [diffResetKey, setDiffResetKey] = useState(loadKey);
+  if (diffResetKey !== loadKey) {
+    setDiffResetKey(loadKey);
+    setShowDiff(false);
+  }
+  // Loading is derived: the file is loading until the load for the current key resolves
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const loadingFile = activePath !== null && loadedKey !== loadKey;
 
   // Load file content when activePath changes
   useEffect(() => {
+    const key = `${projectId}|${activePath ?? ""}|${refreshKey}`;
     if (!activePath) {
-      setCurrentContent("");
-      setCurrentGitContent("");
+      Promise.resolve().then(() => {
+        setCurrentContent("");
+        setCurrentGitContent("");
+        setLoadedKey(key);
+      });
       return;
     }
-
-    setShowDiff(false);
 
     // If we already have unsaved in-memory content, use it immediately
     if (fileContents.current[activePath] !== undefined) {
-      setCurrentContent(fileContents.current[activePath]);
-      setCurrentGitContent(gitContents.current[activePath] ?? "");
+      const cached = fileContents.current[activePath];
+      const cachedGit = gitContents.current[activePath] ?? "";
+      Promise.resolve().then(() => {
+        setCurrentContent(cached);
+        setCurrentGitContent(cachedGit);
+        setLoadedKey(key);
+      });
       return;
     }
 
-    setLoadingFile(true);
     const fetchFs = fetch(
       `/api/files?path=${encodeURIComponent(activePath)}&projectId=${encodeURIComponent(projectId)}`
     ).then((r) => r.json());
@@ -293,7 +391,7 @@ export default function CodeTab({
         setCurrentGitContent(gitText);
       })
       .catch((err) => console.error("Error loading file content", err))
-      .finally(() => setLoadingFile(false));
+      .finally(() => setLoadedKey(key));
   }, [activePath, refreshKey, projectId]);
 
   // Load split file content when splitPath changes
@@ -580,8 +678,12 @@ export default function CodeTab({
                     className={`tab-close-btn ${isMod ? "tab-close-btn--modified" : ""}`}
                     onClick={(e) => closeTab(path, e)}
                     title={isMod ? "Unsaved changes" : "Close tab (Ctrl+W)"}
+                    aria-label={`Close ${fileName}`}
                   >
-                    {isMod ? <span className="dirty-dot">●</span> : "✕"}
+                    {isMod && <span className="dirty-dot" aria-hidden="true" />}
+                    <svg className="tab-close-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={11} height={11} aria-hidden="true">
+                      <path d="M18 6L6 18M6 6l12 12" />
+                    </svg>
                   </button>
                 </div>
               );
@@ -596,7 +698,7 @@ export default function CodeTab({
                 setQuickOpenIndex(0);
               }}
               className="tab-action-icon-btn"
-              title="Quick Open File (Ctrl+P)"
+              title="Quick open (Ctrl+P)" aria-label="Quick open"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13}>
                 <circle cx="11" cy="11" r="7" />
@@ -606,7 +708,7 @@ export default function CodeTab({
             <button
               onClick={createNewFile}
               className="tab-action-icon-btn"
-              title="New File"
+              title="New file" aria-label="New file"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13}>
                 <path d="M12 5v14M5 12h14" />
@@ -615,7 +717,7 @@ export default function CodeTab({
             <button
               onClick={toggleSplitView}
               className={`tab-action-icon-btn ${isSplit ? "tab-action-icon-btn--active" : ""}`}
-              title={isSplit ? "Close Split Editor" : "Split Editor Right"}
+              title={isSplit ? "Close split editor" : "Split editor right"} aria-label="Toggle split editor"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13}>
                 <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -638,8 +740,8 @@ export default function CodeTab({
             </span>
             {activePath.split("/").map((seg, i, arr) => (
               <span key={i} className="path-seg">
-                {i > 0 && <span className="path-sep">›</span>}
-                <span className={i === arr.length - 1 ? "path-file font-semibold" : "path-folder"}>
+                {i > 0 && <span className="path-sep">/</span>}
+                <span className={i === arr.length - 1 ? "path-file" : "path-folder"}>
                   {seg}
                 </span>
               </span>
@@ -654,28 +756,28 @@ export default function CodeTab({
             <button
               onClick={handleOpenInlineEdit}
               className="tool-action-btn"
-              title="Inline AI Edit (Ctrl+I) - transform or generate code directly in editor"
+              title="Edit inline (Ctrl+I)"
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13} className="text-violet-400">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} width={13} height={13} aria-hidden="true">
                 <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
               </svg>
-              <span>Inline (Ctrl+I)</span>
+              <span>Edit</span>
             </button>
 
             {/* Ask AI Bridge button */}
             <button
               onClick={handleAskAIAboutSelection}
-              className={`tool-action-btn ${selectedCodeRange ? 'tool-action-btn--ai-active' : ''}`}
+              className={`tool-action-btn ${selectedCodeRange ? 'tool-action-btn--active' : ''}`}
               title={
                 selectedCodeRange
-                  ? `Ask AI about selected lines ${selectedCodeRange.startLine}-${selectedCodeRange.endLine} (Ctrl+K)`
-                  : `Ask AI about ${activePath} (Ctrl+K)`
+                  ? `Ask about lines ${selectedCodeRange.startLine}-${selectedCodeRange.endLine} (Ctrl+K)`
+                  : `Ask about ${activePath} (Ctrl+K)`
               }
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13} className="text-indigo-400">
-                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} width={13} height={13} aria-hidden="true">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
               </svg>
-              <span>{selectedCodeRange ? `Ask AI (${selectedCodeRange.endLine - selectedCodeRange.startLine + 1}L)` : 'Ask AI'}</span>
+              <span>{selectedCodeRange ? `Ask (${selectedCodeRange.endLine - selectedCodeRange.startLine + 1} lines)` : 'Ask'}</span>
             </button>
 
             {/* Quick action buttons */}
@@ -705,14 +807,19 @@ export default function CodeTab({
             <button
               onClick={() => setWordWrap((prev) => (prev === "on" ? "off" : "on"))}
               className={`tool-action-btn ${wordWrap === "on" ? "tool-action-btn--active" : ""}`}
-              title="Toggle Word Wrap"
+              title="Toggle word wrap"
             >
               <span>Wrap</span>
             </button>
 
             <button
-              onClick={() => setShowDiff(!showDiff)}
-              className={`action-btn ${showDiff ? "action-btn--active" : ""}`}
+              onClick={() => {
+                if (!showDiff && activePath) {
+                  setDiffModified(fileContents.current[activePath] ?? currentContent);
+                }
+                setShowDiff(!showDiff);
+              }}
+              className={`tool-action-btn ${showDiff ? "tool-action-btn--active" : ""}`}
               title="Compare with last checkpoint"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13}>
@@ -725,8 +832,8 @@ export default function CodeTab({
               <button
                 disabled={revertingFile}
                 onClick={revertFile}
-                className="revert-btn"
-                title="Revert all unsaved changes"
+                className="tool-action-btn"
+                title="Revert unsaved changes"
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13}>
                   <path d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
@@ -738,13 +845,9 @@ export default function CodeTab({
             <button
               disabled={!isCurrentModified || savingFile}
               onClick={() => saveFile()}
-              className="save-btn"
+              className="btn btn--accent btn--sm"
               title="Save (Ctrl+S)"
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} width={12} height={12}>
-                <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z" />
-                <path d="M17 21v-8H7v8M7 3v5h8" />
-              </svg>
               <span>{savingFile ? "Saving…" : "Save"}</span>
             </button>
           </div>
@@ -756,19 +859,15 @@ export default function CodeTab({
         {!activePath && (
           <div className="welcome-screen">
             <div className="welcome-card">
-              <div className="welcome-icon">
-                <div className="window-frame">
-                  <div className="window-dots">
-                    <span className="dot dot-r" />
-                    <span className="dot dot-y" />
-                    <span className="dot dot-g" />
-                  </div>
-                  <span className="code-symbol">&lt;/&gt;</span>
-                </div>
+              <div className="welcome-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} width={28} height={28}>
+                  <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+                  <path d="M14 3v6h6M10 13l-2 2 2 2M14 13l2 2-2 2" />
+                </svg>
               </div>
               <h2 className="welcome-title">No file open</h2>
               <p className="welcome-desc">
-                Select a file from the explorer on the left or press <strong>Ctrl+P</strong> to quickly open any file.
+                Select a file in the explorer, or press <kbd className="kbd">Ctrl+P</kbd> to open one quickly.
               </p>
               <div className="welcome-actions">
                 <button
@@ -776,12 +875,12 @@ export default function CodeTab({
                     setShowQuickOpen(true);
                     setQuickOpenFilter("");
                   }}
-                  className="btn-primary"
+                  className="btn btn--secondary"
                 >
-                  Quick Open (Ctrl+P)
+                  Quick open
                 </button>
-                <button onClick={createNewFile} className="btn-ghost">
-                  + New File
+                <button onClick={createNewFile} className="btn btn--ghost">
+                  New file
                 </button>
               </div>
             </div>
@@ -792,15 +891,16 @@ export default function CodeTab({
         {activePath && showDiff && (
           <MonacoDiffEditor
             key={activePath + "-diff"}
+            beforeMount={defineEditorThemes}
             height="100%"
             theme={editorTheme}
             language={languageFor(activePath)}
             original={loadingFile ? "// loading..." : currentGitContent}
-            modified={loadingFile ? "// loading..." : (fileContents.current[activePath] ?? currentContent)}
+            modified={loadingFile ? "// loading..." : diffModified}
             options={{
               minimap: { enabled: true },
               fontSize,
-              fontFamily: "'JetBrains Mono', 'Fira Code', Menlo, Monaco, monospace",
+              fontFamily: EDITOR_FONT,
               readOnly: true,
               wordWrap,
               scrollBeyondLastLine: false,
@@ -818,6 +918,7 @@ export default function CodeTab({
               theme={editorTheme}
               language={languageFor(activePath)}
               defaultValue={currentContent}
+              beforeMount={defineEditorThemes}
               onChange={(val) => handleContentChange(val ?? "", activePath)}
               onMount={(editor, monaco) => {
                 editorRef.current = editor;
@@ -832,7 +933,7 @@ export default function CodeTab({
                   handleAskAIAboutSelection();
                 });
 
-                // Register Ctrl+I / Cmd+I Antigravity-style Inline Edit command
+                // Register Ctrl+I / Cmd+I inline edit command
                 editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyI, () => {
                   openInlineEditRef.current();
                 });
@@ -843,7 +944,7 @@ export default function CodeTab({
                 });
 
                 // Track selection for "Ask AI" context action
-                editor.onDidChangeCursorSelection((e: any) => {
+                editor.onDidChangeCursorSelection((e) => {
                   const sel = e.selection;
                   if (sel && (sel.startLineNumber !== sel.endLineNumber || sel.startColumn !== sel.endColumn)) {
                     const txt = editor.getModel()?.getValueInRange(sel) || "";
@@ -866,7 +967,7 @@ export default function CodeTab({
                   maxColumn: 90,
                 },
                 fontSize,
-                fontFamily: "'JetBrains Mono', 'Fira Code', Menlo, Monaco, Consolas, monospace",
+                fontFamily: EDITOR_FONT,
                 fontLigatures: true,
                 lineNumbers: "on",
                 lineNumbersMinChars: 3,
@@ -891,134 +992,139 @@ export default function CodeTab({
               }}
             />
 
-            {/* Antigravity-style Inline Edit Bar (Ctrl+I) */}
+            {/* Inline edit (Ctrl+I) */}
             {showInlineEdit && (
-              <div className="inline-edit-overlay">
-                <div className="inline-edit-box">
-                  <div className="inline-edit-header">
-                    <span className="inline-edit-title">
-                      <span className="inline-ai-sparkle">✨</span> Inline Edit (Ctrl+I)
-                    </span>
+              <div className="inline-edit-overlay" role="dialog" aria-label="Inline edit">
+                <div className="inline-edit-row">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} width={14} height={14} aria-hidden="true" className="inline-edit-icon">
+                    <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                  </svg>
+                  <input
+                    type="text"
+                    autoFocus
+                    aria-label="Describe the change"
+                    placeholder="Describe the change"
+                    value={inlinePrompt}
+                    onChange={(e) => {
+                      setInlinePrompt(e.target.value);
+                      // Editing the prompt invalidates a previously generated proposal
+                      if (inlineProposed !== null) setInlineProposed(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (inlineProposed !== null) {
+                          handleAcceptInlineEdit();
+                        } else {
+                          handleRunInlineEdit();
+                        }
+                      } else if (e.key === 'Escape') {
+                        handleRejectInlineEdit();
+                      }
+                    }}
+                    className="inline-edit-input"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleRejectInlineEdit}
+                    className="icon-btn"
+                    title="Close (Esc)"
+                    aria-label="Close inline edit"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={12} height={12} aria-hidden="true">
+                      <path d="M18 6L6 18M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+
+                {inlineProposed === null && (
+                  <div className="inline-edit-chips">
+                    {['Add error handling', 'Add types', 'Add docstrings', 'Refactor', 'Optimize'].map((chip) => (
+                      <button
+                        key={chip}
+                        type="button"
+                        disabled={inlineLoading}
+                        onClick={() => {
+                          setInlinePrompt(chip);
+                          handleRunInlineEdit(chip);
+                        }}
+                        className="inline-chip"
+                      >
+                        {chip}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {inlineProposed !== null && (
+                  <div className="inline-diff" aria-label="Proposed change">
+                    {inlineOriginal !== '' && (
+                      <pre className="inline-diff-block inline-diff-block--del">{inlineOriginal}</pre>
+                    )}
+                    <pre className="inline-diff-block inline-diff-block--add">{inlineProposed}</pre>
+                  </div>
+                )}
+
+                <div className="inline-edit-footer">
+                  <span className="inline-hint">
+                    {inlineLoading
+                      ? 'Generating…'
+                      : inlineProposed !== null
+                        ? 'Enter to accept · Esc to discard'
+                        : 'Enter to generate · Esc to cancel'}
+                  </span>
+                  <div className="inline-footer-actions">
                     <button
                       type="button"
                       onClick={handleRejectInlineEdit}
-                      className="inline-edit-close"
-                      title="Cancel (Esc)"
+                      className="btn btn--ghost"
                     >
-                      ✕
+                      {inlineProposed !== null ? 'Discard' : 'Cancel'}
                     </button>
-                  </div>
-
-                  <div className="inline-edit-body">
-                    <input
-                      type="text"
-                      autoFocus
-                      placeholder="Instruct AI (e.g. 'Add error handling', 'Convert to async/await', 'Add types')..."
-                      value={inlinePrompt}
-                      onChange={(e) => {
-                        setInlinePrompt(e.target.value);
-                        // Editing the prompt invalidates a previously generated proposal
-                        if (inlineProposed !== null) setInlineProposed(null);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          if (inlineProposed !== null) {
-                            handleAcceptInlineEdit();
-                          } else {
-                            handleRunInlineEdit();
-                          }
-                        } else if (e.key === 'Escape') {
-                          handleRejectInlineEdit();
-                        }
-                      }}
-                      className="inline-edit-input"
-                    />
-
-                    {/* Quick suggestion pills */}
-                    <div className="inline-edit-chips">
-                      {['+ Error handling', '+ TypeScript types', '+ Docstrings', 'Refactor clean', 'Optimize'].map((chip) => (
-                        <button
-                          key={chip}
-                          type="button"
-                          onClick={() => {
-                            setInlinePrompt(chip);
-                            handleRunInlineEdit(chip);
-                          }}
-                          className="inline-chip"
-                        >
-                          {chip}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Proposed diff review */}
-                    {inlineProposed !== null && (
-                      <div className="inline-proposed-preview">
-                        <div className="inline-preview-header">Proposed Code Replacement:</div>
-                        <pre className="inline-preview-code">{inlineProposed}</pre>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="inline-edit-footer">
-                    <span className="inline-hint">
-                      {inlineProposed !== null ? 'Press Enter to Accept or Esc to Reject' : 'Press Enter to Generate'}
-                    </span>
-                    <div className="inline-footer-actions">
+                    {inlineProposed === null ? (
                       <button
                         type="button"
-                        onClick={handleRejectInlineEdit}
-                        className="inline-btn inline-btn--ghost"
+                        onClick={() => handleRunInlineEdit()}
+                        disabled={inlineLoading || !inlinePrompt.trim()}
+                        className="btn btn--accent"
                       >
-                        Cancel (Esc)
+                        {inlineLoading ? 'Generating…' : 'Generate'}
                       </button>
-                      {inlineProposed === null ? (
-                        <button
-                          type="button"
-                          onClick={() => handleRunInlineEdit()}
-                          disabled={inlineLoading || !inlinePrompt.trim()}
-                          className="inline-btn inline-btn--primary"
-                        >
-                          {inlineLoading ? 'Generating…' : 'Generate (↵)'}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={handleAcceptInlineEdit}
-                          className="inline-btn inline-btn--accept"
-                        >
-                          ✓ Accept (↵)
-                        </button>
-                      )}
-                    </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleAcceptInlineEdit}
+                        className="btn btn--accent"
+                      >
+                        Accept
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Floating Selection Quick Action */}
-            {selectedCodeRange && (
+            {/* Floating selection quick actions */}
+            {selectedCodeRange && !showInlineEdit && (
               <div className="floating-selection-bar">
                 <button
                   type="button"
                   onClick={handleOpenInlineEdit}
-                  className="floating-ai-btn floating-ai-btn--inline"
-                  title="Inline Edit (Ctrl+I)"
+                  className="floating-btn"
+                  title="Edit selection inline (Ctrl+I)"
                 >
-                  <span className="ai-sparkle">✨</span>
-                  <span>Inline Edit</span>
-                  <kbd className="ai-kbd">Ctrl+I</kbd>
+                  <span>Edit</span>
+                  <kbd className="kbd">Ctrl+I</kbd>
                 </button>
+                <span className="floating-sep" aria-hidden="true" />
                 <button
                   type="button"
                   onClick={handleAskAIAboutSelection}
-                  className="floating-ai-btn"
-                  title="Ask AI about this selection (Ctrl+K)"
+                  className="floating-btn"
+                  title="Ask about this selection in chat (Ctrl+K)"
                 >
-                  <span className="ai-sparkle">💬</span>
-                  <span>Ask Chat ({selectedCodeRange.endLine - selectedCodeRange.startLine + 1}L)</span>
-                  <kbd className="ai-kbd">Ctrl+K</kbd>
+                  <span>Ask in chat</span>
+                  <kbd className="kbd">Ctrl+K</kbd>
                 </button>
               </div>
             )}
@@ -1030,7 +1136,7 @@ export default function CodeTab({
           <div className="editor-pane editor-pane--secondary">
             <div className="split-pane-header">
               <span className="split-pane-title">
-                <span style={{ color: getFileIcon(splitPath).color, fontWeight: "bold" }}>
+                <span className="split-pane-icon" style={{ color: getFileIcon(splitPath).color }}>
                   {getFileIcon(splitPath).icon}
                 </span>{" "}
                 {splitPath}
@@ -1049,10 +1155,13 @@ export default function CodeTab({
                 </select>
                 <button
                   onClick={() => setIsSplit(false)}
-                  className="split-close-btn"
+                  className="icon-btn"
                   title="Close split pane"
+                  aria-label="Close split pane"
                 >
-                  ✕
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={11} height={11} aria-hidden="true">
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  </svg>
                 </button>
               </div>
             </div>
@@ -1062,10 +1171,16 @@ export default function CodeTab({
                 height="100%"
                 theme={editorTheme}
                 language={languageFor(splitPath)}
-                defaultValue={fileContents.current[splitPath] ?? splitContent}
+                defaultValue={splitContent}
+                beforeMount={defineEditorThemes}
                 onChange={(val) => handleContentChange(val ?? "", splitPath)}
                 onMount={(editor, monaco) => {
                   splitEditorRef.current = editor;
+                  // Prefer unsaved in-memory content for this file over the last-loaded snapshot
+                  const cached = fileContents.current[splitPath];
+                  if (cached !== undefined && cached !== editor.getValue()) {
+                    editor.setValue(cached);
+                  }
                   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
                     saveFile(splitPath);
                   });
@@ -1073,7 +1188,7 @@ export default function CodeTab({
                 options={{
                   minimap: { enabled: false },
                   fontSize,
-                  fontFamily: "'JetBrains Mono', 'Fira Code', Menlo, Monaco, monospace",
+                  fontFamily: EDITOR_FONT,
                   fontLigatures: true,
                   lineNumbers: "on",
                   lineNumbersMinChars: 3,
@@ -1105,24 +1220,26 @@ export default function CodeTab({
             </span>
             {isCurrentModified && (
               <span className="sb-item sb-item--warn" title="Unsaved modifications">
-                ● 1 unsaved
+                <span className="sb-dot" aria-hidden="true" />
+                Unsaved
               </span>
             )}
             {isSplit && (
               <span className="sb-item sb-item--split">
-                Split Editor Active
+                Split
               </span>
             )}
           </div>
 
           <div className="sb-right">
-            <span
+            <button
+              type="button"
               className="sb-item sb-clickable"
               onClick={() => setFontSize((s) => (s >= 18 ? 12 : s + 1))}
-              title="Click to change font size"
+              title="Change font size"
             >
-              Zoom: {fontSize}px
-            </span>
+              {fontSize}px
+            </button>
             <span className="sb-item">
               Ln {cursorPos.line}, Col {cursorPos.col}
             </span>
@@ -1130,7 +1247,7 @@ export default function CodeTab({
             <span className="sb-item">UTF-8</span>
             <span className="sb-item">LF</span>
             <span className="sb-item sb-item--lang">
-              {languageFor(activePath).toUpperCase()}
+              {languageFor(activePath)}
             </span>
           </div>
         </div>
@@ -1148,7 +1265,8 @@ export default function CodeTab({
               <input
                 type="text"
                 autoFocus
-                placeholder="Search files by name… (Esc to close)"
+                placeholder="Search files by name"
+                aria-label="Search files"
                 value={quickOpenFilter}
                 onChange={(e) => {
                   setQuickOpenFilter(e.target.value);
@@ -1206,19 +1324,105 @@ export default function CodeTab({
           height: 100%;
           display: flex;
           flex-direction: column;
-          background: var(--bg-deep, #0e1117);
+          background: var(--bg-surface);
+          color: var(--text-primary);
+          font-family: var(--font-sans);
           position: relative;
           overflow: hidden;
         }
 
-        /* ── Tab Bar ─────────────────────────────────────────────── */
-        .vscode-tabs-bar {
-          height: 35px;
-          display: flex;
+        button {
+          font-family: inherit;
+        }
+        button:focus-visible,
+        select:focus-visible,
+        input:focus-visible {
+          outline: 2px solid var(--accent);
+          outline-offset: 1px;
+        }
+
+        /* ── Shared controls ─────────────────────────────────────── */
+        .btn {
+          display: inline-flex;
           align-items: center;
+          gap: 6px;
+          height: 28px;
+          padding: 0 12px;
+          font-size: 12px;
+          font-weight: 500;
+          border-radius: var(--radius-md);
+          border: 1px solid transparent;
+          cursor: pointer;
+          transition: background-color var(--transition-fast), color var(--transition-fast);
+        }
+        .btn--sm {
+          height: 24px;
+          padding: 0 10px;
+        }
+        .btn--accent {
+          background: var(--accent);
+          color: var(--text-on-accent);
+        }
+        .btn--accent:hover:not(:disabled) {
+          background: var(--accent-dim);
+        }
+        .btn--secondary {
+          background: var(--bg-elevated);
+          border-color: var(--border-base);
+          color: var(--text-primary);
+        }
+        .btn--secondary:hover {
+          background: var(--bg-overlay);
+        }
+        .btn--ghost {
+          background: transparent;
+          color: var(--text-secondary);
+        }
+        .btn--ghost:hover {
+          background: var(--bg-hover);
+          color: var(--text-primary);
+        }
+        .btn:disabled {
+          opacity: 0.4;
+          cursor: not-allowed;
+        }
+
+        .icon-btn {
+          width: 22px;
+          height: 22px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+          background: transparent;
+          border: none;
+          border-radius: var(--radius-md);
+          color: var(--text-muted);
+          cursor: pointer;
+        }
+        .icon-btn:hover {
+          background: var(--bg-hover);
+          color: var(--text-primary);
+        }
+
+        .kbd {
+          font-family: var(--font-mono);
+          font-size: 10.5px;
+          padding: 0 4px;
+          border: 1px solid var(--border-base);
+          border-radius: var(--radius-sm);
+          color: var(--text-muted);
+          background: var(--bg-elevated);
+        }
+
+        /* ── Tab bar ─────────────────────────────────────────────── */
+        .vscode-tabs-bar {
+          height: var(--tab-bar-height, 34px);
+          display: flex;
+          align-items: stretch;
           justify-content: space-between;
-          background: var(--bg-surface, #131720);
-          border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+          background: var(--bg-base);
+          border-bottom: 1px solid var(--border-subtle);
           user-select: none;
           flex-shrink: 0;
           overflow: hidden;
@@ -1226,7 +1430,7 @@ export default function CodeTab({
 
         .vscode-tabs-list {
           display: flex;
-          align-items: center;
+          align-items: stretch;
           height: 100%;
           overflow-x: auto;
           scrollbar-width: none;
@@ -1236,85 +1440,100 @@ export default function CodeTab({
         }
 
         .vscode-tab {
+          position: relative;
           display: flex;
           align-items: center;
           gap: 6px;
-          height: 100%;
-          padding: 0 12px;
+          padding: 0 8px 0 12px;
           font-size: 12px;
-          color: var(--text-muted, #8b949e);
-          background: rgba(0, 0, 0, 0.15);
-          border-right: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
-          border-top: 2px solid transparent;
+          color: var(--text-muted);
+          border-right: 1px solid var(--border-subtle);
           cursor: pointer;
           white-space: nowrap;
-          transition: all 0.15s ease;
+          transition: color var(--transition-fast), background-color var(--transition-fast);
         }
-
         .vscode-tab:hover {
-          background: rgba(255, 255, 255, 0.03);
-          color: var(--text-primary, #e6edf3);
+          color: var(--text-secondary);
+          background: var(--bg-hover);
         }
-
-        .vscode-tab--active {
-          background: var(--bg-deep, #0e1117);
-          color: var(--text-primary, #ffffff);
-          border-top-color: var(--brand, #0070f3);
-          font-weight: 500;
+        .vscode-tab--active,
+        .vscode-tab--active:hover {
+          color: var(--text-primary);
+          background: var(--bg-surface);
+        }
+        .vscode-tab--active::after {
+          content: "";
+          position: absolute;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          height: 2px;
+          background: var(--accent);
         }
 
         .tab-icon {
-          font-family: var(--font-mono, monospace);
-          font-size: 11px;
-          font-weight: 700;
+          font-family: var(--font-mono);
+          font-size: 10.5px;
+          font-weight: 600;
           flex-shrink: 0;
         }
 
         .tab-title {
-          max-width: 140px;
+          max-width: 160px;
           overflow: hidden;
           text-overflow: ellipsis;
         }
 
         .tab-close-btn {
-          width: 16px;
-          height: 16px;
+          width: 18px;
+          height: 18px;
           display: flex;
           align-items: center;
           justify-content: center;
           background: transparent;
           border: none;
-          border-radius: 3px;
-          color: var(--text-muted, #8b949e);
-          font-size: 10px;
+          border-radius: var(--radius-sm);
+          color: var(--text-muted);
           cursor: pointer;
-          margin-left: 4px;
-          transition: all 0.15s ease;
+          margin-left: 2px;
         }
-
+        .tab-close-x {
+          opacity: 0;
+        }
+        .vscode-tab:hover .tab-close-x,
+        .vscode-tab--active .tab-close-x,
+        .tab-close-btn:focus-visible .tab-close-x {
+          opacity: 1;
+        }
         .tab-close-btn:hover {
-          background: rgba(255, 255, 255, 0.15);
-          color: var(--text-primary, #ffffff);
+          background: var(--bg-hover);
+          color: var(--text-primary);
         }
 
         .dirty-dot {
-          font-size: 11px;
-          color: var(--amber, #f59e0b);
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: var(--text-secondary);
         }
-
-        .tab-close-btn--modified:hover .dirty-dot {
+        .tab-close-btn--modified .tab-close-x {
           display: none;
         }
-        .tab-close-btn--modified:hover::after {
-          content: "✕";
-          font-size: 10px;
+        .tab-close-btn--modified:hover .dirty-dot,
+        .tab-close-btn--modified:focus-visible .dirty-dot {
+          display: none;
+        }
+        .tab-close-btn--modified:hover .tab-close-x,
+        .tab-close-btn--modified:focus-visible .tab-close-x {
+          display: block;
+          opacity: 1;
         }
 
         .vscode-tabs-actions {
           display: flex;
           align-items: center;
           gap: 2px;
-          padding: 0 8px;
+          padding: 0 6px;
         }
 
         .tab-action-icon-btn {
@@ -1325,31 +1544,28 @@ export default function CodeTab({
           justify-content: center;
           background: transparent;
           border: none;
-          border-radius: 4px;
-          color: var(--text-muted, #8b949e);
+          border-radius: var(--radius-md);
+          color: var(--text-muted);
           cursor: pointer;
-          transition: all 0.15s ease;
         }
-
         .tab-action-icon-btn:hover {
-          background: rgba(255, 255, 255, 0.08);
-          color: var(--text-primary, #ffffff);
+          background: var(--bg-hover);
+          color: var(--text-primary);
         }
-
         .tab-action-icon-btn--active {
-          background: rgba(0, 112, 243, 0.2);
-          color: var(--brand, #0070f3);
+          background: var(--bg-overlay);
+          color: var(--text-primary);
         }
 
-        /* ── Breadcrumb Bar ──────────────────────────────────────── */
+        /* ── Breadcrumb bar ──────────────────────────────────────── */
         .editor-bar {
           height: 32px;
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 0 10px;
-          background: rgba(14, 17, 23, 0.7);
-          border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+          padding: 0 8px 0 12px;
+          background: var(--bg-surface);
+          border-bottom: 1px solid var(--border-subtle);
           flex-shrink: 0;
           min-width: 0;
           overflow: hidden;
@@ -1360,8 +1576,8 @@ export default function CodeTab({
           display: flex;
           align-items: center;
           gap: 4px;
-          font-family: var(--font-mono, monospace);
-          font-size: 11px;
+          font-family: var(--font-mono);
+          font-size: 11.5px;
           min-width: 0;
           flex: 1;
           overflow: hidden;
@@ -1369,7 +1585,7 @@ export default function CodeTab({
         }
 
         .breadcrumb-file-icon {
-          font-weight: 700;
+          font-weight: 600;
           font-size: 10.5px;
           margin-right: 2px;
           flex-shrink: 0;
@@ -1382,21 +1598,19 @@ export default function CodeTab({
           min-width: 0;
           flex-shrink: 1;
         }
-
         .path-sep {
-          color: var(--text-disabled, #484f58);
-          font-size: 11px;
+          color: var(--text-disabled);
           flex-shrink: 0;
         }
         .path-folder {
-          color: var(--text-muted, #8b949e);
+          color: var(--text-muted);
           overflow: hidden;
           text-overflow: ellipsis;
-          max-width: 90px;
+          max-width: 100px;
           white-space: nowrap;
         }
         .path-file {
-          color: var(--text-primary, #e6edf3);
+          color: var(--text-primary);
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
@@ -1404,108 +1618,51 @@ export default function CodeTab({
         }
 
         .modified-badge {
-          font-size: 9px;
-          color: var(--amber, #f59e0b);
-          background: rgba(245, 158, 11, 0.12);
-          border: 1px solid rgba(245, 158, 11, 0.3);
-          padding: 1px 5px;
-          border-radius: 3px;
-          font-weight: 600;
-          margin-left: 6px;
+          font-family: var(--font-sans);
+          font-size: 11px;
+          color: var(--text-muted);
+          margin-left: 8px;
           flex-shrink: 0;
         }
 
         .editor-actions {
           display: flex;
           align-items: center;
-          gap: 5px;
+          gap: 2px;
           flex-shrink: 0;
         }
 
         .tool-action-btn {
           display: flex;
           align-items: center;
-          gap: 4px;
-          font-size: 11px;
-          color: var(--text-muted, #8b949e);
-          background: transparent;
-          border: 1px solid transparent;
-          padding: 3px 6px;
-          border-radius: 4px;
-          cursor: pointer;
-          transition: all 0.15s ease;
-        }
-
-        .tool-action-btn:hover {
-          background: rgba(255, 255, 255, 0.06);
-          color: var(--text-primary, #ffffff);
-          border-color: rgba(255, 255, 255, 0.1);
-        }
-
-        .tool-action-btn--active {
-          color: var(--brand, #0070f3);
-          background: rgba(0, 112, 243, 0.1);
-          border-color: rgba(0, 112, 243, 0.3);
-        }
-
-        .action-btn,
-        .revert-btn,
-        .save-btn {
-          display: flex;
-          align-items: center;
           gap: 5px;
-          font-size: 11px;
-          font-weight: 500;
-          padding: 3px 8px;
-          border-radius: 4px;
-          cursor: pointer;
-          transition: all 0.15s ease;
-        }
-
-        .action-btn {
-          border: 1px solid var(--border-base, rgba(255, 255, 255, 0.12));
+          height: 24px;
+          font-size: 12px;
+          color: var(--text-muted);
           background: transparent;
-          color: var(--text-secondary, #8b949e);
-        }
-
-        .action-btn:hover {
-          color: var(--text-primary, #ffffff);
-          background: rgba(255, 255, 255, 0.05);
-        }
-
-        .action-btn--active {
-          background: rgba(0, 112, 243, 0.15) !important;
-          border-color: rgba(0, 112, 243, 0.4) !important;
-          color: var(--brand, #0070f3) !important;
-        }
-
-        .revert-btn {
-          border: 1px solid rgba(239, 68, 68, 0.25);
-          background: rgba(239, 68, 68, 0.1);
-          color: #ef4444;
-        }
-
-        .revert-btn:hover:not(:disabled) {
-          background: #ef4444;
-          color: white;
-        }
-
-        .save-btn {
-          background: var(--brand, #0070f3);
-          color: white;
           border: none;
+          padding: 0 7px;
+          border-radius: var(--radius-md);
+          cursor: pointer;
+          transition: background-color var(--transition-fast), color var(--transition-fast);
         }
-
-        .save-btn:hover:not(:disabled) {
-          filter: brightness(1.15);
+        .tool-action-btn:hover:not(:disabled) {
+          background: var(--bg-hover);
+          color: var(--text-primary);
         }
-
-        .save-btn:disabled {
-          opacity: 0.35;
+        .tool-action-btn--active {
+          background: var(--bg-overlay);
+          color: var(--text-primary);
+        }
+        .tool-action-btn:disabled {
+          opacity: 0.4;
           cursor: not-allowed;
         }
+        .editor-actions .btn {
+          margin-left: 4px;
+        }
 
-        /* ── Editor Container & Split Pane ───────────────────────── */
+        /* ── Editor container & split pane ───────────────────────── */
         .editor-container {
           flex: 1;
           min-height: 0;
@@ -1521,55 +1678,51 @@ export default function CodeTab({
         }
 
         .editor-pane--secondary {
-          border-left: 2px solid var(--border-base, rgba(255, 255, 255, 0.1));
+          border-left: 1px solid var(--border-base);
           display: flex;
           flex-direction: column;
         }
 
         .split-pane-header {
-          height: 28px;
+          height: 30px;
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 0 8px;
-          background: rgba(0, 0, 0, 0.25);
-          border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
-          font-size: 11px;
+          gap: 8px;
+          padding: 0 6px 0 10px;
+          background: var(--bg-base);
+          border-bottom: 1px solid var(--border-subtle);
+          font-size: 12px;
         }
 
         .split-pane-title {
-          font-family: var(--font-mono, monospace);
-          color: var(--text-primary, #ffffff);
+          font-family: var(--font-mono);
+          font-size: 11.5px;
+          color: var(--text-secondary);
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
+        }
+        .split-pane-icon {
+          font-weight: 600;
         }
 
         .split-pane-actions {
           display: flex;
           align-items: center;
-          gap: 6px;
+          gap: 4px;
         }
 
         .split-file-select {
-          background: rgba(255, 255, 255, 0.06);
-          border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
-          color: var(--text-primary, #ffffff);
-          border-radius: 3px;
-          font-size: 10px;
-          padding: 1px 4px;
-          outline: none;
-        }
-
-        .split-close-btn {
-          background: transparent;
-          border: none;
-          color: var(--text-muted, #8b949e);
-          cursor: pointer;
+          max-width: 180px;
+          height: 22px;
+          background: var(--bg-elevated);
+          border: 1px solid var(--border-base);
+          color: var(--text-primary);
+          border-radius: var(--radius-md);
           font-size: 11px;
-        }
-        .split-close-btn:hover {
-          color: #ef4444;
+          font-family: var(--font-mono);
+          padding: 0 4px;
         }
 
         .split-editor-wrapper {
@@ -1577,17 +1730,17 @@ export default function CodeTab({
           min-height: 0;
         }
 
-        /* ── VS Code Status Bar ──────────────────────────────────── */
+        /* ── Status bar ──────────────────────────────────────────── */
         .vscode-statusbar {
           height: 24px;
-          background: #007acc;
-          color: #ffffff;
+          background: var(--bg-base);
+          border-top: 1px solid var(--border-subtle);
+          color: var(--text-muted);
           display: flex;
           align-items: center;
           justify-content: space-between;
           padding: 0 10px;
           font-size: 11px;
-          font-family: var(--font-mono, monospace);
           flex-shrink: 0;
           user-select: none;
         }
@@ -1602,58 +1755,57 @@ export default function CodeTab({
         .sb-item {
           display: flex;
           align-items: center;
-          gap: 4px;
-          opacity: 0.9;
-        }
-
-        .sb-item:hover {
-          opacity: 1;
-          cursor: default;
+          gap: 5px;
         }
 
         .sb-clickable {
-          cursor: pointer !important;
+          background: transparent;
+          border: none;
+          padding: 0 4px;
+          border-radius: var(--radius-sm);
+          color: inherit;
+          font-size: inherit;
+          cursor: pointer;
         }
         .sb-clickable:hover {
-          text-decoration: underline;
+          background: var(--bg-hover);
+          color: var(--text-primary);
+        }
+
+        .sb-dot {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: var(--warning);
         }
 
         .sb-item--warn {
-          background: rgba(0, 0, 0, 0.25);
-          padding: 1px 5px;
-          border-radius: 3px;
-        }
-
-        .sb-item--split {
-          background: rgba(0, 0, 0, 0.3);
-          padding: 1px 6px;
-          border-radius: 3px;
-          font-size: 10px;
+          color: var(--text-secondary);
         }
 
         .sb-item--lang {
-          font-weight: 600;
+          color: var(--text-secondary);
         }
 
-        /* ── Quick Open Modal ────────────────────────────────────── */
+        /* ── Quick open ──────────────────────────────────────────── */
         .quick-open-overlay {
           position: absolute;
           inset: 0;
-          background: rgba(0, 0, 0, 0.5);
-          backdrop-filter: blur(4px);
+          background: var(--scrim);
           z-index: 100;
           display: flex;
           justify-content: center;
-          padding-top: 40px;
+          align-items: flex-start;
+          padding-top: 48px;
         }
 
         .quick-open-modal {
-          width: 500px;
-          max-width: 90%;
-          background: var(--bg-surface, #1e2430);
-          border: 1px solid var(--border-base, rgba(255, 255, 255, 0.15));
-          border-radius: 8px;
-          box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+          width: 520px;
+          max-width: calc(100% - 32px);
+          background: var(--bg-elevated);
+          border: 1px solid var(--border-base);
+          border-radius: var(--radius-lg);
+          box-shadow: var(--shadow-lg);
           overflow: hidden;
           display: flex;
           flex-direction: column;
@@ -1664,9 +1816,9 @@ export default function CodeTab({
           display: flex;
           align-items: center;
           gap: 8px;
-          padding: 10px 14px;
-          border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
-          color: var(--text-muted, #8b949e);
+          padding: 10px 12px;
+          border-bottom: 1px solid var(--border-subtle);
+          color: var(--text-muted);
         }
 
         .quick-open-input {
@@ -1674,20 +1826,26 @@ export default function CodeTab({
           background: transparent;
           border: none;
           outline: none;
-          color: var(--text-primary, #ffffff);
+          color: var(--text-primary);
           font-size: 13px;
-          font-family: var(--font-mono, monospace);
+          font-family: var(--font-sans);
+        }
+        .quick-open-input:focus-visible {
+          outline: none;
+        }
+        .quick-open-input::placeholder {
+          color: var(--text-disabled);
         }
 
         .quick-open-results {
           overflow-y: auto;
-          padding: 6px;
+          padding: 4px;
         }
 
         .quick-open-empty {
           padding: 12px;
           text-align: center;
-          color: var(--text-muted, #8b949e);
+          color: var(--text-muted);
           font-size: 12px;
         }
 
@@ -1695,41 +1853,36 @@ export default function CodeTab({
           display: flex;
           align-items: center;
           gap: 8px;
-          padding: 7px 10px;
-          border-radius: 5px;
+          padding: 6px 8px;
+          border-radius: var(--radius-md);
           cursor: pointer;
-          font-size: 12px;
-          transition: all 0.1s ease;
+          font-size: 12.5px;
+          color: var(--text-secondary);
         }
-
-        .quick-open-item--active,
-        .quick-open-item:hover {
-          background: var(--brand, #0070f3);
-          color: #ffffff;
-        }
-
-        .quick-open-item--active .q-dir,
-        .quick-open-item:hover .q-dir {
-          color: rgba(255, 255, 255, 0.7);
+        .quick-open-item--active {
+          background: var(--bg-overlay);
+          color: var(--text-primary);
         }
 
         .q-icon {
-          font-family: var(--font-mono, monospace);
-          font-weight: 700;
-          font-size: 11px;
+          font-family: var(--font-mono);
+          font-weight: 600;
+          font-size: 10.5px;
         }
-
         .q-name {
           font-weight: 500;
         }
-
         .q-dir {
-          font-size: 10px;
-          color: var(--text-muted, #8b949e);
+          font-family: var(--font-mono);
+          font-size: 11px;
+          color: var(--text-muted);
           margin-left: auto;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
         }
 
-        /* ── Welcome Screen ──────────────────────────────────────── */
+        /* ── Empty state ─────────────────────────────────────────── */
         .welcome-screen {
           height: 100%;
           width: 100%;
@@ -1740,7 +1893,7 @@ export default function CodeTab({
         }
 
         .welcome-card {
-          max-width: 380px;
+          max-width: 340px;
           text-align: center;
           display: flex;
           flex-direction: column;
@@ -1748,342 +1901,216 @@ export default function CodeTab({
         }
 
         .welcome-icon {
-          margin-bottom: 20px;
-        }
-
-        .window-frame {
-          width: 60px;
-          height: 48px;
-          background: var(--bg-surface, #161b22);
-          border: 1px solid var(--border-base, rgba(255, 255, 255, 0.12));
-          border-radius: 8px;
-          padding: 6px;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: space-between;
-          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-        }
-
-        .window-dots {
-          display: flex;
-          gap: 3.5px;
-          align-self: flex-start;
-        }
-
-        .dot {
-          width: 5px;
-          height: 5px;
-          border-radius: 50%;
-        }
-
-        .dot-r { background: #ef4444; }
-        .dot-y { background: #f59e0b; }
-        .dot-g { background: #10b981; }
-
-        .code-symbol {
-          font-family: var(--font-mono, monospace);
-          font-size: 15px;
-          color: var(--text-muted, #8b949e);
-          font-weight: 600;
+          color: var(--text-disabled);
+          margin-bottom: 14px;
         }
 
         .welcome-title {
-          font-size: 16px;
-          font-weight: 600;
-          color: var(--text-primary, #ffffff);
+          font-size: 14px;
+          font-weight: 500;
+          color: var(--text-primary);
           margin-bottom: 6px;
         }
 
         .welcome-desc {
-          font-size: 12px;
-          color: var(--text-muted, #8b949e);
-          line-height: 1.5;
-          margin-bottom: 20px;
+          font-size: 12.5px;
+          color: var(--text-muted);
+          line-height: 1.55;
+          margin-bottom: 18px;
         }
 
         .welcome-actions {
           display: flex;
           align-items: center;
-          gap: 10px;
+          gap: 8px;
         }
 
-        .btn-primary {
-          background: #ffffff;
-          color: #000000;
-          border: none;
-          font-size: 12px;
-          font-weight: 500;
-          padding: 7px 14px;
-          border-radius: 4px;
-          cursor: pointer;
-        }
-
-        .btn-ghost {
-          background: transparent;
-          border: 1px solid var(--border-base, rgba(255, 255, 255, 0.12));
-          color: var(--text-primary, #ffffff);
-          font-size: 12px;
-          font-weight: 500;
-          padding: 7px 14px;
-          border-radius: 4px;
-          cursor: pointer;
-        }
-
-        .tool-action-btn--ai-active {
-          background: rgba(99, 102, 241, 0.15) !important;
-          border-color: rgba(99, 102, 241, 0.4) !important;
-          color: #a5b4fc !important;
-          font-weight: 600;
-        }
-
+        /* ── Floating selection actions ──────────────────────────── */
         .floating-selection-bar {
           position: absolute;
-          bottom: 24px;
+          bottom: 20px;
           left: 50%;
           transform: translateX(-50%);
           z-index: 40;
-          animation: float-slide-up 0.18s cubic-bezier(0.16, 1, 0.3, 1);
-        }
-
-        @keyframes float-slide-up {
-          from { opacity: 0; transform: translate(-50%, 8px); }
-          to { opacity: 1; transform: translate(-50%, 0); }
-        }
-
-        .floating-ai-btn {
           display: flex;
           align-items: center;
-          gap: 7px;
-          padding: 6px 14px;
-          background: #1e1e2e;
-          color: #ffffff;
-          border: 1px solid rgba(99, 102, 241, 0.4);
-          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(99, 102, 241, 0.2);
-          border-radius: 20px;
+          gap: 2px;
+          padding: 3px;
+          background: var(--bg-elevated);
+          border: 1px solid var(--border-base);
+          border-radius: var(--radius-lg);
+          box-shadow: var(--shadow-lg);
+          animation: oc-fade-in 120ms ease-out;
+        }
+
+        .floating-btn {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          height: 26px;
+          padding: 0 8px;
+          background: transparent;
+          color: var(--text-primary);
+          border: none;
+          border-radius: var(--radius-md);
           font-size: 12px;
-          font-weight: 500;
           cursor: pointer;
-          transition: all 0.15s ease;
+        }
+        .floating-btn:hover {
+          background: var(--bg-hover);
+        }
+        .floating-sep {
+          width: 1px;
+          height: 14px;
+          background: var(--border-base);
         }
 
-        .floating-ai-btn:hover {
-          background: #2a2a3e;
-          border-color: rgba(99, 102, 241, 0.8);
-          transform: translateY(-1px);
-          box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+        @keyframes oc-fade-in {
+          from { opacity: 0; }
+          to { opacity: 1; }
         }
 
-        .ai-sparkle {
-          font-size: 13px;
-        }
-
-        .ai-kbd {
-          font-size: 10px;
-          font-family: var(--font-mono, monospace);
-          padding: 1px 5px;
-          background: rgba(255, 255, 255, 0.1);
-          border: 1px solid rgba(255, 255, 255, 0.15);
-          border-radius: 4px;
-          color: #c7d2fe;
-        }
-
-        .floating-ai-btn--inline {
-          background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%) !important;
-          border-color: rgba(167, 139, 250, 0.6) !important;
-        }
-
-        /* ── Antigravity-style Inline Edit Overlay ── */
+        /* ── Inline edit (Ctrl+I) ────────────────────────────────── */
         .inline-edit-overlay {
           position: absolute;
-          top: 50px;
+          top: 12px;
           left: 50%;
           transform: translateX(-50%);
           z-index: 50;
-          width: 90%;
-          max-width: 640px;
-          animation: float-slide-up 0.18s cubic-bezier(0.16, 1, 0.3, 1);
-        }
-
-        .inline-edit-box {
-          background: #14161f;
-          border: 1px solid rgba(99, 102, 241, 0.4);
-          border-radius: 12px;
-          box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(99, 102, 241, 0.25);
+          width: calc(100% - 32px);
+          max-width: 560px;
+          display: flex;
+          flex-direction: column;
+          background: var(--bg-elevated);
+          border: 1px solid var(--border-base);
+          border-radius: var(--radius-lg);
+          box-shadow: var(--shadow-lg);
           overflow: hidden;
-          display: flex;
-          flex-direction: column;
+          animation: oc-fade-in 120ms ease-out;
         }
 
-        .inline-edit-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 10px 14px;
-          background: #1a1c28;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-        }
-
-        .inline-edit-title {
-          font-size: 12px;
-          font-weight: 600;
-          color: #e2e8f0;
+        .inline-edit-row {
           display: flex;
           align-items: center;
-          gap: 6px;
+          gap: 8px;
+          padding: 8px 8px 8px 12px;
         }
-
-        .inline-ai-sparkle {
-          color: #a78bfa;
-        }
-
-        .inline-edit-close {
-          background: transparent;
-          border: none;
-          color: #94a3b8;
-          cursor: pointer;
-          font-size: 13px;
-          padding: 2px 6px;
-          border-radius: 4px;
-        }
-
-        .inline-edit-close:hover {
-          color: #ffffff;
-          background: rgba(255, 255, 255, 0.1);
-        }
-
-        .inline-edit-body {
-          padding: 12px 14px;
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
+        .inline-edit-icon {
+          color: var(--text-muted);
+          flex-shrink: 0;
         }
 
         .inline-edit-input {
-          width: 100%;
-          background: rgba(0, 0, 0, 0.4);
-          border: 1px solid rgba(99, 102, 241, 0.4);
-          border-radius: 6px;
-          padding: 8px 12px;
+          flex: 1;
+          min-width: 0;
+          height: 28px;
+          background: transparent;
+          border: none;
           font-size: 13px;
-          color: #ffffff;
+          color: var(--text-primary);
           outline: none;
-          font-family: inherit;
+          font-family: var(--font-sans);
         }
-
-        .inline-edit-input:focus {
-          border-color: #818cf8;
-          box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.2);
+        .inline-edit-input:focus-visible {
+          outline: none;
+        }
+        .inline-edit-row:focus-within {
+          box-shadow: inset 0 -1px 0 var(--accent-border);
+        }
+        .inline-edit-input::placeholder {
+          color: var(--text-disabled);
         }
 
         .inline-edit-chips {
           display: flex;
           flex-wrap: wrap;
-          gap: 6px;
+          gap: 2px;
+          padding: 0 8px 8px 30px;
         }
 
         .inline-chip {
-          background: rgba(255, 255, 255, 0.05);
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          color: #94a3b8;
-          font-size: 11px;
-          padding: 3px 8px;
-          border-radius: 4px;
-          cursor: pointer;
-          transition: all 0.15s ease;
-        }
-
-        .inline-chip:hover {
-          background: rgba(99, 102, 241, 0.15);
-          border-color: rgba(99, 102, 241, 0.35);
-          color: #c7d2fe;
-        }
-
-        .inline-proposed-preview {
-          max-height: 200px;
-          overflow-y: auto;
-          background: rgba(0, 0, 0, 0.5);
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          border-radius: 6px;
-          padding: 8px 12px;
-        }
-
-        .inline-preview-header {
-          font-size: 11px;
-          font-weight: 600;
-          color: #10b981;
-          margin-bottom: 6px;
-        }
-
-        .inline-preview-code {
-          margin: 0;
-          font-family: var(--font-mono, monospace);
+          background: transparent;
+          border: none;
+          color: var(--text-muted);
           font-size: 12px;
-          color: #e2e8f0;
+          padding: 2px 6px;
+          border-radius: var(--radius-sm);
+          cursor: pointer;
+        }
+        .inline-chip:hover:not(:disabled) {
+          background: var(--bg-hover);
+          color: var(--text-primary);
+        }
+        .inline-chip:disabled {
+          opacity: 0.5;
+          cursor: default;
+        }
+
+        .inline-diff {
+          max-height: 220px;
+          overflow: auto;
+          margin: 0 8px 8px;
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-md);
+          background: var(--bg-surface);
+        }
+
+        .inline-diff-block {
+          margin: 0;
+          padding: 6px 10px;
+          font-family: var(--font-mono);
+          font-size: 12px;
+          line-height: 1.5;
+          color: var(--text-primary);
           white-space: pre-wrap;
+          word-break: break-word;
+          border-left: 2px solid transparent;
+        }
+        .inline-diff-block--del {
+          background: var(--error-dim);
+          border-left-color: var(--error);
+          color: var(--text-secondary);
+          text-decoration: line-through;
+          text-decoration-color: var(--text-disabled);
+        }
+        .inline-diff-block--add {
+          background: var(--success-dim);
+          border-left-color: var(--success);
         }
 
         .inline-edit-footer {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 10px 14px;
-          background: #1a1c28;
-          border-top: 1px solid rgba(255, 255, 255, 0.08);
+          gap: 8px;
+          padding: 6px 8px 6px 12px;
+          border-top: 1px solid var(--border-subtle);
         }
 
         .inline-hint {
-          font-size: 11px;
-          color: #94a3b8;
+          font-size: 11.5px;
+          color: var(--text-muted);
         }
 
         .inline-footer-actions {
           display: flex;
           align-items: center;
-          gap: 8px;
+          gap: 4px;
+        }
+        .inline-footer-actions .btn {
+          height: 26px;
         }
 
-        .inline-btn {
-          padding: 6px 12px;
-          font-size: 12px;
-          font-weight: 500;
-          border-radius: 5px;
-          cursor: pointer;
-          border: none;
-          transition: all 0.15s ease;
-        }
-
-        .inline-btn--ghost {
-          background: transparent;
-          color: #94a3b8;
-        }
-
-        .inline-btn--ghost:hover {
-          color: #ffffff;
-          background: rgba(255, 255, 255, 0.08);
-        }
-
-        .inline-btn--primary {
-          background: #6366f1;
-          color: #ffffff;
-        }
-
-        .inline-btn--primary:hover:not(:disabled) {
-          background: #4f46e5;
-        }
-
-        .inline-btn--primary:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-
-        .inline-btn--accept {
-          background: #10b981;
-          color: #ffffff;
-        }
-
-        .inline-btn--accept:hover {
-          background: #059669;
+        @media (prefers-reduced-motion: reduce) {
+          .floating-selection-bar,
+          .inline-edit-overlay {
+            animation: none;
+          }
+          .btn,
+          .vscode-tab,
+          .tool-action-btn {
+            transition: none;
+          }
         }
       `}</style>
     </div>

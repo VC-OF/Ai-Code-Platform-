@@ -6,7 +6,6 @@ import {
   splitForCompaction,
   serializeForSummary,
   SUMMARIZE_SYSTEM_PROMPT,
-  compactMessages,
   estimateTokens,
   estimateMessageTokens,
   type ContextMessage,
@@ -20,6 +19,9 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const projectId = body.projectId as string;
     const model = (body.model as string) || config.DEFAULT_MODEL;
+    // Optional user guidance (`/compact focus on the auth changes`)
+    const instructions =
+      typeof body.instructions === 'string' ? body.instructions.trim().slice(0, 2000) : '';
 
     if (!projectId) {
       return NextResponse.json({ error: 'projectId is required' }, { status: 400 });
@@ -69,49 +71,61 @@ export async function POST(req: NextRequest) {
 
     // Split messages keeping the 6 most recent messages
     const split = splitForCompaction(contextMessages, 6);
-    let summaryText = '';
+    if (!split || split.evicted.length === 0) {
+      return NextResponse.json({
+        success: true,
+        compacted: false,
+        message: 'Nothing to compact.',
+        windowSize,
+        before: { messages: messagesBefore, tokens: tokensBefore },
+      });
+    }
 
-    if (split && split.evicted.length > 0) {
-      try {
-        const summaryResp = await callLLM(
-          { model },
-          [
-            { role: 'system', content: SUMMARIZE_SYSTEM_PROMPT },
-            { role: 'user', content: serializeForSummary(split.evicted) },
-          ],
-          undefined,
-          { toolChoice: 'none' }
-        );
-        summaryText = summaryResp.content?.trim() || '';
-      } catch (err) {
-        console.warn('[compact] LLM summary failed, falling back to local compaction:', err);
-      }
+    // If summarization fails we do NOT modify the DB, so report that honestly
+    // instead of claiming heuristic counts that were never persisted.
+    let summaryText = '';
+    let summaryError = '';
+    try {
+      const summaryResp = await callLLM(
+        { model },
+        [
+          {
+            role: 'system',
+            content: instructions
+              ? `${SUMMARIZE_SYSTEM_PROMPT}
+
+Additional instructions from the user for this summary:
+${instructions}`
+              : SUMMARIZE_SYSTEM_PROMPT,
+          },
+          { role: 'user', content: serializeForSummary(split.evicted) },
+        ],
+        undefined,
+        { toolChoice: 'none' }
+      );
+      summaryText = summaryResp.content?.trim() || '';
+      if (!summaryText) summaryError = 'LLM returned an empty summary';
+    } catch (err) {
+      console.warn('[compact] LLM summary failed:', err);
+      summaryError = err instanceof Error ? err.message : String(err);
     }
 
     if (!summaryText) {
-      // Local heuristic compaction
-      const compacted = compactMessages(contextMessages, {
-        model,
-        targetRatio: 0.6,
-        minRatio: 0.4,
-        preserveLastN: 6,
-      });
       return NextResponse.json({
-        success: true,
-        compacted: true,
-        method: 'heuristic',
+        success: false,
+        compacted: false,
+        error: `Context compaction failed: ${summaryError}`,
         windowSize,
         before: { messages: messagesBefore, tokens: tokensBefore },
-        after: { messages: compacted.messages.length, tokens: compacted.tokensAfter },
       });
     }
 
     // Replace the evicted message records in the database with the compressed summary message
     const evictedIds = dbMessages
-      .slice(split!.head.length, split!.head.length + split!.evicted.length)
+      .slice(split.head.length, split.head.length + split.evicted.length)
       .map((m) => m.id);
 
-    const firstEvicted = dbMessages[split!.head.length];
+    const firstEvicted = dbMessages[split.head.length];
     const turnIndex = firstEvicted?.turn_index ?? 0;
 
     const db = getDb();

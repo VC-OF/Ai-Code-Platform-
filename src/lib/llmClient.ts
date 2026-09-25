@@ -34,7 +34,14 @@ export async function getLLMClient(
     throw new Error(provider.missingKeyError);
   }
   return {
-    client: new OpenAI({ apiKey: provider.apiKey, baseURL: provider.baseURL }),
+    // Bounded wait for response headers (the SDK default is 10 min x 3
+    // attempts, so a hung provider stalled a turn for ~30 min)
+    client: new OpenAI({
+      apiKey: provider.apiKey,
+      baseURL: provider.baseURL,
+      timeout: envMs('LLM_TIMEOUT_MS', 180_000),
+      maxRetries: 2,
+    }),
     provider: provider.name,
     // Provider prefixes ("openrouter:x") are routing syntax, not part of
     // the model name the API receives
@@ -44,16 +51,80 @@ export async function getLLMClient(
 
 /** Models tried in order when the primary fails before producing output.
  *  Example: LLM_FALLBACKS=openrouter:meta-llama/llama-3.3-70b-instruct,llama3.1:latest */
-function getFallbackModels(): string[] {
-  return (process.env.LLM_FALLBACKS || '')
+export function getFallbackModels(env: Record<string, string | undefined> = process.env): string[] {
+  // FALLBACK_MODEL (a single model, as documented in .env) is honoured too
+  const list = [env.LLM_FALLBACKS || '', env.FALLBACK_MODEL || '']
+    .join(',')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
+  return [...new Set(list)];
+}
+
+function envMs(name: string, fallback: number): number {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+
+/** Thrown when a streaming reply stops producing chunks for too long. */
+export class LLMStallError extends Error {
+  constructor(ms: number) {
+    super(`The model stream produced no data for ${Math.round(ms / 1000)}s and was stopped (LLM_STREAM_IDLE_MS).`);
+    this.name = 'LLMStallError';
+  }
+}
+
+/** Iterate `source`, failing with LLMStallError when no item arrives within
+ *  `idleMs`. `onStall` should abort the underlying request. */
+export async function* withIdleTimeout<T>(
+  source: AsyncIterable<T>,
+  idleMs: number,
+  onStall: () => void
+): AsyncGenerator<T> {
+  const it = source[Symbol.asyncIterator]();
+  while (true) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const stall = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        onStall();
+        reject(new LLMStallError(idleMs));
+      }, idleMs);
+    });
+    let res: IteratorResult<T>;
+    try {
+      const next = it.next();
+      next.catch(() => {}); // the losing side of the race must not go unhandled
+      res = await Promise.race([next, stall]);
+    } finally {
+      clearTimeout(timer);
+    }
+    if (res.done) return;
+    yield res.value;
+  }
 }
 
 export function getModel() {
   return process.env.LLM_MODEL || process.env.OPENAI_MODEL || "nemotron-3-ultra:cloud";
 }
+
+/** Upper bound on tokens per reply. Without it providers apply their own
+ *  (often small) default and long file writes get cut off mid-tool-call.
+ *  Override with LLM_MAX_OUTPUT_TOKENS. */
+export function getMaxOutputTokens(): number {
+  const n = Number(process.env.LLM_MAX_OUTPUT_TOKENS);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 16_384;
+}
+
+/** Providers that cap output below our request reject it outright;
+ *  detect that so the call can be retried with the provider default. */
+function isMaxTokensRejection(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /max_tokens|max_completion_tokens|maximum.*tokens|num_predict/i.test(msg) &&
+    /(400|invalid|exceed|too large|must be|less than)/i.test(msg);
+}
+
+// Providers that rejected max_tokens once; skip it for them afterwards
+const noMaxTokens = new Set<string>();
 
 export function getContextWindow(model: string): number {
   return registryContextWindow(model);
@@ -148,16 +219,27 @@ async function callOnce(
 
   return withRetry(
     async () => {
-      const completion = await client.chat.completions.create({
+      const request = (withLimit: boolean) => client.chat.completions.create({
         model: apiModel,
         messages,
         tools: tools?.length ? tools : undefined,
         tool_choice: opts?.toolChoice,
+        ...(withLimit ? { max_tokens: getMaxOutputTokens() } : {}),
       }, { signal: opts?.signal });
+
+      let completion;
+      try {
+        completion = await request(!noMaxTokens.has(provider));
+      } catch (err) {
+        if (!isMaxTokensRejection(err)) throw err;
+        noMaxTokens.add(provider);
+        completion = await request(false);
+      }
 
       return {
         content: completion.choices[0].message.content,
         tool_calls: completion.choices[0].message.tool_calls,
+        finish_reason: completion.choices[0].finish_reason ?? null,
         usage: {
           prompt_tokens: completion.usage?.prompt_tokens ?? 0,
           completion_tokens: completion.usage?.completion_tokens ?? 0,
@@ -210,11 +292,18 @@ export async function* callLLMStream(
   // a mid-stream failure surfaces to the caller
   let stream: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk> | null = null;
   let lastError: unknown;
+  let usedModel = config.model;
+
+  // Internal abort (idle stall) linked to the caller's cancellation signal
+  const ac = new AbortController();
+  const onOuterAbort = () => ac.abort(opts?.signal?.reason);
+  if (opts?.signal?.aborted) ac.abort(opts.signal.reason);
+  else opts?.signal?.addEventListener('abort', onOuterAbort, { once: true });
 
   for (const model of chain) {
     try {
-      const { client, apiModel } = await getLLMClient(model);
-      stream = await client.chat.completions.create({
+      const { client, provider, apiModel } = await getLLMClient(model);
+      const open = (withLimit: boolean) => client.chat.completions.create({
         model: apiModel,
         messages,
         tools: tools?.length ? tools : undefined,
@@ -223,7 +312,16 @@ export async function* callLLMStream(
         // Ask for real token usage in the final chunk. OpenAI-compatible
         // servers that don't support this simply ignore it.
         stream_options: { include_usage: true },
-      }, { signal: opts?.signal });
+        ...(withLimit ? { max_tokens: getMaxOutputTokens() } : {}),
+      }, { signal: ac.signal });
+      try {
+        stream = await open(!noMaxTokens.has(provider));
+      } catch (err) {
+        if (!isMaxTokensRejection(err)) throw err;
+        noMaxTokens.add(provider);
+        stream = await open(false);
+      }
+      usedModel = model;
       break;
     } catch (err) {
       if (isAbortError(err)) throw err;
@@ -235,9 +333,18 @@ export async function* callLLMStream(
   }
   if (!stream) throw lastError;
 
-  let usage = { prompt_tokens: 0, completion_tokens: 0 };
+  // Tell the caller the reply comes from a fallback model (was silent)
+  if (usedModel !== config.model) {
+    const reason = lastError instanceof Error ? lastError.message : String(lastError);
+    yield { type: 'fallback' as const, model: usedModel, reason: reason.slice(0, 300) };
+  }
 
-  for await (const chunk of stream) {
+  let usage = { prompt_tokens: 0, completion_tokens: 0 };
+  let finishReason: string | null = null;
+
+  const idleMs = envMs('LLM_STREAM_IDLE_MS', 180_000);
+  try {
+  for await (const chunk of withIdleTimeout(stream, idleMs, () => ac.abort('stalled'))) {
     // The usage-only final chunk has an empty choices array
     if (chunk.usage) {
       usage = {
@@ -249,8 +356,8 @@ export async function* callLLMStream(
     if (chunk.choices[0]?.delta?.content) {
       yield { type: 'delta', delta: chunk.choices[0].delta.content };
     }
-    const tc = chunk.choices[0]?.delta?.tool_calls?.[0];
-    if (tc) {
+    // A single chunk may carry deltas for several parallel tool calls
+    for (const tc of chunk.choices[0]?.delta?.tool_calls ?? []) {
       yield {
         type: 'tool_call_delta',
         tool_call: {
@@ -261,7 +368,14 @@ export async function* callLLMStream(
         },
       };
     }
+    if (chunk.choices[0]?.finish_reason) {
+      finishReason = chunk.choices[0].finish_reason;
+    }
+  }
+  } finally {
+    opts?.signal?.removeEventListener('abort', onOuterAbort);
   }
 
-  yield { type: 'done', usage };
+  // 'length' means the reply hit the output-token cap and is truncated
+  yield { type: 'done', usage, finishReason };
 }

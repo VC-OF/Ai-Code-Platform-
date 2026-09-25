@@ -2,8 +2,13 @@ import fs from "fs/promises";
 import path from "path";
 import fg from "fast-glob";
 import { safeResolve } from "./safeResolve";
-import { safeExec, CommandError } from "./safeExec";
+import { safeExec, CommandError, isDockerMode } from "./safeExec";
+import {
+  findProjectDirs, lintPlan, testPlan, parseTestCounts, resolveCommandTimeoutMs,
+  type CheckPlan,
+} from "./stackVerify";
 import { webSearch, fetchUrl, htmlToText } from "./webTools";
+import { BROWSER_TOOL_SCHEMAS, isBrowserTool, executeBrowserTool } from "./browserTools";
 import { generateImage } from "./imageGen";
 import { getPreviewLogs, getPreviewStatus } from "./previewManager";
 import { callMcpTool, demangleName } from "./mcpClient";
@@ -48,14 +53,45 @@ export const TOOL_SCHEMAS = [
   {
     type: "function",
     function: {
+      name: "load_skill",
+      description:
+        "Load the full instructions of a skill listed in the Skills section of the system prompt. Call this before starting a task that matches a skill.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Skill name exactly as listed" },
+        },
+        required: ["name"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "create_file",
       description:
-        "Create a new file or completely overwrite an existing file with the given content. Creates parent directories automatically.",
+        "Create a new file or completely overwrite an existing file with the given content. Creates parent directories automatically. For files longer than ~300 lines, write the first part here and add the rest with append_file, so no single call is too large.",
       parameters: {
         type: "object",
         properties: {
           path: { type: "string", description: "Relative file path" },
           content: { type: "string", description: "Full file content" },
+        },
+        required: ["path", "content"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "append_file",
+      description:
+        "Append content to the end of a file (creates it if missing). Use this to write large files in parts after create_file: keep each part under ~300 lines.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Relative file path" },
+          content: { type: "string", description: "Content to append. Include a leading newline if needed." },
         },
         required: ["path", "content"],
       },
@@ -327,11 +363,15 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "run_command",
       description:
-        "Run an allowlisted command inside the project workspace (e.g. 'npm install', 'npm run build'). Has a 30-second timeout and output limit. Long-running dev servers should NOT be started with this tool.",
+        "Run a command inside the project workspace (e.g. 'npm install', 'python3 -m venv .venv', 'cargo build', 'go test ./...', 'mvn -q package'). Default timeout 60s; pass timeout_seconds (up to 900) for builds, installs and test suites. Output is truncated. Long-running dev servers should NOT be started with this tool.",
       parameters: {
         type: "object",
         properties: {
           command: { type: "string", description: "Shell command to execute" },
+          timeout_seconds: {
+            type: "integer",
+            description: "Optional timeout in seconds (1-900, default 60). Use 300-900 for cargo/mvn/gradle builds or large installs.",
+          },
         },
         required: ["command"],
       },
@@ -406,7 +446,7 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "run_lint",
       description:
-        "Run the project's lint and type-check commands. Call this after editing code to verify there are no type errors or lint violations before declaring the task done.",
+        "Run the project's lint and type-check commands. Detects the stack from manifests: JS/TS (tsc + eslint), Rust (cargo clippy / cargo check), Python (ruff / compileall), Go (go vet), Java (mvn/gradle compile); also checks first-level subprojects (client/, server/, apps/*…). Call this after editing code to verify there are no type errors or lint violations before declaring the task done.",
       parameters: {
         type: "object",
         properties: {},
@@ -419,7 +459,7 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "run_tests",
       description:
-        "Run the project's test suite. Call this after editing code that has tests to verify correctness before declaring the task done.",
+        "Run the project's test suite. Detects the stack: npm test, cargo test, pytest (installs requirements into a project-local .venv in the sandbox), go test, mvn/gradle test; also runs first-level subprojects (client/, server/, apps/*…). Call this after editing code that has tests to verify correctness before declaring the task done.",
       parameters: {
         type: "object",
         properties: {
@@ -472,6 +512,7 @@ export const TOOL_SCHEMAS = [
       },
     },
   },
+  ...BROWSER_TOOL_SCHEMAS,
 ] as const;
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
@@ -479,9 +520,13 @@ export const TOOL_SCHEMAS = [
 const MAX_READ_CHARS = 32_000;
 const MAX_OUTPUT_CHARS = 8_000;
 
-function truncate(s: string, max = MAX_OUTPUT_CHARS): string {
+export function truncate(s: string, max = MAX_OUTPUT_CHARS): string {
   if (s.length <= max) return s;
-  return s.slice(0, max) + `\n...[truncated ${s.length - max} chars]`;
+  // Keep head AND tail: build/test runners print their summary and final
+  // failures last, which a head-only cut silently dropped
+  const head = Math.floor(max * 0.4);
+  const tail = max - head;
+  return `${s.slice(0, head)}\n...[truncated ${s.length - max} chars]...\n${s.slice(-tail)}`;
 }
 
 // ─── Turn context ──────────────────────────────────────────────────────────────
@@ -556,6 +601,9 @@ export async function executeTool(
 ): Promise<ToolResult> {
   try {
     // MCP tools (mcp_<server>_<tool>) route to their external server
+    if (isBrowserTool(name)) {
+      return await executeBrowserTool(name, args, workspace, projectIdForWorkspace(workspace));
+    }
     if (demangleName(name)) {
       const output = await callMcpTool(name, args);
       return {
@@ -579,6 +627,29 @@ export async function executeTool(
         };
       }
 
+      // ── load_skill ─────────────────────────────────────────────────────
+      case "load_skill": {
+        const { loadSkills, findSkill } = await import("./skills");
+        const requested = String(args.name ?? "");
+        const skills = await loadSkills(workspace, { includeGlobal: true });
+        const skill = findSkill(skills, requested);
+        if (!skill) {
+          const names = skills.map((s) => s.name).join(", ") || "(none)";
+          return {
+            success: false,
+            output: `Unknown skill '${requested}'. Available skills: ${names}`,
+            summary: `Skill not found: ${requested}`,
+            error: `Unknown skill '${requested}'`,
+            suggestion: `Use one of: ${names}`,
+          };
+        }
+        return {
+          success: true,
+          output: `# Skill: ${skill.name}\nSource: ${skill.source}\n\n${skill.instructions}`,
+          summary: `Loaded skill ${skill.name}`,
+        };
+      }
+
       // ── create_file ────────────────────────────────────────────────────
       case "create_file": {
         const filePath = safeResolve(workspace, args.path as string);
@@ -589,6 +660,21 @@ export async function executeTool(
           success: true,
           output: `Created ${args.path}`,
           summary: `Created ${args.path}`,
+          changedFile: args.path as string,
+        };
+      }
+
+      // ── append_file ────────────────────────────────────────────────────
+      case "append_file": {
+        const filePath = safeResolve(workspace, args.path as string);
+        await fs.mkdir(path.dirname(filePath), { recursive: true });
+        await fs.appendFile(filePath, args.content as string, "utf-8");
+        ctx.filesEdited.add(args.path as string);
+        const lines = (await fs.readFile(filePath, "utf-8")).split("\n").length;
+        return {
+          success: true,
+          output: `Appended to ${args.path} (now ${lines} lines)`,
+          summary: `Appended to ${args.path}`,
           changedFile: args.path as string,
         };
       }
@@ -958,14 +1044,9 @@ export async function executeTool(
       // ── run_command ────────────────────────────────────────────────────
       case "run_command": {
         const command = args.command as string;
-        // Package installs and builds legitimately take longer than the
-        // default 30s command timeout
-        const isSlow = /^(npm|pnpm|yarn|bun)\s+(install|ci|add|run\s+build)\b/.test(
-          command.trim()
-        );
         const result = await safeExec(command, workspace, {
           signal,
-          timeoutMs: isSlow ? 180_000 : undefined,
+          timeoutMs: resolveCommandTimeoutMs(command, args.timeout_seconds),
         });
         ctx.commandsRun.push(command);
         const success = result.code === 0 && !result.timedOut;
@@ -1164,122 +1245,117 @@ export async function executeTool(
 
       // ── run_lint ───────────────────────────────────────────────────────
       case "run_lint": {
-        const hasTsconfig = await fileExists(path.join(workspace, "tsconfig.json"));
-        const pkg = await readPackageJson(workspace);
-        const hasEslint = !!(
-          pkg?.devDependencies?.eslint || pkg?.dependencies?.eslint
-        );
-
+        const projects = await findProjectDirs(workspace);
+        const multi = projects.length > 1 || (projects[0] && projects[0].rel !== ".");
         let passed = true;
         let errorCount = 0;
         let warningCount = 0;
         let output = "";
         let ranAnything = false;
+        const skipped: string[] = [];
 
-        if (hasTsconfig) {
-          const tscResult = await safeExec(
-            "tsc --noEmit --pretty false",
-            workspace,
-            { signal, timeoutMs: 60_000 }
-          ).catch(() => null);
-          if (tscResult) {
-            ranAnything = true;
-            if (tscResult.code !== 0) {
-              passed = false;
-              const combined = tscResult.stdout + "\n" + tscResult.stderr;
-              errorCount += (combined.match(/error TS/g) ?? []).length || 1;
-              output += `TypeScript:\n${truncate(combined)}\n`;
-            } else {
-              output += "TypeScript: ✓ No errors\n";
+        for (const proj of projects) {
+          const prefix = multi ? `[${proj.rel}] ` : "";
+          for (const stack of proj.stacks) {
+            if (stack === "node") {
+              const r = await runJsLint(proj.dir, signal);
+              if (!r.ran) { skipped.push(`${prefix}JS/TS (no tsconfig or eslint)`); continue; }
+              ranAnything = true;
+              if (!r.passed) passed = false;
+              errorCount += r.errorCount;
+              warningCount += r.warningCount;
+              output += multi ? r.output.replace(/^(?=.)/gm, prefix) : r.output;
+              continue;
             }
+            const r = await runCheckPlan(lintPlan(stack, isDockerMode()), proj.dir, signal);
+            if (r.skipped) { skipped.push(`${prefix}${r.label} (${r.skipped})`); continue; }
+            ranAnything = true;
+            if (!r.passed) { passed = false; errorCount += 1; }
+            output += `${prefix}${r.label} — ${r.command}: ${r.passed ? "✓ No errors" : `✗ exit ${r.code}${r.timedOut ? " (timed out)" : ""}`}\n`;
+            if (!r.passed || r.output.trim()) output += `${truncate(r.output, 8000)}\n`;
           }
         }
 
-        if (hasEslint) {
-          const eslintResult = await safeExec(
-            "eslint . --format json",
-            workspace,
-            { signal, timeoutMs: 60_000 }
-          ).catch(() => null);
-          if (eslintResult) {
-            ranAnything = true;
-            try {
-              const eslintData = JSON.parse(eslintResult.stdout) as {
-                errorCount: number;
-                warningCount: number;
-              }[];
-              const totalErrors = eslintData.reduce(
-                (s, f) => s + f.errorCount, 0);
-              const totalWarnings = eslintData.reduce(
-                (s, f) => s + f.warningCount, 0);
-              errorCount += totalErrors;
-              warningCount += totalWarnings;
-              if (totalErrors > 0) passed = false;
-              output += `ESLint: ${totalErrors} errors, ${totalWarnings} warnings\n`;
-            } catch {
-              output += truncate(eslintResult.stdout);
-            }
-          }
-        }
-
+        if (skipped.length) output += `Skipped: ${skipped.join("; ")}\n`;
         if (!ranAnything) {
-          output = "No TypeScript config or ESLint found — nothing to lint.";
+          output = projects.length
+            ? `Nothing to lint — no linter/type-checker available. ${skipped.length ? `Skipped: ${skipped.join("; ")}` : ""}`.trim()
+            : "No project manifest found (package.json, Cargo.toml, pyproject.toml, go.mod, pom.xml…) — nothing to lint.";
         }
 
-        const structured = { passed, errorCount, warningCount };
+        const structured = { passed, errorCount, warningCount, skipped: !ranAnything };
         return {
           success: true,
-          output: output || "Lint passed",
-          summary: passed
-            ? `Lint ✓ passed (${warningCount} warnings)`
-            : `Lint ✗ failed (${errorCount} errors, ${warningCount} warnings)`,
+          output: truncate(output || "Lint passed"),
+          summary: !ranAnything
+            ? "Lint skipped (no tooling)"
+            : passed
+              ? `Lint ✓ passed (${warningCount} warnings)`
+              : `Lint ✗ failed (${errorCount} errors, ${warningCount} warnings)`,
           structured,
         };
       }
 
       // ── run_tests ──────────────────────────────────────────────────────
       case "run_tests": {
-        const pkg = await readPackageJson(workspace);
-        if (!pkg?.scripts?.test) {
+        const projects = await findProjectDirs(workspace);
+        const multi = projects.length > 1 || (projects[0] && projects[0].rel !== ".");
+        let passed = true;
+        let total = 0;
+        let failed = 0;
+        let output = "";
+        let ranAnything = false;
+        const skipped: string[] = [];
+
+        for (const proj of projects) {
+          const prefix = multi ? `[${proj.rel}] ` : "";
+          for (const stack of proj.stacks) {
+            if (stack === "node") {
+              const r = await runJsTests(proj.dir, args.pattern, signal);
+              if (r.skipped) { skipped.push(`${prefix}JS (no test script in package.json)`); continue; }
+              ranAnything = true;
+              if (!r.passed) passed = false;
+              total += r.total;
+              failed += r.failed;
+              output += multi ? `${prefix}npm test: ${r.passed ? "✓" : "✗"}\n${r.output}\n` : r.output;
+              continue;
+            }
+            const plan = await testPlan(stack, proj.dir, isDockerMode(), args.pattern as string | undefined);
+            if ("skipped" in plan) { skipped.push(`${prefix}${stack} (${plan.skipped})`); continue; }
+            const r = await runCheckPlan(plan, proj.dir, signal);
+            if (r.skipped) { skipped.push(`${prefix}${r.label} (${r.skipped})`); continue; }
+            ranAnything = true;
+            const counts = parseTestCounts(stack, r.output);
+            if (!r.passed) passed = false;
+            total += counts.total;
+            failed += r.passed ? counts.failed : Math.max(counts.failed, 1);
+            output += `${prefix}${r.label} — ${r.command}: ${r.passed ? "✓ passed" : `✗ exit ${r.code}${r.timedOut ? " (timed out)" : ""}`}\n${truncate(r.output, 12_000)}\n`;
+          }
+        }
+
+        if (!ranAnything) {
+          const why = projects.length
+            ? `No runnable tests found.${skipped.length ? ` Skipped: ${skipped.join("; ")}` : ""}`
+            : "No project manifest found — skipping tests.";
           return {
             success: true,
-            output: "No test script found in package.json — skipping tests.",
-            summary: "Tests skipped (no test script)",
+            output: why,
+            summary: "Tests skipped (no tests or tooling)",
             structured: { passed: true, total: 0, failed: 0, skipped: true },
           };
         }
-
-        const cmd = args.pattern
-          ? `npm test -- ${String(args.pattern)}`
-          : "npm test";
-        const result = await safeExec(cmd, workspace, {
-          signal,
-          timeoutMs: 120_000,
-        });
-
-        let passed = result.code === 0 && !result.timedOut;
-        let total = 0;
-        let failed = 0;
-
-        const combined = result.stdout + "\n" + result.stderr;
-        try {
-          const data = JSON.parse(result.stdout);
-          total = data.numTotalTests ?? 0;
-          failed = data.numFailedTests ?? 0;
-          passed = data.success ?? passed;
-        } catch {
-          const totalMatch = combined.match(/(\d+)\s+(?:tests?\s+)?passed/i);
-          const failedMatch = combined.match(/(\d+)\s+(?:tests?\s+)?failed/i);
-          total = parseInt(totalMatch?.[1] ?? "0");
-          failed = parseInt(failedMatch?.[1] ?? "0");
-        }
+        if (skipped.length) output += `Skipped: ${skipped.join("; ")}\n`;
 
         const structured = { passed, total, failed };
         return {
           success: true,
-          output: truncate(combined),
+          output: truncate(output),
+          // "passed (0 total)" hid runs where the runner discovered no tests
+          // (e.g. JUnit 5 without a JUnit-Platform-aware surefire)
           summary: passed
-            ? `Tests ✓ passed (${total} total)`
+            ? total > 0
+              ? `Tests ✓ passed (${total} total)`
+              : "Tests ✓ exited 0, but no test count was reported — confirm tests were actually discovered and run"
             : `Tests ✗ failed (${failed}/${total} failing)`,
           structured,
         };
@@ -1384,4 +1460,118 @@ async function nodeGrep(
     if (results.length >= 200) break; // cap raw results
   }
   return results;
+}
+
+// ─── Verification runners (run_lint / run_tests) ─────────────────────────────
+
+interface CheckRun {
+  label: string;
+  command: string;
+  passed: boolean;
+  code: number;
+  timedOut: boolean;
+  output: string;
+  /** Set when no candidate tool was available, or the runner found nothing to run */
+  skipped?: string;
+}
+
+/** Pick the first candidate whose probe succeeds and run it via safeExec. */
+async function runCheckPlan(plan: CheckPlan, dir: string, signal?: AbortSignal): Promise<CheckRun> {
+  for (const c of plan.candidates) {
+    if (c.probe) {
+      const probe = await safeExec(c.probe, dir, { signal, timeoutMs: 30_000 }).catch(() => null);
+      if (!probe || probe.code !== 0 || probe.timedOut) continue;
+    }
+    const res = await safeExec(c.command, dir, { signal, timeoutMs: plan.timeoutMs }).catch(
+      (err: unknown) => ({ stdout: "", stderr: err instanceof Error ? err.message : String(err), code: 1, timedOut: false })
+    );
+    const output = (res.stdout + (res.stderr ? `\n${res.stderr}` : "")).trim();
+    if (plan.skipExitCodes?.includes(res.code)) {
+      return { label: plan.label, command: c.display ?? c.command, passed: true, code: res.code, timedOut: false, output, skipped: "nothing collected" };
+    }
+    return {
+      label: plan.label,
+      command: c.display ?? c.command,
+      passed: res.code === 0 && !res.timedOut,
+      code: res.code,
+      timedOut: res.timedOut,
+      output,
+    };
+  }
+  return {
+    label: plan.label, command: "", passed: true, code: 0, timedOut: false, output: "",
+    skipped: `no tooling: ${plan.candidates.map((c) => c.command.split(" ")[0]).join("/")} not available`,
+  };
+}
+
+async function runJsLint(dir: string, signal?: AbortSignal) {
+  const hasTsconfig = await fileExists(path.join(dir, "tsconfig.json"));
+  const pkg = await readPackageJson(dir);
+  const hasEslint = !!(pkg?.devDependencies?.eslint || pkg?.dependencies?.eslint);
+
+  let passed = true;
+  let errorCount = 0;
+  let warningCount = 0;
+  let output = "";
+  let ran = false;
+
+  if (hasTsconfig) {
+    const tscResult = await safeExec("tsc --noEmit --pretty false", dir, { signal, timeoutMs: 60_000 }).catch(() => null);
+    if (tscResult) {
+      ran = true;
+      if (tscResult.code !== 0) {
+        passed = false;
+        const combined = tscResult.stdout + "\n" + tscResult.stderr;
+        errorCount += (combined.match(/error TS/g) ?? []).length || 1;
+        output += `TypeScript:\n${truncate(combined)}\n`;
+      } else {
+        output += "TypeScript: ✓ No errors\n";
+      }
+    }
+  }
+
+  if (hasEslint) {
+    const eslintResult = await safeExec("eslint . --format json", dir, { signal, timeoutMs: 60_000 }).catch(() => null);
+    if (eslintResult) {
+      ran = true;
+      try {
+        const eslintData = JSON.parse(eslintResult.stdout) as { errorCount: number; warningCount: number }[];
+        const totalErrors = eslintData.reduce((s, f) => s + f.errorCount, 0);
+        const totalWarnings = eslintData.reduce((s, f) => s + f.warningCount, 0);
+        errorCount += totalErrors;
+        warningCount += totalWarnings;
+        if (totalErrors > 0) passed = false;
+        output += `ESLint: ${totalErrors} errors, ${totalWarnings} warnings\n`;
+      } catch {
+        output += truncate(eslintResult.stdout);
+      }
+    }
+  }
+  return { ran, passed, errorCount, warningCount, output };
+}
+
+async function runJsTests(dir: string, pattern: unknown, signal?: AbortSignal) {
+  const pkg = await readPackageJson(dir);
+  if (!pkg?.scripts?.test) {
+    return { skipped: true, passed: true, total: 0, failed: 0, output: "" };
+  }
+  const cmd = pattern ? `npm test -- ${String(pattern)}` : "npm test";
+  const result = await safeExec(cmd, dir, { signal, timeoutMs: 120_000 });
+
+  let passed = result.code === 0 && !result.timedOut;
+  let total = 0;
+  let failed = 0;
+  const combined = result.stdout + "\n" + result.stderr;
+  try {
+    const data = JSON.parse(result.stdout);
+    total = data.numTotalTests ?? 0;
+    failed = data.numFailedTests ?? 0;
+    passed = data.success ?? passed;
+  } catch {
+    const totalMatch = combined.match(/(\d+)\s+(?:tests?\s+)?passed/i);
+    const failedMatch = combined.match(/(\d+)\s+(?:tests?\s+)?failed/i);
+    total = parseInt(totalMatch?.[1] ?? "0");
+    failed = parseInt(failedMatch?.[1] ?? "0");
+  }
+  return { skipped: false, passed, total, failed, output: truncate(combined) };
 }

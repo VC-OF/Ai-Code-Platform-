@@ -53,9 +53,8 @@ export function useAppCommands(opts: AppCommandsOpts) {
       // ── Navigation ─────────────────────────────────────────────────────
       {
         id:          'nav.editor',
-        label:       'Go to Editor',
+        label:       'Go to editor',
         description: 'Open the code editor',
-        icon:        '⌨',
         group:       'navigation',
         shortcut:    '⌘1',
         keywords:    ['code', 'editor', 'file'],
@@ -64,9 +63,8 @@ export function useAppCommands(opts: AppCommandsOpts) {
       },
       {
         id:          'nav.preview',
-        label:       'Go to Preview',
+        label:       'Go to preview',
         description: 'Open the live preview',
-        icon:        '⊡',
         group:       'navigation',
         shortcut:    '⌘2',
         keywords:    ['browser', 'preview', 'run'],
@@ -75,9 +73,8 @@ export function useAppCommands(opts: AppCommandsOpts) {
       },
       {
         id:          'nav.settings',
-        label:       'Go to Settings',
+        label:       'Go to settings',
         description: 'Open settings panel',
-        icon:        '⚙',
         group:       'navigation',
         shortcut:    '⌘3',
         keywords:    ['config', 'settings', 'preferences'],
@@ -86,9 +83,8 @@ export function useAppCommands(opts: AppCommandsOpts) {
       },
       {
         id:          'nav.sidebar',
-        label:       'Toggle Sidebar',
+        label:       'Toggle sidebar',
         description: 'Show or hide the project sidebar',
-        icon:        '☰',
         group:       'navigation',
         shortcut:    '⌘B',
         action:      onSidebarToggle,
@@ -97,9 +93,8 @@ export function useAppCommands(opts: AppCommandsOpts) {
       // ── Project ─────────────────────────────────────────────────────────
       {
         id:          'project.new',
-        label:       'New Project',
+        label:       'New project',
         description: 'Create a new workspace',
-        icon:        '+',
         group:       'project',
         shortcut:    '⌘N',
         keywords:    ['create', 'new', 'workspace'],
@@ -107,9 +102,8 @@ export function useAppCommands(opts: AppCommandsOpts) {
       },
       ...projects.slice(0, 5).map((p) => ({
         id:          `project.switch.${p.id}`,
-        label:       `Switch to: ${p.title}`,
+        label:       `Switch to ${p.title}`,
         description: 'Open this project',
-        icon:        '●',
         group:       'project',
         keywords:    ['switch', 'open', 'project', p.title],
         action:      () => onProjectSelect(p),
@@ -119,9 +113,8 @@ export function useAppCommands(opts: AppCommandsOpts) {
       // ── Chat ─────────────────────────────────────────────────────────────
       {
         id:          'chat.focus',
-        label:       'Focus Chat Input',
+        label:       'Focus chat input',
         description: 'Move cursor to chat input',
-        icon:        '💬',
         group:       'chat',
         shortcut:    '⌘L',
         keywords:    ['chat', 'message', 'input', 'focus'],
@@ -129,9 +122,8 @@ export function useAppCommands(opts: AppCommandsOpts) {
       },
       {
         id:          'chat.cancel',
-        label:       'Cancel Agent',
+        label:       'Cancel agent',
         description: 'Stop the current agent run',
-        icon:        '■',
         group:       'chat',
         shortcut:    '⌘.',
         keywords:    ['stop', 'cancel', 'abort'],
@@ -140,9 +132,8 @@ export function useAppCommands(opts: AppCommandsOpts) {
       },
       {
         id:          'chat.clear',
-        label:       'Clear Chat Timeline',
+        label:       'Clear chat timeline',
         description: 'Remove all timeline events',
-        icon:        '🗑',
         group:       'chat',
         keywords:    ['clear', 'reset', 'clean'],
         action:      onClearChat,
@@ -151,9 +142,8 @@ export function useAppCommands(opts: AppCommandsOpts) {
       // ── Editor ──────────────────────────────────────────────────────────
       {
         id:          'editor.save',
-        label:       'Save File',
+        label:       'Save file',
         description: activeFile ? `Save ${activeFile}` : 'Save current file',
-        icon:        '💾',
         group:       'editor',
         shortcut:    '⌘S',
         keywords:    ['save', 'write'],
@@ -162,9 +152,8 @@ export function useAppCommands(opts: AppCommandsOpts) {
       },
       {
         id:          'editor.revert',
-        label:       'Revert File',
+        label:       'Revert file',
         description: 'Revert to last git commit',
-        icon:        '↩',
         group:       'editor',
         shortcut:    '⌘Z',
         keywords:    ['revert', 'undo', 'restore', 'git'],
@@ -173,9 +162,8 @@ export function useAppCommands(opts: AppCommandsOpts) {
       },
       {
         id:          'editor.diff',
-        label:       'Toggle Diff View',
+        label:       'Toggle diff view',
         description: 'Compare with git HEAD',
-        icon:        '⟷',
         group:       'editor',
         shortcut:    '⌘D',
         keywords:    ['diff', 'compare', 'changes'],
@@ -186,27 +174,24 @@ export function useAppCommands(opts: AppCommandsOpts) {
       // ── System ───────────────────────────────────────────────────────────
       {
         id:          'system.health',
-        label:       'Open Health Check',
+        label:       'Open health check',
         description: 'View system health status',
-        icon:        '♥',
         group:       'system',
         keywords:    ['health', 'status', 'api'],
         action:      () => window.open('/api/health', '_blank'),
       },
       {
         id:          'system.metrics',
-        label:       'Open Metrics',
+        label:       'Open metrics',
         description: 'View Prometheus metrics',
-        icon:        '📊',
         group:       'system',
         keywords:    ['metrics', 'prometheus', 'stats'],
         action:      () => window.open('/api/metrics', '_blank'),
       },
       {
         id:          'system.shortcuts',
-        label:       'Show Keyboard Shortcuts',
+        label:       'Show keyboard shortcuts',
         description: 'View all keyboard shortcuts',
-        icon:        '⌨',
         group:       'system',
         keywords:    ['shortcuts', 'hotkeys', 'help', 'keyboard'],
         action:      () => {

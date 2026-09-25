@@ -4,129 +4,134 @@
 ───────────────────────────────────────────────────────────────────────────── */
 html[data-theme="light"] {
   color-scheme: light;
-  --void:          #f7f6f3;
+  --text-on-accent: #ffffff;
+  --scrim:         rgba(31, 30, 29, 0.32);
+  --void:          #faf9f5;
   --bg-deep:       #ffffff;
-  --panel:         rgba(0, 0, 0, 0.02);
-  --panel-strong:  rgba(0, 0, 0, 0.04);
+  --panel:         #f5f4ef;
+  --panel-strong:  #f0eee6;
 
   --bg-base:       var(--void);
   --bg-surface:    #ffffff;
-  --bg-elevated:   rgba(0, 0, 0, 0.03);
-  --bg-overlay:    rgba(0, 0, 0, 0.05);
-  --bg-hover:      rgba(0, 0, 0, 0.04);
+  --bg-elevated:   #f5f4ef;
+  --bg-overlay:    #f0eee6;
+  --bg-hover:      rgba(31, 30, 29, 0.05);
 
-  --border-subtle: rgba(0, 0, 0, 0.06);
-  --border-base:   rgba(0, 0, 0, 0.10);
-  --border-strong: rgba(0, 0, 0, 0.18);
+  --border-subtle: rgba(31, 30, 29, 0.07);
+  --border-base:   rgba(31, 30, 29, 0.12);
+  --border-strong: rgba(31, 30, 29, 0.22);
 
-  --text-primary:  #1d1d1f;
-  --text-secondary:#424245;
-  --text-muted:    #86868b;
-  --text-disabled: #aeaeb2;
+  --text-primary:  #1f1e1d;
+  --text-secondary:#3d3c38;
+  --text-muted:    #73726c;
+  --text-disabled: #a8a69e;
 
-  --brand:         #b85c3f;
-  --brand-dim:     #91472f;
-  --brand-glow:    rgba(184, 92, 63, 0.14);
-  --violet:        #9b6d5d;
-  --violet-soft:   rgba(155, 109, 93, 0.10);
-  --violet-glow:   rgba(155, 109, 93, 0.20);
+  --brand:         #c6613f;
+  --brand-dim:     #a84f31;
+  --brand-glow:    rgba(198, 97, 63, 0.12);
+  --violet:        #73726c;
+  --violet-soft:   rgba(31, 30, 29, 0.05);
+  --violet-glow:   transparent;
 
-  --accent:        #b85c3f;
-  --accent-dim:    #f4e4dd;
-  --accent-soft:   rgba(184, 92, 63, 0.08);
-  --accent-border: rgba(184, 92, 63, 0.3);
+  --accent:        #c6613f;
+  --accent-dim:    #a84f31;
+  --accent-soft:   rgba(198, 97, 63, 0.08);
+  --accent-border: rgba(198, 97, 63, 0.32);
   --cyan:          #4d7771;
   --cyan-soft:     rgba(77, 119, 113, 0.10);
 
-  --success:       #1c8c3c;
-  --success-dim:   rgba(28, 140, 60, 0.10);
-  --success-border:rgba(28, 140, 60, 0.3);
-  --warning:       #d97706;
-  --warning-dim:   rgba(217, 119, 6, 0.10);
-  --error:         #d93025;
-  --error-dim:     rgba(217, 48, 37, 0.10);
-  --info:          #0071e3;
-  --info-dim:      rgba(0, 113, 227, 0.08);
-  --green:         #1c8c3c;
-  --amber:         #d97706;
-  --coral:         #d93025;
+  --success:       #2f7d4f;
+  --success-dim:   rgba(47, 125, 79, 0.10);
+  --success-border:rgba(47, 125, 79, 0.3);
+  --warning:       #a86412;
+  --warning-dim:   rgba(168, 100, 18, 0.10);
+  --error:         #b53b2f;
+  --error-dim:     rgba(181, 59, 47, 0.09);
+  --info:          #3b6ea5;
+  --info-dim:      rgba(59, 110, 165, 0.08);
+  --green:         #2f7d4f;
+  --amber:         #a86412;
+  --coral:         #b53b2f;
 
-  --shadow-sm:         0 1px 2px rgba(0,0,0,0.06);
-  --shadow-md:         0 4px 18px rgba(0,0,0,0.08);
-  --shadow-lg:         0 12px 36px rgba(0,0,0,0.12);
-  --shadow-glow:       0 0 24px var(--violet-glow);
-  --shadow-accent-glow:0 0 20px rgba(0, 113, 227, 0.12);
+  --shadow-sm:         0 1px 2px rgba(31,30,29,0.05);
+  --shadow-md:         0 4px 16px rgba(31,30,29,0.07);
+  --shadow-lg:         0 16px 40px rgba(31,30,29,0.12);
+  --shadow-glow:       none;
+  --shadow-accent-glow:none;
 
-  --scrollbar-thumb:   rgba(0,0,0,0.15);
-  --scrollbar-hover:   rgba(0,0,0,0.25);
+  --scrollbar-thumb:   rgba(31,30,29,0.14);
+  --scrollbar-hover:   rgba(31,30,29,0.24);
 
-  --green-glow:    rgba(28, 140, 60, 0.2);
+  --green-glow:    transparent;
 }
 
 :root {
   color-scheme: dark;
+  --text-on-accent: #ffffff;
+  --scrim:         rgba(0, 0, 0, 0.5);
   /* ── Apple-like Base Colors ─────────────────────────────────────────────── */
-  --void:          #000000;
-  --bg-deep:       #0b0b0b;
-  --panel:         rgba(255, 255, 255, 0.035);
-  --panel-strong:  rgba(255, 255, 255, 0.06);
+  --void:          #1f1e1d;
+  --bg-deep:       #262624;
+  --panel:         #2a2927;
+  --panel-strong:  #30302e;
 
   /* ── Map to app variables ────────────────────────────────────────────────── */
   --bg-base:       var(--void);
-  --bg-surface:    var(--bg-deep);
-  --bg-elevated:   rgba(255, 255, 255, 0.045);
-  --bg-overlay:    rgba(255, 255, 255, 0.08);
-  --bg-hover:      rgba(255, 255, 255, 0.06);
+  --bg-surface:    #262624;
+  --bg-elevated:   #30302e;
+  --bg-overlay:    #3a3936;
+  --bg-hover:      rgba(236, 234, 227, 0.06);
 
   /* ── Ultra-thin borders for retina displays ───────────────────────────── */
-  --border-subtle: rgba(255, 255, 255, 0.045);
-  --border-base:   rgba(255, 255, 255, 0.075);
-  --border-strong: rgba(255, 255, 255, 0.15);
+  --border-subtle: rgba(236, 234, 227, 0.07);
+  --border-base:   rgba(236, 234, 227, 0.12);
+  --border-strong: rgba(236, 234, 227, 0.22);
 
-  --text-primary:  #f4f4f5; /* clean light-gray text */
-  --text-secondary:#a1a1aa; /* secondary label */
-  --text-muted:    #71717a; /* tertiary label */
-  --text-disabled: #4b4b52; /* quaternary label */
+  --text-primary:  #eceae3; /* clean light-gray text */
+  --text-secondary:#c3c0b6; /* secondary label */
+  --text-muted:    #9c9a92; /* tertiary label */
+  --text-disabled: #65635d; /* quaternary label */
 
   /* ── Brand Colors (SF Pro Blue / Premium Purple) ────────────────────────── */
   --brand:         #d97757;
-  --brand-dim:     #b95c3e;
+  --brand-dim:     #c6613f;
   --brand-glow:    rgba(217, 119, 87, 0.14);
-  --violet:        #b89587;
-  --violet-soft:   rgba(184, 149, 135, 0.10);
-  --violet-glow:   rgba(184, 149, 135, 0.22);
+  --violet:        #9c9a92;
+  --violet-soft:   rgba(236, 234, 227, 0.06);
+  --violet-glow:   transparent;
 
   /* ── Accent Colors ──────────────────────────────────────────────────────── */
   --accent:        #d97757;
-  --accent-dim:    #b95c3e;
+  --accent-dim:    #c6613f;
   --accent-soft:   rgba(217, 119, 87, 0.12);
-  --accent-border: rgba(217, 119, 87, 0.28);
-  --cyan:          #82aaa3;
+  --accent-border: rgba(217, 119, 87, 0.35);
+  --cyan:          #8fb3ac;
   --cyan-soft:     rgba(130, 170, 163, 0.12);
 
   /* ── Semantic Colors (Apple standard palettes) ─────────────────────────── */
-  --success:       #30d158; /* Apple green */
-  --success-dim:   rgba(48, 209, 88, 0.12);
-  --warning:       #ff9f0a; /* Apple orange */
-  --warning-dim:   rgba(255, 159, 10, 0.12);
-  --error:         #ff453a; /* Apple red */
-  --error-dim:     rgba(255, 69, 58, 0.12);
-  --info:          #64d2ff;
-  --info-dim:      rgba(100, 210, 255, 0.1);
-  --green:         #30d158;
-  --amber:         #ff9f0a;
-  --coral:         #ff453a;
+  --success:       #7fb88f; /* Apple green */
+  --success-dim:   rgba(127, 184, 143, 0.12);
+  --warning:       #e0a458; /* Apple orange */
+  --warning-dim:   rgba(224, 164, 88, 0.12);
+  --error:         #e5776b; /* Apple red */
+  --error-dim:     rgba(229, 119, 107, 0.12);
+  --info:          #8ab0d8;
+  --info-dim:      rgba(138, 176, 216, 0.1);
+  --green:         #7fb88f;
+  --amber:         #e0a458;
+  --coral:         #e5776b;
 
   /* ── Tool colors ─────────────────────────────────────────────────────────── */
-  --tool-read:     #ff9f0a;
-  --tool-write:    #30d158;
-  --tool-test:     #bf5af2; /* Apple purple */
-  --tool-lint:     #ff9f0a;
-  --tool-run:      #64d2ff;
+  --tool-read:     #e0a458;
+  --tool-write:    #7fb88f;
+  --tool-test:     #b9a3d6; /* Apple purple */
+  --tool-lint:     #e0a458;
+  --tool-run:      #8ab0d8;
 
   /* ── Typography (Apple font stack) ───────────────────────────────────────── */
   --font-brand:    "JetBrains Mono", "SFMono-Regular", ui-monospace, Consolas, monospace;
-  --font-sans:     "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif:    "Source Serif 4", "Iowan Old Style", Georgia, serif;
+  --font-sans:     "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono:     "JetBrains Mono", "SFMono-Regular", ui-monospace, Consolas, monospace;
 
   --text-xs:       0.6875rem;
@@ -144,21 +149,21 @@ html[data-theme="light"] {
   /* ── Radius (iOS/macOS style squircles) ───────────────────────────────────── */
   --radius-sm:   4px;
   --radius-md:   6px;
-  --radius-lg:   8px;
-  --radius-xl:   10px;
+  --radius-lg:   10px;
+  --radius-xl:   14px;
   --radius-full: 9999px;
 
   /* ── Shadows (Apple-like soft ambient shadows) ────────────────────────────── */
-  --success-border:rgba(48, 209, 88, 0.3);
-  --green-glow:    rgba(48, 209, 88, 0.25);
-  --scrollbar-thumb:   rgba(255,255,255,0.08);
-  --scrollbar-hover:   rgba(255,255,255,0.16);
+  --success-border:rgba(127, 184, 143, 0.3);
+  --green-glow:    transparent;
+  --scrollbar-thumb:   rgba(236,234,227,0.10);
+  --scrollbar-hover:   rgba(236,234,227,0.20);
 
-  --shadow-sm:         0 1px 2px rgba(0,0,0,0.4);
-  --shadow-md:         0 4px 18px rgba(0,0,0,0.35);
-  --shadow-lg:         0 12px 36px rgba(0,0,0,0.5);
-  --shadow-glow:       0 0 24px var(--violet-glow);
-  --shadow-accent-glow:0 0 20px rgba(100,210,255,0.15);
+  --shadow-sm:         0 1px 2px rgba(0,0,0,0.25);
+  --shadow-md:         0 4px 16px rgba(0,0,0,0.28);
+  --shadow-lg:         0 16px 40px rgba(0,0,0,0.4);
+  --shadow-glow:       none;
+  --shadow-accent-glow:none;
 
   /* ── Sidebar ──────────────────────────────────────────────────────────────── */
   --sidebar-width:     232px;

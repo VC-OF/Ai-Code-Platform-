@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { executeTool, createTurnContext } from '@/lib/tools';
 import { createWorkspace, createNodeWorkspace, TestWorkspace } from '../helpers/workspace';
 

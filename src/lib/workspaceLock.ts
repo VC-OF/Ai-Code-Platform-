@@ -13,12 +13,21 @@ interface LockInfo {
   timeoutHandle: ReturnType<typeof setTimeout>;
 }
 
+export function maxLockMs(env: Record<string, string | undefined> = process.env): number {
+  const n = Number(env.AGENT_MAX_DURATION_MIN);
+  const turnMin = Number.isFinite(n) && n > 0 ? n : 60;
+  return (turnMin + 10) * 60_000;
+}
+
 // ─── Per-project mutex ────────────────────────────────────────────────────────
 class WorkspaceMutex {
   private locked = false;
   private queue: QueueEntry[] = [];
   private lockInfo: LockInfo | null = null;
-  private readonly MAX_LOCK_MS = 10 * 60_000; // 10 min hard cap
+  // Hard cap must outlast the longest agent turn (AGENT_MAX_DURATION_MIN,
+  // default 60) or the lock is force-released mid-turn and a second turn
+  // can run concurrently in the same workspace
+  private readonly MAX_LOCK_MS = maxLockMs();
   private readonly MAX_WAIT_MS = 2 * 60_000;  // 2 min queue wait cap
 
   constructor(private readonly projectId: string) {}
@@ -134,8 +143,12 @@ class WorkspaceMutex {
 }
 
 // ─── Global registry ──────────────────────────────────────────────────────────
+// Shared via globalThis: a module copy with its own Map would hand out a
+// second, unlocked mutex for a workspace an agent is still writing to
+const sharedMutexes = globalThis as unknown as { __ocWorkspaceMutexes?: Map<string, WorkspaceMutex> };
+
 class LockRegistry {
-  private mutexes = new Map<string, WorkspaceMutex>();
+  private mutexes = (sharedMutexes.__ocWorkspaceMutexes ??= new Map<string, WorkspaceMutex>());
 
   get(projectId: string): WorkspaceMutex {
     if (!this.mutexes.has(projectId)) {

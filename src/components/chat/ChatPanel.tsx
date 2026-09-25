@@ -4,11 +4,20 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { StatusIndicator, type AgentStatus } from '../StatusIndicator';
 import { TimelineEvent } from '../TimelineEvent';
 import MessageInput from './MessageInput';
+import Markdown from './Markdown';
+import ContextReport, { type ContextReportData } from './ContextReport';
+import SkillsReport, { type SkillsReportItem } from './SkillsReport';
 import {
   findSlashCommand,
-  formatSlashHelp,
   parseSlashCommand,
+  type ExportableMessage,
 } from '@/lib/slashCommands';
+import {
+  getOutputStyle,
+  runSlashCommand,
+  STATUSLINE_STORAGE_KEY,
+  type SlashContext,
+} from './slashHandlers';
 
 type Role = 'user' | 'assistant';
 
@@ -84,7 +93,7 @@ const PROMPT_TEMPLATES: { label: string; hint: string; prompt: string }[] = [
   },
   {
     label: 'Skills',
-    hint: 'Inspect active Antigravity & project skills',
+    hint: 'Inspect active project skills',
     prompt: '/skills',
   },
   {
@@ -104,7 +113,7 @@ const PROMPT_TEMPLATES: { label: string; hint: string; prompt: string }[] = [
   },
   {
     label: 'Mode',
-    hint: 'Switch execution mode: Auto / Manual / Plan',
+    hint: 'Switch execution mode: auto, manual, or plan',
     prompt: '/mode',
   },
 ];
@@ -115,6 +124,9 @@ interface ChatPanelProps {
   onFilesChanged:  (files: string[]) => void;
   onFileSelect:    (path: string) => void;
   selectedModel?:  string;
+  /** Lets /model switch the model; omitted where the picker isn't available */
+  onModelChange?:  (model: string) => void;
+  projectName?:    string;
   onStatusChange?: (status: AgentStatus) => void;
   /** Fired when a turn completes; filesChanged comes from the agent's done event */
   onAgentDone?:    (info: { reason: string; filesChanged: string[] }) => void;
@@ -129,6 +141,8 @@ export default function ChatPanel({
   onFilesChanged,
   onFileSelect,
   selectedModel,
+  onModelChange,
+  projectName,
   onStatusChange,
   onAgentDone,
   initialPrompt,
@@ -159,6 +173,17 @@ export default function ChatPanel({
     }
     return 'auto';
   });
+
+  // /statusline toggles the mode/context row under the timeline
+  const [statuslineVisible, setStatuslineVisible] = useState(true);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      try {
+        setStatuslineVisible(localStorage.getItem(STATUSLINE_STORAGE_KEY) !== 'true');
+      } catch {}
+    });
+    return () => cancelAnimationFrame(id);
+  }, []);
 
   const handleModeChange = (mode: 'auto' | 'manual' | 'plan') => {
     setExecutionMode(mode);
@@ -444,6 +469,7 @@ export default function ChatPanel({
         activeFilePath,
         model: selectedModel,
         mode: executionMode,
+        outputStyle: getOutputStyle(projectId),
       }),
     });
 
@@ -543,8 +569,41 @@ export default function ChatPanel({
     } catch {}
   };
 
-  const send = async (attachments: MessageAttachment[] = []) => {
-    let text = input.trim();
+  const say = (content: string) => {
+    setTimeline((t) => [...t, { type: 'message', role: 'assistant', content, ts: Date.now() }]);
+  };
+
+  const getTranscript = (): ExportableMessage[] =>
+    timeline
+      .filter((item) => item.type === 'message' && (item.role === 'user' || item.role === 'assistant'))
+      .map((item) => {
+        let text = item.content ?? '';
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed && typeof parsed === 'object' && typeof parsed.text === 'string') text = parsed.text;
+        } catch {}
+        return { role: item.role as string, text, ts: item.ts };
+      });
+
+  const slashContext = (): SlashContext => ({
+    projectId,
+    projectName,
+    selectedModel,
+    onModelChange,
+    executionMode,
+    setExecutionMode: handleModeChange,
+    agentStatus,
+    loading,
+    statuslineVisible,
+    setStatuslineVisible,
+    say,
+    push: (item) => setTimeline((t) => [...t, { ts: Date.now(), ...item } as TimelineItem]),
+    getTranscript,
+  });
+
+  /** `override` lets chips and badges run a command without touching the composer */
+  const send = async (attachments: MessageAttachment[] = [], override?: string) => {
+    let text = (override ?? input).trim();
     if (!text && attachments.length === 0) return;
 
     const slash = parseSlashCommand(text);
@@ -565,14 +624,6 @@ export default function ChatPanel({
         return;
       }
 
-      if (command.name === 'help') {
-        setTimeline((t) => [
-          ...t,
-          { type: 'message', role: 'assistant', content: formatSlashHelp(), ts: Date.now() },
-        ]);
-        return;
-      }
-
       if (command.name === 'clear') {
         setTimeline([]);
         setHistory([]);
@@ -580,48 +631,16 @@ export default function ChatPanel({
         return;
       }
 
-      if (command.name === 'status' || command.name === 'model') {
-        const content = command.name === 'status'
-          ? `Agent status: ${agentStatus}${loading ? ' (running)' : ''}`
-          : `Selected model: ${selectedModel || 'default'}`;
-        setTimeline((t) => [
-          ...t,
-          { type: 'message', role: 'assistant', content, ts: Date.now() },
-        ]);
-        return;
-      }
-
       if (command.name === 'context') {
         try {
           const res = await fetch(`/api/chat/context?projectId=${encodeURIComponent(projectId)}&model=${encodeURIComponent(selectedModel || '')}`);
           const data = await res.json();
-          const tokensFmt = Number(data.currentTokens || 0).toLocaleString();
-          const windowFmt = Number(data.windowSize || 2_000_000).toLocaleString();
-          const pct = ((data.ratio || 0) * 100).toFixed(2);
-          const thresholdFmt = Number(data.compactThreshold || 1_200_000).toLocaleString();
-
-          const content = `📊 **Context Window Metrics (2M Limit Active)**\n` +
-            `• **Context Window Limit**: \`${windowFmt} tokens\` (2 Million tokens)\n` +
-            `• **Current Context Usage**: \`${tokensFmt} tokens\` (${pct}%)\n` +
-            `• **Message Count**: \`${data.messageCount ?? timeline.length} messages\`\n` +
-            `• **Compaction Threshold**: \`${thresholdFmt} tokens\` (60%)\n` +
-            `• **Status**: ${Number(data.currentTokens) > Number(data.compactThreshold) ? '⚠️ Near auto-compaction threshold' : '🟢 Healthy (plenty of room for deep reasoning)'}\n\n` +
-            `💡 *Type \`/compact\` or click the Compact pill to summarize and compress working memory.*`;
-
-          setTimeline((t) => [
-            ...t,
-            { type: 'message', role: 'assistant', content, ts: Date.now() },
-          ]);
-        } catch {
-          setTimeline((t) => [
-            ...t,
-            {
-              type: 'message',
-              role: 'assistant',
-              content: `📊 **Context Window**: 2,000,000 tokens limit. Working messages: ${timeline.length}.`,
-              ts: Date.now(),
-            },
-          ]);
+          if (!res.ok || data.error || !Array.isArray(data.categories)) {
+            throw new Error(data.error || `HTTP ${res.status}`);
+          }
+          setTimeline((t) => [...t, { type: 'context_report', data, ts: Date.now() }]);
+        } catch (err) {
+          say(`Couldn't load context usage: ${err instanceof Error ? err.message : String(err)}`);
         }
         return;
       }
@@ -630,27 +649,27 @@ export default function ChatPanel({
         try {
           setTimeline((t) => [
             ...t,
-            { type: 'message', role: 'assistant', content: '⏳ Compacting working context into memory brief…', ts: Date.now() },
+            { type: 'message', role: 'assistant', content: 'Compacting working context into memory brief…', ts: Date.now() },
           ]);
           const res = await fetch('/api/chat/compact', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ projectId, model: selectedModel }),
+            body: JSON.stringify({ projectId, model: selectedModel, instructions: slash.args }),
           });
           const data = await res.json();
           if (data.compacted) {
             setTimeline((t) => [
-              ...t.filter((m) => m.content !== '⏳ Compacting working context into memory brief…'),
+              ...t.filter((m) => m.content !== 'Compacting working context into memory brief…'),
               {
                 type: 'compaction',
                 before: data.before,
                 after: data.after,
                 ts: Date.now(),
-              } as any,
+              } as TimelineItem,
               {
                 type: 'message',
                 role: 'assistant',
-                content: `✨ **Context successfully compacted!**\n• Messages: \`${data.before.messages} → ${data.after.messages}\`\n• Tokens: \`${Number(data.before.tokens).toLocaleString()} → ${Number(data.after.tokens).toLocaleString()} tokens\`\n• Limit: \`${Number(data.windowSize || 2_000_000).toLocaleString()} tokens\` (2M limit)\n${data.summary ? `\n> **Summary Memory:**\n> ${data.summary}` : ''}`,
+                content: `**Context successfully compacted!**\n• Messages: \`${data.before.messages} → ${data.after.messages}\`\n• Tokens: \`${Number(data.before.tokens).toLocaleString()} → ${Number(data.after.tokens).toLocaleString()} tokens\`\n• Limit: \`${Number(data.windowSize || 2_000_000).toLocaleString()} tokens\` (2M limit)\n${data.summary ? `\n> **Summary Memory:**\n> ${data.summary}` : ''}`,
                 ts: Date.now(),
               },
             ]);
@@ -658,22 +677,24 @@ export default function ChatPanel({
             loadContextInfo();
           } else {
             setTimeline((t) => [
-              ...t.filter((m) => m.content !== '⏳ Compacting working context into memory brief…'),
+              ...t.filter((m) => m.content !== 'Compacting working context into memory brief…'),
               {
                 type: 'message',
                 role: 'assistant',
-                content: `ℹ️ ${data.message || 'Context is already compact and does not need compaction.'}`,
+                content: data.error
+                  ? `Couldn't compact the context: ${data.error}. Nothing was changed.`
+                  : `${data.message || 'Context is already compact and does not need compaction.'}`,
                 ts: Date.now(),
               },
             ]);
           }
         } catch (err) {
           setTimeline((t) => [
-            ...t.filter((m) => m.content !== '⏳ Compacting working context into memory brief…'),
+            ...t.filter((m) => m.content !== 'Compacting working context into memory brief…'),
             {
               type: 'message',
               role: 'assistant',
-              content: `❌ Failed to compact context: ${err instanceof Error ? err.message : String(err)}`,
+              content: `Failed to compact context: ${err instanceof Error ? err.message : String(err)}`,
               ts: Date.now(),
             },
           ]);
@@ -681,143 +702,18 @@ export default function ChatPanel({
         return;
       }
 
-      if (command.name === 'skills') {
-        try {
-          const res = await fetch(`/api/skills?projectId=${encodeURIComponent(projectId)}`);
-          const data = await res.json();
-          if (data.skills && data.skills.length > 0) {
-            const list = data.skills
-              .map(
-                (s: any) =>
-                  `• **\`${s.name}\`**: ${s.description}\n  *(Source: \`${s.source}\`)*`
-              )
-              .join('\n\n');
-            setTimeline((t) => [
-              ...t,
-              {
-                type: 'message',
-                role: 'assistant',
-                content: `🛠️ **Active Skills (${data.count} available in context):**\n\n${list}\n\n*These skills are automatically injected into the agent loop and applied when matching your coding tasks.*`,
-                ts: Date.now(),
-              },
-            ]);
-          } else {
-            setTimeline((t) => [
-              ...t,
-              {
-                type: 'message',
-                role: 'assistant',
-                content: 'ℹ️ No skills currently discovered. Add skills to `.opencode/skills/` or root `skills/`.',
-                ts: Date.now(),
-              },
-            ]);
-          }
-        } catch (err) {
-          setTimeline((t) => [
-            ...t,
-            {
-              type: 'message',
-              role: 'assistant',
-              content: `❌ Failed to load skills: ${err instanceof Error ? err.message : String(err)}`,
-              ts: Date.now(),
-            },
-          ]);
+      const result = await runSlashCommand(command, slash.args, slashContext());
+      if (result.type === 'handled') return;
+      if (result.type === 'prompt') {
+        text = result.text;
+        if (!text.trim()) return;
+      } else {
+        text = command.prompt?.(slash.args) ?? slash.args;
+        if (!text.trim()) {
+          say(`Usage: \`/${command.name}${command.args ? ` ${command.args}` : ''}\``);
+          return;
         }
-        return;
       }
-
-      if (command.name === 'docker') {
-        try {
-          const res = await fetch('/api/docker/status?containers=true&refresh=true');
-          const data = await res.json();
-          if (data.available) {
-            const containerList =
-              data.containers && data.containers.length > 0
-                ? '\n\n**Active Containers:**\n' +
-                  data.containers
-                    .slice(0, 5)
-                    .map((c: any) => `• \`${c.names || c.id.slice(0, 10)}\` (${c.image}) - *${c.status}*`)
-                    .join('\n')
-                : '\n\n*No running project containers.*';
-
-            setTimeline((t) => [
-              ...t,
-              {
-                type: 'message',
-                role: 'assistant',
-                content: `🐳 **Docker Engine Integrated & Active!**\n\n• **Engine Version**: \`${data.version || 'Online'}\` (${data.osType || 'Linux'})\n• **Sandbox Mode**: \`${data.sandboxModeActive ? 'Active (Isolated Containers)' : 'Available'}\`\n• **Default Sandbox Image**: \`${data.defaultImage}\`\n• **Engine Resources**: \`${data.cpus || 12} CPUs, ${data.memoryGiB || 6.4} GiB RAM allocated\`\n• **Containers**: \`${data.containersRunning} running / ${data.containersTotal} total\` (Images: \`${data.imagesCount}\`)${containerList}\n\n💡 *All agent build, test, and shell executions are safely containerized in throwaway Linux sandboxes.*`,
-                ts: Date.now(),
-              },
-            ]);
-          } else {
-            setTimeline((t) => [
-              ...t,
-              {
-                type: 'message',
-                role: 'assistant',
-                content: `⚠️ **Docker Daemon Offline:** ${data.error || 'Please ensure Docker Desktop is running.'}\n\n*Agent will use host execution until Docker Desktop is started.*`,
-                ts: Date.now(),
-              },
-            ]);
-          }
-        } catch (err) {
-          setTimeline((t) => [
-            ...t,
-            {
-              type: 'message',
-              role: 'assistant',
-              content: `❌ Failed to inspect Docker: ${err instanceof Error ? err.message : String(err)}`,
-              ts: Date.now(),
-            },
-          ]);
-        }
-        return;
-      }
-
-      if (command.name === 'mode') {
-        const arg = (slash.args || '').toLowerCase().trim();
-        let newMode: 'auto' | 'manual' | 'plan' = executionMode;
-        if (arg.includes('manual') || arg === 'm') {
-          newMode = 'manual';
-        } else if (arg.includes('plan') || arg === 'p') {
-          newMode = 'plan';
-        } else if (arg.includes('auto') || arg === 'a') {
-          newMode = 'auto';
-        }
-
-        if (arg && newMode !== executionMode) {
-          handleModeChange(newMode);
-          setTimeline((t) => [
-            ...t,
-            {
-              type: 'message',
-              role: 'assistant',
-              content: `⚙️ **Execution Mode switched to \`${newMode.toUpperCase()}\`**\n\n${
-                newMode === 'manual'
-                  ? '🛡️ **Manual (Supervised)**: Agent will request your explicit approval before modifying files, running shell commands, or executing docker containers.'
-                  : newMode === 'plan'
-                  ? '📋 **Plan-First (Architect)**: Agent will analyze the codebase and construct a structured plan before making file changes.'
-                  : '⚡ **Auto (Autonomous)**: Agent will autonomously read, plan, edit, and verify tasks to completion without interruptions.'
-              }`,
-              ts: Date.now(),
-            },
-          ]);
-        } else {
-          setTimeline((t) => [
-            ...t,
-            {
-              type: 'message',
-              role: 'assistant',
-              content: `⚙️ **Current Execution Mode**: \`${executionMode.toUpperCase()}\`\n\n• \`/mode auto\` — ⚡ **Autonomous**: Full-speed agent loop without interactive pauses.\n• \`/mode manual\` — 🛡️ **Supervised**: Prompts for approval on every file edit and command execution.\n• \`/mode plan\` — 📋 **Architect**: Formulates structured multi-step plan before making edits.\n\n*You can also switch modes anytime using the Mode toggle above the prompt box.*`,
-              ts: Date.now(),
-            },
-          ]);
-        }
-        return;
-      }
-
-      text = command.prompt?.(slash.args) ?? slash.args;
-      if (!text.trim()) return;
     }
 
     // Agent already running → steer it: queue the message for its next step
@@ -866,29 +762,23 @@ export default function ChatPanel({
         activeFilePath,
         model: selectedModel,
         mode: executionMode,
+        outputStyle: getOutputStyle(projectId),
       }),
     });
 
     await processStream(resPromise);
   };
 
+  const nextPlanTask = plan.find((t) => t.status === 'in_progress') || plan.find((t) => t.status === 'pending');
+  const completedCount = plan.filter((t) => t.status === 'completed').length;
+
   return (
     <div className={`chat-panel ${isFullWidth ? 'chat-panel--full' : ''}`}>
-
-
-
-      {/* ── CHAT / LLM interaction panel ─────────────────────────────────── */}
       <div className="chat-timeline">
           {timeline.length === 0 && !loading && (
             <div className="chat-empty-state">
-              <div className="chat-empty-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} width={28} height={28}>
-                  <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
-                </svg>
-              </div>
-              <p className="chat-empty-title">No messages yet</p>
-              <p className="chat-empty-desc">Send a prompt below to start interacting with the agent.</p>
-
+              <h2 className="chat-empty-title">What should we build?</h2>
+              <p className="chat-empty-desc">Describe a feature, a bug, or a question about the code.</p>
             </div>
           )}
           {timeline.map((item, i) => {
@@ -908,23 +798,36 @@ export default function ChatPanel({
                 <div key={i} className={`timeline-msg ${isUser ? 'timeline-msg--user' : 'timeline-msg--assistant'}`}>
                   <div className="msg-bubble">
                     {attachments.length > 0 && (
-                      <div className="msg-attachments" style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '8px' }}>
+                      <div className="msg-attachments">
                         {attachments.map((att, idx) => (
-                          <div key={idx} className="msg-attachment-item" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px', background: 'rgba(255,255,255,0.05)', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
+                          <div key={idx} className="msg-attachment-item">
                             {att.type.startsWith('image/') ? (
-                              <img src={att.content} alt={att.name} style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border-subtle)' }} />
+                              // eslint-disable-next-line @next/next/no-img-element -- inline data URL
+                              <img src={att.content} alt={att.name} className="msg-attachment-thumb" />
                             ) : (
-                              <span style={{ fontSize: '14px' }}>📄</span>
+                              <svg className="msg-attachment-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={14} height={14} aria-hidden="true">
+                                <path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z" /><path d="M14 3v6h6" />
+                              </svg>
                             )}
-                            <span style={{ fontSize: '11px', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '180px' }}>{att.name}</span>
+                            <span className="msg-attachment-name">{att.name}</span>
                           </div>
                         ))}
                       </div>
                     )}
-                    <span style={{ whiteSpace: 'pre-wrap' }}>{textContent}</span>
+                    {isUser ? (
+                      <span className="msg-text">{textContent}</span>
+                    ) : (
+                      <Markdown text={textContent ?? ''} />
+                    )}
                   </div>
                 </div>
               );
+            }
+            if (item.type === 'context_report') {
+              return <ContextReport key={i} data={item.data as ContextReportData} />;
+            }
+            if (item.type === 'skills_report') {
+              return <SkillsReport key={i} skills={(item.skills as SkillsReportItem[]) ?? []} />;
             }
             return <TimelineEvent key={i} event={item} />;
           })}
@@ -933,91 +836,72 @@ export default function ChatPanel({
           {streamingText && (
             <div className="timeline-msg timeline-msg--assistant">
               <div className="msg-bubble">
-                <span style={{ whiteSpace: 'pre-wrap' }}>{streamingText}</span>
+                <span className="msg-text">{streamingText}</span>
                 <span className="stream-caret" />
               </div>
             </div>
           )}
 
-          {/* Live agent status while a turn is running */}
+          {/* Live agent activity while a turn is running */}
           {loading && (
-            <div className="agent-status-row">
+            <div className="agent-live-row" role="status">
+              <span className="agent-live-dot" aria-hidden="true" />
               <StatusIndicator status={agentStatus} elapsedSeconds={elapsedSeconds} />
-            </div>
-          )}
-          {/* ── Prominent Live Agent Activity Card (Visible whenever agent is running) ── */}
-          {loading && (
-            <div className="agent-live-card">
-              <div className="agent-live-glow-beam" />
-              <div className="agent-live-content">
-                <div className="agent-live-logo-box">
-                  <span className="agent-live-radar-ring" />
-                  <svg viewBox="0 0 24 24" fill="none" width={16} height={16} className="agent-live-bolt">
-                    <path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z" fill="currentColor" />
-                  </svg>
-                </div>
-                <div className="agent-live-info">
-                  <div className="agent-live-row-top">
-                    <span className="agent-live-badge">AGENT ACTIVE</span>
-                    <span className="agent-live-timer">
-                      ⏱ {Math.floor(elapsedSeconds / 60)}:{(elapsedSeconds % 60).toString().padStart(2, '0')}
-                    </span>
-                    <span className="agent-live-status-pill">{agentStatus}</span>
-                  </div>
-                  <div className="agent-live-desc">
-                    {currentToolInfo ? (
-                      <span>
-                        Executing <strong>{currentToolInfo.name}</strong>
-                        {currentToolInfo.detail && <span className="agent-live-detail"> · {currentToolInfo.detail}</span>}
-                      </span>
-                    ) : (
-                      <span>
-                        {agentStatus === 'planning' ? 'Analyzing requirements and planning next action…'
-                          : agentStatus === 'writing' ? 'Writing code modifications to workspace…'
-                          : agentStatus === 'reading' ? 'Reading project workspace files…'
-                          : agentStatus === 'linting' ? 'Verifying code syntax & running linter…'
-                          : agentStatus === 'testing' ? 'Executing automated tests…'
-                          : agentStatus === 'compacting' ? 'Compacting conversation context…'
-                          : agentStatus === 'waiting' ? 'Waiting for your response…'
-                          : 'Synthesizing response and executing steps…'}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="agent-live-stop-btn"
-                  onClick={cancelRun}
-                  title="Stop agent turn (Esc)"
-                >
-                  <svg viewBox="0 0 24 24" fill="currentColor" width={10} height={10}>
-                    <rect x="5" y="5" width="14" height="14" rx="2" />
-                  </svg>
-                  Stop
-                </button>
-              </div>
+              <span className="agent-live-desc">
+                {currentToolInfo ? (
+                  <>
+                    <span className="agent-live-tool">{currentToolInfo.name}</span>
+                    {currentToolInfo.detail && <span className="agent-live-detail">{currentToolInfo.detail}</span>}
+                  </>
+                ) : (
+                  agentStatus === 'planning' ? 'Planning the next step…'
+                    : agentStatus === 'writing' ? 'Writing changes…'
+                    : agentStatus === 'reading' ? 'Reading files…'
+                    : agentStatus === 'linting' ? 'Running the linter…'
+                    : agentStatus === 'testing' ? 'Running tests…'
+                    : agentStatus === 'compacting' ? 'Compacting context…'
+                    : agentStatus === 'waiting' ? 'Waiting for your answer…'
+                    : 'Working…'
+                )}
+              </span>
+              <button
+                type="button"
+                className="agent-live-stop-btn"
+                onClick={cancelRun}
+                title="Stop (Esc)"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" width={9} height={9} aria-hidden="true">
+                  <rect x="5" y="5" width="14" height="14" rx="2" />
+                </svg>
+                Stop
+              </button>
             </div>
           )}
 
-          {/* ── Agent plan (persists across turns, scrolls with the feed) ── */}
+          {/* Agent plan (persists across turns, scrolls with the feed) */}
           {plan.length > 0 && (
             <div className="plan-card">
               <button
+                type="button"
                 className="plan-header"
                 onClick={() => setPlanCollapsed((c) => !c)}
+                aria-expanded={!planCollapsed}
               >
-                <span className="plan-title">
-                  Plan · {plan.filter((t) => t.status === 'completed').length}/{plan.length} done
-                </span>
-                <span className="plan-toggle">{planCollapsed ? '▸' : '▾'}</span>
+                <span className="plan-title">Plan</span>
+                <span className="plan-count">{completedCount} of {plan.length} done</span>
+                <svg className={`plan-toggle ${planCollapsed ? '' : 'plan-toggle--open'}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={12} height={12} aria-hidden="true">
+                  <path d="M9 6l6 6-6 6" />
+                </svg>
               </button>
               {!planCollapsed && (
                 <div className="plan-tasks">
                   {plan.map((t) => (
                     <div key={t.id} className={`plan-task plan-task--${t.status}`}>
-                      <span className="plan-task-mark">
+                      <span className="plan-task-mark" aria-hidden="true">
                         {t.status === 'completed' ? (
-                          <span className="plan-check">✓</span>
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} width={12} height={12}>
+                            <path d="M20 6L9 17l-5-5" />
+                          </svg>
                         ) : t.status === 'in_progress' ? (
                           loading ? (
                             <svg className="plan-spinner" viewBox="0 0 16 16" fill="none" width={12} height={12}>
@@ -1025,17 +909,15 @@ export default function ChatPanel({
                               <path d="M14 8a6 6 0 00-6-6" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
                             </svg>
                           ) : (
-                            <span className="plan-paused-dot">●</span>
+                            <span className="plan-dot plan-dot--paused" />
                           )
                         ) : (
-                          <span className="plan-pending-circle">○</span>
+                          <span className="plan-dot" />
                         )}
                       </span>
                       <span className="plan-task-title">{t.title}</span>
                       {t.status === 'in_progress' && (
-                        <span className={`plan-task-tag ${loading ? 'plan-task-tag--running' : 'plan-task-tag--paused'}`}>
-                          {loading ? 'RUNNING' : 'PAUSED'}
-                        </span>
+                        <span className="plan-task-tag">{loading ? 'Running' : 'Paused'}</span>
                       )}
                     </div>
                   ))}
@@ -1044,32 +926,24 @@ export default function ChatPanel({
             </div>
           )}
 
-          {/* ── Plan Continuation Card (When paused/stopped with uncompleted tasks) ── */}
+          {/* Plan continuation (paused/stopped with uncompleted tasks) */}
           {!loading && plan.length > 0 && plan.some((t) => t.status !== 'completed') && (
             <div className="plan-continue-card">
               <div className="plan-continue-top">
-                <div className="plan-continue-badge-wrap">
-                  <span className="plan-continue-paused-dot" />
-                  <span className="plan-continue-badge-text">
-                    {lastDoneReason === 'max_steps' || lastDoneReason === 'timeout'
-                      ? 'TURN LIMIT REACHED'
-                      : 'PAUSED · READY FOR NEXT STEP'}
-                  </span>
-                </div>
-                <span className="plan-continue-count">
-                  {plan.filter((t) => t.status === 'completed').length}/{plan.length} TASKS DONE
+                <span className="plan-continue-status">
+                  {lastDoneReason === 'max_steps' || lastDoneReason === 'timeout'
+                    ? 'Turn limit reached'
+                    : 'Paused'}
                 </span>
+                <span className="plan-continue-count">{completedCount} of {plan.length} tasks done</span>
               </div>
 
-              {(() => {
-                const nextTask = plan.find((t) => t.status === 'in_progress') || plan.find((t) => t.status === 'pending');
-                return nextTask ? (
-                  <div className="plan-continue-next-row">
-                    <span className="plan-continue-next-label">Next Task:</span>
-                    <span className="plan-continue-next-title">{nextTask.title}</span>
-                  </div>
-                ) : null;
-              })()}
+              {nextPlanTask && (
+                <div className="plan-continue-next-row">
+                  <span className="plan-continue-next-label">Next:</span>
+                  <span className="plan-continue-next-title">{nextPlanTask.title}</span>
+                </div>
+              )}
 
               <div className="plan-continue-btn-row">
                 <button
@@ -1077,48 +951,46 @@ export default function ChatPanel({
                   className="plan-continue-btn plan-continue-btn--primary"
                   onClick={() => {
                     setLastDoneReason(null);
-                    const nextTask = plan.find((t) => t.status === 'in_progress') || plan.find((t) => t.status === 'pending');
-                    const nextInstruction = nextTask
-                      ? `Continue executing the plan. Next task is: "${nextTask.title}". Please proceed with implementing and verifying.`
+                    const nextInstruction = nextPlanTask
+                      ? `Continue executing the plan. Next task is: "${nextPlanTask.title}". Please proceed with implementing and verifying.`
                       : 'Continue working through the remaining tasks in the plan until complete.';
                     executePrompt(nextInstruction, history);
                   }}
                 >
-                  <svg viewBox="0 0 24 24" fill="currentColor" width={12} height={12}>
-                    <path d="M8 5v14l11-7z" />
-                  </svg>
-                  Continue Next Task
+                  Continue
                 </button>
                 <button
                   type="button"
-                  className="plan-continue-btn plan-continue-btn--ghost"
+                  className="plan-continue-btn"
                   onClick={() => {
-                    const nextTask = plan.find((t) => t.status === 'in_progress') || plan.find((t) => t.status === 'pending');
-                    setInput(nextTask ? `Regarding task "${nextTask.title}": ` : 'Continue: ');
+                    setInput(nextPlanTask ? `Regarding task "${nextPlanTask.title}": ` : 'Continue: ');
                     (document.querySelector('.input-textarea') as HTMLTextAreaElement)?.focus();
                   }}
                 >
-                  Custom Instructions…
+                  Give instructions
                 </button>
               </div>
             </div>
           )}
 
-          {/* ── Plan Completed Celebration Banner ── */}
+          {/* Plan completed */}
           {!loading && plan.length > 0 && plan.every((t) => t.status === 'completed') && (
             <div className="plan-completed-banner">
-              <span className="plan-completed-check">✓</span>
-              <span className="plan-completed-text">All {plan.length} plan tasks completed successfully!</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} width={12} height={12} aria-hidden="true">
+                <path d="M20 6L9 17l-5-5" />
+              </svg>
+              <span>All {plan.length} plan tasks are done.</span>
             </div>
           )}
 
-          {/* ── Continue banner after an interrupted turn (fallback when no plan) ── */}
+          {/* Continue banner after an interrupted turn (fallback when no plan) */}
           {!loading && plan.length === 0 && (lastDoneReason === 'max_steps' || lastDoneReason === 'timeout') && (
             <div className="continue-banner">
               <span>
                 The turn hit its {lastDoneReason === 'timeout' ? 'time' : 'step'} limit.
               </span>
               <button
+                type="button"
                 className="continue-btn"
                 onClick={() => {
                   setLastDoneReason(null);
@@ -1131,145 +1003,137 @@ export default function ChatPanel({
             </div>
           )}
 
-          {/* ── Antigravity Interactive ask_question Decision Card ── */}
+          {/* ask_user question card */}
           {pendingQuestion && (
-            <div className="ask-question-card" role="region" aria-label="Agent Question">
+            <div className="ask-question-card" role="region" aria-label="The agent needs your input">
               <div className="ask-question-header">
-                <div className="ask-question-title-wrap">
-                  <span className="ask-question-pulse" />
-                  <span className="ask-question-icon">⚡</span>
-                  <span className="ask-question-title">Clarification / Decision Required</span>
-                </div>
-                <span className="ask-question-badge">Awaiting Input</span>
+                <span className="ask-question-dot" aria-hidden="true" />
+                <span className="ask-question-title">The agent needs your input</span>
               </div>
 
-              <div className="ask-question-body">
-                <p className="ask-question-prompt">{pendingQuestion.question}</p>
+              <p className="ask-question-prompt">{pendingQuestion.question}</p>
 
-                {pendingQuestion.options && pendingQuestion.options.length > 0 && (
-                  <div className="ask-question-options-grid">
-                    {pendingQuestion.options.map((option, idx) => (
-                      <button
-                        key={idx}
-                        type="button"
-                        className={`ask-question-option-btn ${answerText === option ? 'ask-question-option-btn--selected' : ''}`}
-                        onClick={() => setAnswerText(option)}
-                        onDoubleClick={() => answerQuestion(option)}
-                        title={`Option ${idx + 1}: Click to choose, double-click to submit`}
-                      >
-                        <span className="ask-question-option-num">{idx + 1}</span>
-                        <span className="ask-question-option-text">{option}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
+              {pendingQuestion.options && pendingQuestion.options.length > 0 && (
+                <div className="ask-question-options">
+                  {pendingQuestion.options.map((option, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      className={`ask-question-option-btn ${answerText === option ? 'ask-question-option-btn--selected' : ''}`}
+                      onClick={() => setAnswerText(option)}
+                      onDoubleClick={() => answerQuestion(option)}
+                      aria-pressed={answerText === option}
+                      title="Click to choose, double-click to send"
+                    >
+                      <span className="ask-question-option-num">{idx + 1}</span>
+                      <span className="ask-question-option-text">{option}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
 
-                <div className="ask-question-input-row">
-                  <input
-                    type="text"
-                    className="ask-question-input"
-                    placeholder={
-                      pendingQuestion.options?.length
-                        ? "Select an option above or type custom instructions..."
-                        : "Type your answer or decision..."
+              <div className="ask-question-input-row">
+                <input
+                  type="text"
+                  className="ask-question-input"
+                  aria-label="Your answer"
+                  placeholder={
+                    pendingQuestion.options?.length
+                      ? 'Choose an option or type your own answer'
+                      : 'Type your answer'
+                  }
+                  value={answerText}
+                  onChange={(e) => setAnswerText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      if (answerText.trim()) answerQuestion(answerText);
                     }
-                    value={answerText}
-                    onChange={(e) => setAnswerText(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        if (answerText.trim()) answerQuestion(answerText);
-                      }
-                    }}
-                    autoFocus
-                  />
-                  <button
-                    type="button"
-                    className="ask-question-submit-btn"
-                    disabled={!answerText.trim()}
-                    onClick={() => answerQuestion(answerText)}
-                  >
-                    Submit Decision ↵
-                  </button>
-                </div>
-                <div className="ask-question-footer-hints">
-                  <span>💡 Tip: Click option to select, double-click to submit immediately, or press Enter</span>
-                </div>
+                  }}
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  className="ask-question-submit-btn"
+                  disabled={!answerText.trim()}
+                  onClick={() => answerQuestion(answerText)}
+                >
+                  Send answer
+                </button>
               </div>
+              <div className="ask-question-hint">Double-click an option to send it right away, or press Enter.</div>
             </div>
           )}
 
           <div ref={endRef} />
       </div>
 
-      {/* ── Allocated Bottom Place for controls & prompt input ── */}
+      {/* Bottom dock: controls and composer */}
       <div className="chat-bottom-dock">
-        {/* Tier 1 & 2: Mode Toggle, Context Pill, and Horizontal Quick Chips */}
-        <div className="chat-controls-container">
-          {/* Tier 1: Execution Mode & Context Counter */}
-          <div className="chat-utility-bar">
-            <div className="mode-toggle-group">
-              <button
-                type="button"
-                className={`mode-toggle-btn ${executionMode === 'auto' ? 'mode-toggle-btn--active' : ''}`}
-                title="Auto Mode: Autonomous execution without pauses"
-                onClick={() => handleModeChange('auto')}
-              >
-                ⚡ Auto
-              </button>
-              <button
-                type="button"
-                className={`mode-toggle-btn ${executionMode === 'manual' ? 'mode-toggle-btn--active' : ''}`}
-                title="Manual Mode: Requires human approval before running file edits and shell/docker commands"
-                onClick={() => handleModeChange('manual')}
-              >
-                🛡️ Manual
-              </button>
-              <button
-                type="button"
-                className={`mode-toggle-btn ${executionMode === 'plan' ? 'mode-toggle-btn--active' : ''}`}
-                title="Plan First Mode: Agent formulates architectural plan before editing"
-                onClick={() => handleModeChange('plan')}
-              >
-                📋 Plan
-              </button>
-            </div>
-
-            <div
-              className="context-badge-pill"
-              title={`Context Usage: ${contextInfo.tokens.toLocaleString()} / 2,000,000 tokens (${((contextInfo.tokens / (contextInfo.limit || 2_000_000)) * 100).toFixed(2)}%). 2M token limit active.`}
-              onClick={() => executePrompt('/context', history)}
+        {statuslineVisible && (
+        <div className="chat-utility-bar">
+          <div className="mode-toggle-group" role="group" aria-label="Execution mode">
+            <button
+              type="button"
+              className={`mode-toggle-btn ${executionMode === 'auto' ? 'mode-toggle-btn--active' : ''}`}
+              title="Auto: runs without pausing"
+              aria-pressed={executionMode === 'auto'}
+              onClick={() => handleModeChange('auto')}
             >
-              <span className="context-indicator-dot" />
-              <span className="context-badge-text">
-                {contextInfo.tokens >= 1000 ? `${(contextInfo.tokens / 1000).toFixed(1)}k` : contextInfo.tokens} / 2.0M tokens
-              </span>
-            </div>
+              Auto
+            </button>
+            <button
+              type="button"
+              className={`mode-toggle-btn ${executionMode === 'manual' ? 'mode-toggle-btn--active' : ''}`}
+              title="Manual: asks before editing files or running commands"
+              aria-pressed={executionMode === 'manual'}
+              onClick={() => handleModeChange('manual')}
+            >
+              Manual
+            </button>
+            <button
+              type="button"
+              className={`mode-toggle-btn ${executionMode === 'plan' ? 'mode-toggle-btn--active' : ''}`}
+              title="Plan: writes a plan before editing"
+              aria-pressed={executionMode === 'plan'}
+              onClick={() => handleModeChange('plan')}
+            >
+              Plan
+            </button>
           </div>
 
-          {/* Tier 2: Single-Row Horizontal Action Chips */}
-          <div className="prompt-chips-track">
-            {PROMPT_TEMPLATES.map((tpl) => (
-              <button
-                key={tpl.label}
-                className="prompt-chip-btn"
-                title={tpl.hint}
-                onClick={() => {
-                  if (tpl.prompt.startsWith('/')) {
-                    executePrompt(tpl.prompt, history);
-                  } else {
-                    setInput(tpl.prompt);
-                    (document.querySelector('.input-textarea') as HTMLTextAreaElement)?.focus();
-                  }
-                }}
-              >
-                {tpl.label}
-              </button>
-            ))}
-          </div>
+          <button
+            type="button"
+            className="context-badge-pill"
+            title={`Context usage: ${contextInfo.tokens.toLocaleString()} / 2,000,000 tokens (${((contextInfo.tokens / (contextInfo.limit || 2_000_000)) * 100).toFixed(2)}%)`}
+            onClick={() => send([], '/context')}
+          >
+            {contextInfo.tokens >= 1000 ? `${(contextInfo.tokens / 1000).toFixed(1)}k` : contextInfo.tokens} / 2.0M tokens
+          </button>
+        </div>
+        )}
+
+        <div className="prompt-chips-track">
+          {PROMPT_TEMPLATES.map((tpl) => (
+            <button
+              type="button"
+              key={tpl.label}
+              className="prompt-chip-btn"
+              title={tpl.hint}
+              onClick={() => {
+                if (tpl.prompt.startsWith('/')) {
+                  send([], tpl.prompt);
+                } else {
+                  setInput(tpl.prompt);
+                  (document.querySelector('.input-textarea') as HTMLTextAreaElement)?.focus();
+                }
+              }}
+            >
+              {tpl.label}
+            </button>
+          ))}
         </div>
 
-        {/* ── Message Input (Bottom prompt widget) ────────────────────────── */}
         <MessageInput
           value={input}
           onChange={setInput}
@@ -1286,98 +1150,32 @@ export default function ChatPanel({
           flex-direction: column;
           height: 100%;
           min-height: 0;
-          gap: 0;
           overflow: hidden;
           position: relative;
+          background: var(--bg-base);
+          font-family: var(--font-sans);
+          font-size: 13px;
+          color: var(--text-primary);
         }
 
         .chat-panel--full {
-          max-width: 920px;
+          max-width: 820px;
           margin: 0 auto;
           width: 100%;
         }
 
-        /* ── Only allocate bottom place for controls & input ── */
-        .chat-bottom-dock {
-          flex-shrink: 0;
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-          padding: 8px 4px 2px;
-          background: var(--bg-base);
-          border-top: 1px solid var(--border-subtle);
-          z-index: 20;
-        }
-
-        .chat-panel--full .plan-continue-btn-row {
-          max-width: 560px;
-        }
-
-        .chat-panel--full .plan-card {
-          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
-        }
-
-        /* ── View toggle bar ── */
-        .view-toggle-bar {
-          display: flex;
-          gap: 2px;
-          background: var(--bg-base);
-          border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-md);
-          padding: 3px;
-          flex-shrink: 0;
-        }
-        .view-tab {
+        /* Feed */
+        .chat-timeline {
           flex: 1;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 5px;
-          padding: 6px 10px;
-          font-size: 11px;
-          font-weight: 500;
-          color: var(--text-muted);
-          background: transparent;
-          border: none;
-          border-radius: 6px;
-          cursor: pointer;
-          transition: all var(--transition-fast);
-          position: relative;
-        }
-        .view-tab:hover {
-          color: var(--text-secondary);
-          background: var(--bg-hover);
-        }
-        .view-tab--active {
-          background: var(--bg-hover) !important;
-          color: var(--text-primary) !important;
-          box-shadow: 0 1px 4px rgba(0,0,0,0.3);
-        }
-        .view-tab-badge {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          width: 16px;
-          height: 16px;
-          border-radius: 50%;
-          background: var(--brand);
-          color: #fff;
-          font-size: 8.5px;
-          font-weight: 700;
-          margin-left: 2px;
-        }
-
-        /* ── Overview panel ── */
-        .overview-panel {
-          flex: 1;
+          min-height: 0;
           overflow-y: auto;
           display: flex;
           flex-direction: column;
-          gap: 12px;
-          padding-right: 2px;
+          gap: 4px;
+          padding: 16px 16px 12px;
         }
 
-        /* ── Chat empty state ── */
+        /* Empty state */
         .chat-empty-state {
           flex: 1;
           display: flex;
@@ -1388,1172 +1186,608 @@ export default function ChatPanel({
           gap: 8px;
           padding: 32px 16px;
         }
-        .chat-empty-icon {
-          width: 52px;
-          height: 52px;
-          border-radius: 14px;
-          background: rgba(255,255,255,0.03);
-          border: 1px solid var(--border-subtle);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: var(--text-muted);
-          margin-bottom: 6px;
-        }
         .chat-empty-title {
-          font-size: 13.5px;
-          font-weight: 600;
+          font-family: var(--font-serif);
+          font-size: 26px;
+          font-weight: 400;
+          line-height: 1.25;
           color: var(--text-primary);
-          font-family: var(--font-brand);
+          margin: 0;
         }
         .chat-empty-desc {
-          font-size: 11px;
+          font-size: 13px;
           color: var(--text-muted);
           line-height: 1.5;
-          max-width: 220px;
-        }
-        .chat-empty-cta {
-          margin-top: 8px;
-          font-size: 11px;
-          color: var(--brand);
-          background: none;
-          border: none;
-          cursor: pointer;
-          padding: 4px 8px;
-          border-radius: var(--radius-sm);
-          transition: background var(--transition-fast);
-        }
-        .chat-empty-cta:hover {
-          background: rgba(0, 122, 255, 0.08);
+          max-width: 320px;
+          margin: 0;
         }
 
-        /* Top Agent Status Widget */
-        .agent-status-card {
-          background: var(--bg-surface);
-          border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-sm);
-          padding: 12px;
-          display: flex;
-          flex-direction: column;
-          gap: 14px;
-          flex-shrink: 0;
-        }
-
-        .card-header {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-        }
-
-        .project-avatar {
-          width: 28px;
-          height: 28px;
-          border-radius: 6px;
-          background: var(--brand);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-
-        .project-info {
-          display: flex;
-          flex-direction: column;
-          flex: 1;
-        }
-
-        .project-title {
-          font-family: var(--font-brand);
-          font-size: 13.5px;
-          font-weight: 600;
-          color: var(--text-primary);
-          line-height: 1.2;
-        }
-
-        .project-subtitle {
-          font-size: 10px;
-          color: var(--text-muted);
-        }
-
-        .status-badge {
-          display: flex;
-          align-items: center;
-          gap: 5px;
-          font-size: 10px;
-          font-weight: 500;
-          background: rgba(255, 255, 255, 0.04);
-          border: 1px solid var(--border-subtle);
-          padding: 3px 8px;
-          border-radius: 20px;
-          color: var(--text-secondary);
-        }
-
-        .status-badge-dot {
-          width: 5px;
-          height: 5px;
-          border-radius: 50%;
-          background: var(--text-muted);
-        }
-
-        .status-label {
-          font-size: 9px;
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-          color: var(--text-muted);
-          font-weight: 600;
-          margin-bottom: 6px;
-        }
-
-        .ready-title {
-          font-family: var(--font-brand);
-          font-size: 15px;
-          font-weight: 600;
-          color: var(--text-primary);
-          margin-bottom: 4px;
-        }
-
-        .ready-desc {
-          font-size: 11px;
-          color: var(--text-secondary);
-          line-height: 1.5;
-        }
-
-        .card-footer {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          border-top: 1px solid var(--border-subtle);
-          padding-top: 12px;
-        }
-
-        .badge-pill {
-          display: flex;
-          align-items: center;
-          gap: 4px;
-          font-size: 10.5px;
-          color: var(--text-secondary);
-          background: rgba(255, 255, 255, 0.02);
-          border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-sm);
-          padding: 4px 8px;
-        }
-
-        .badge-icon {
-          font-size: 10px;
-        }
-
-        /* Complete scrollable timeline area from top to bottom */
-        .chat-timeline {
-          flex: 1 1 0px;
-          min-height: 0;
-          overflow-y: auto;
-          overflow-x: hidden;
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
-          padding: 8px 10px 16px 4px;
-          scroll-behavior: smooth;
-        }
-
-        .chat-timeline::-webkit-scrollbar {
-          width: 6px;
-        }
-        .chat-timeline::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        .chat-timeline::-webkit-scrollbar-thumb {
-          background: var(--border-subtle);
-          border-radius: 4px;
-        }
-        .chat-timeline::-webkit-scrollbar-thumb:hover {
-          background: var(--border-strong);
-        }
-
+        /* Messages */
         .timeline-msg {
           display: flex;
-          width: 100%;
+          margin: 6px 0;
         }
-
         .timeline-msg--user {
           justify-content: flex-end;
         }
-
-        .timeline-msg--assistant {
-          justify-content: flex-start;
-        }
-
-        .msg-bubble {
-          max-width: 85%;
-          padding: 8px 12px;
-          border-radius: var(--radius-md);
-          font-size: 12px;
-          line-height: 1.5;
-          word-break: break-word;
-        }
-
         .timeline-msg--user .msg-bubble {
-          background: var(--brand);
-          color: white;
-          border-bottom-right-radius: 2px;
-        }
-
-        .timeline-msg--assistant .msg-bubble {
-          background: rgba(255, 255, 255, 0.03);
+          max-width: 85%;
+          background: var(--bg-elevated);
           border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-lg);
+          padding: 8px 12px;
           color: var(--text-primary);
-          border-bottom-left-radius: 2px;
+        }
+        .timeline-msg--assistant .msg-bubble {
+          width: 100%;
+          padding: 2px 0;
+          color: var(--text-primary);
+        }
+        .msg-bubble {
+          font-size: 13.5px;
+          line-height: 1.6;
+          overflow-wrap: anywhere;
+        }
+        .msg-text {
           white-space: pre-wrap;
+        }
+        .msg-attachments {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          margin-bottom: 8px;
+        }
+        .msg-attachment-item {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 4px 8px 4px 4px;
+          background: var(--bg-surface);
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-md);
+        }
+        .msg-attachment-thumb {
+          width: 36px;
+          height: 36px;
+          object-fit: cover;
+          border-radius: 4px;
+          border: 1px solid var(--border-subtle);
+        }
+        .msg-attachment-icon {
+          color: var(--text-muted);
+          margin-left: 4px;
+          flex-shrink: 0;
+        }
+        .msg-attachment-name {
+          font-family: var(--font-mono);
+          font-size: 11.5px;
+          color: var(--text-secondary);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          max-width: 220px;
         }
 
         .stream-caret {
           display: inline-block;
-          width: 6px;
-          height: 12px;
-          margin-left: 3px;
+          width: 7px;
+          height: 14px;
+          margin-left: 2px;
           vertical-align: text-bottom;
-          background: var(--text-secondary);
-          animation: caret-blink 1s steps(2) infinite;
+          background: var(--text-muted);
+          animation: caret-blink 1s steps(2, start) infinite;
         }
-
         @keyframes caret-blink {
-          0%, 50% { opacity: 1; }
-          51%, 100% { opacity: 0; }
+          to { visibility: hidden; }
         }
 
-        .agent-status-row {
+        /* Live agent activity */
+        .agent-live-row {
           display: flex;
-          justify-content: flex-start;
-          padding: 4px 0;
+          align-items: center;
+          gap: 8px;
+          padding: 6px 0;
+          font-size: 12.5px;
+          color: var(--text-secondary);
+          min-width: 0;
         }
-
-        /* ── Plan card ── */
-        .plan-card {
-          background: rgba(255,255,255,0.02);
-          border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-md);
+        .agent-live-dot {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: var(--accent);
           flex-shrink: 0;
+          animation: working-pulse 1.6s ease-in-out infinite;
+        }
+        @keyframes working-pulse {
+          50% { opacity: 0.35; }
+        }
+        .agent-live-desc {
+          display: flex;
+          align-items: baseline;
+          gap: 6px;
+          min-width: 0;
           overflow: hidden;
+          white-space: nowrap;
+          text-overflow: ellipsis;
+        }
+        .agent-live-tool {
+          font-family: var(--font-mono);
+          font-size: 12px;
+          color: var(--text-primary);
+        }
+        .agent-live-detail {
+          font-family: var(--font-mono);
+          font-size: 11.5px;
+          color: var(--text-muted);
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .agent-live-stop-btn {
+          margin-left: auto;
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          flex-shrink: 0;
+          padding: 3px 9px;
+          font-size: 12px;
+          color: var(--text-secondary);
+          background: var(--bg-surface);
+          border: 1px solid var(--border-base);
+          border-radius: var(--radius-md);
+          cursor: pointer;
+          transition: background var(--transition-fast), color var(--transition-fast);
+        }
+        .agent-live-stop-btn:hover {
+          background: var(--bg-hover);
+          color: var(--text-primary);
         }
 
+        /* Plan */
+        .plan-card {
+          margin: 6px 0;
+          background: var(--bg-surface);
+          border: 1px solid var(--border-base);
+          border-radius: var(--radius-lg);
+          overflow: hidden;
+          flex-shrink: 0;
+        }
         .plan-header {
           width: 100%;
           display: flex;
           align-items: center;
-          justify-content: space-between;
+          gap: 8px;
           padding: 8px 12px;
           background: none;
           border: none;
           cursor: pointer;
+          text-align: left;
           color: var(--text-primary);
         }
-
-        .plan-title {
-          font-size: 11px;
-          font-weight: 600;
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-          color: var(--text-secondary);
+        .plan-header:hover {
+          background: var(--bg-hover);
         }
-
-        .plan-toggle { color: var(--text-muted); font-size: 11px; }
-
+        .plan-title {
+          font-size: 12.5px;
+          font-weight: 600;
+        }
+        .plan-count {
+          font-size: 12px;
+          color: var(--text-muted);
+        }
+        .plan-toggle {
+          margin-left: auto;
+          color: var(--text-muted);
+          transition: transform var(--transition-fast);
+        }
+        .plan-toggle--open {
+          transform: rotate(90deg);
+        }
         .plan-tasks {
-          padding: 2px 12px 8px;
           display: flex;
           flex-direction: column;
-          gap: 3px;
-          max-height: 125px;
-          overflow-y: auto;
+          padding: 2px 12px 10px;
+          border-top: 1px solid var(--border-subtle);
         }
-
         .plan-task {
           display: flex;
-          align-items: center;
+          align-items: flex-start;
           gap: 8px;
-          font-size: 12px;
-          line-height: 1.4;
-          padding: 4px 6px;
-          border-radius: var(--radius-sm);
-          transition: background var(--transition-fast);
+          padding: 4px 0;
+          font-size: 12.5px;
+          line-height: 1.45;
+          color: var(--text-secondary);
         }
-
-        .plan-task-mark {
-          flex-shrink: 0;
-          width: 14px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-
-        .plan-check { color: var(--success); font-weight: bold; }
-        .plan-paused-dot { color: var(--warning, #f59e0b); font-size: 13px; }
-        .plan-pending-circle { color: var(--text-disabled); font-size: 12px; }
-
-        .plan-spinner {
-          animation: spin 0.85s linear infinite;
-          color: var(--brand);
-          flex-shrink: 0;
-        }
-
-        .plan-task-title {
-          flex: 1;
-        }
-
         .plan-task--completed .plan-task-title {
           color: var(--text-muted);
           text-decoration: line-through;
+          text-decoration-color: var(--border-strong);
         }
-
-        .plan-task--in_progress {
-          background: rgba(255, 107, 0, 0.05);
-          border: 1px solid rgba(255, 107, 0, 0.15);
-        }
-
         .plan-task--in_progress .plan-task-title {
           color: var(--text-primary);
-          font-weight: 600;
         }
-
-        .plan-task--pending .plan-task-title {
-          color: var(--text-secondary);
-        }
-
-        .plan-task-tag {
-          font-size: 8.5px;
-          font-weight: 700;
-          letter-spacing: 0.06em;
-          padding: 1px 6px;
-          border-radius: 10px;
-          flex-shrink: 0;
-          text-transform: uppercase;
-        }
-
-        .plan-task-tag--running {
-          background: var(--brand);
-          color: #fff;
-          box-shadow: 0 0 6px rgba(255, 107, 0, 0.4);
-          animation: pulse-soft 1.2s infinite;
-        }
-
-        .plan-task-tag--paused {
-          background: rgba(245, 158, 11, 0.18);
-          color: var(--warning, #f59e0b);
-          border: 1px solid rgba(245, 158, 11, 0.3);
-        }
-
-        /* ── Live Agent Activity Card ── */
-        .agent-live-card {
-          position: relative;
-          background: var(--bg-surface);
-          border: 1px solid var(--accent-border, rgba(255, 107, 0, 0.4));
-          border-radius: var(--radius-md);
-          overflow: hidden;
-          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12), 0 0 15px rgba(255, 107, 0, 0.12);
-          flex-shrink: 0;
-        }
-
-        .agent-live-glow-beam {
-          height: 2px;
-          width: 100%;
-          background: linear-gradient(90deg, transparent, var(--brand), #ff9800, transparent);
-          background-size: 200% 100%;
-          animation: live-beam-scan 2s linear infinite;
-        }
-
-        @keyframes live-beam-scan {
-          0% { background-position: -200% 0; }
-          100% { background-position: 200% 0; }
-        }
-
-        .agent-live-content {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 10px 14px;
-        }
-
-        .agent-live-logo-box {
-          position: relative;
-          width: 32px;
-          height: 32px;
-          border-radius: 8px;
-          background: var(--brand);
-          color: #000;
+        .plan-task-mark {
+          width: 14px;
+          height: 18px;
           display: flex;
           align-items: center;
           justify-content: center;
-          box-shadow: 0 0 12px rgba(255, 107, 0, 0.4);
           flex-shrink: 0;
+          color: var(--text-muted);
         }
-
-        .agent-live-radar-ring {
-          position: absolute;
-          inset: -4px;
-          border-radius: 12px;
-          border: 1.5px solid var(--brand);
-          opacity: 0;
-          animation: radar-wave 1.8s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+        .plan-task--completed .plan-task-mark {
+          color: var(--success);
         }
-
-        @keyframes radar-wave {
-          0% { transform: scale(0.9); opacity: 0.8; }
-          100% { transform: scale(1.4); opacity: 0; }
+        .plan-task--in_progress .plan-task-mark {
+          color: var(--accent);
         }
-
-        .agent-live-bolt {
-          animation: bolt-pulse 1.2s ease-in-out infinite alternate;
+        .plan-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          border: 1.5px solid var(--border-strong);
         }
-
-        @keyframes bolt-pulse {
-          0% { transform: scale(0.95); opacity: 0.9; }
-          100% { transform: scale(1.1); opacity: 1; }
+        .plan-dot--paused {
+          border-color: var(--warning);
+          background: var(--warning);
         }
-
-        .agent-live-info {
+        .plan-spinner {
+          animation: plan-spin 0.9s linear infinite;
+        }
+        @keyframes plan-spin {
+          to { transform: rotate(360deg); }
+        }
+        .plan-task-title {
           flex: 1;
-          display: flex;
-          flex-direction: column;
-          gap: 3px;
           min-width: 0;
         }
-
-        .agent-live-row-top {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .agent-live-title {
-          font-family: var(--font-brand);
-          font-size: 11px;
-          font-weight: 700;
-          letter-spacing: 0.05em;
-          color: var(--brand);
-        }
-
-        .agent-live-timer {
-          font-family: var(--font-mono);
-          font-size: 10.5px;
-          font-weight: 600;
-          color: var(--text-primary);
-          background: var(--bg-elevated);
-          border: 1px solid var(--border-subtle);
-          padding: 1px 6px;
-          border-radius: 4px;
-        }
-
-        .agent-live-status-pill {
-          font-size: 9px;
-          font-weight: 600;
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-          color: var(--text-secondary);
-          background: var(--bg-elevated);
-          border: 1px solid var(--border-subtle);
-          padding: 1px 6px;
-          border-radius: 10px;
-        }
-
-        .agent-live-desc {
-          font-size: 11.5px;
-          color: var(--text-secondary);
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-
-        .agent-live-tool-name {
-          color: var(--brand);
-          font-family: var(--font-mono);
-        }
-
-        .agent-live-detail {
-          color: var(--text-muted);
-          font-family: var(--font-mono);
-          font-size: 10.5px;
-        }
-
-        .agent-live-stop-btn {
-          display: flex;
-          align-items: center;
-          gap: 5px;
-          padding: 5px 12px;
-          background: rgba(255, 69, 58, 0.12);
-          color: var(--error, #ef4444);
-          border: 1px solid rgba(255, 69, 58, 0.35);
-          border-radius: var(--radius-sm);
-          font-size: 11px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all var(--transition-fast);
+        .plan-task-tag {
           flex-shrink: 0;
+          font-size: 11px;
+          color: var(--text-muted);
+          padding: 0 7px;
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-full);
         }
 
-        .agent-live-stop-btn:hover {
-          background: var(--error, #ef4444);
-          color: #fff;
-          box-shadow: 0 0 10px rgba(255, 69, 58, 0.4);
-        }
-
-        /* ── Plan Continuation Card ── */
         .plan-continue-card {
+          margin: 6px 0;
+          padding: 12px;
           background: var(--bg-surface);
-          border: 1px solid var(--accent-border, rgba(255, 107, 0, 0.35));
-          border-radius: var(--radius-md);
-          padding: 12px 14px;
+          border: 1px solid var(--border-base);
+          border-radius: var(--radius-lg);
           display: flex;
           flex-direction: column;
-          gap: 10px;
+          gap: 8px;
           flex-shrink: 0;
-          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
         }
-
         .plan-continue-top {
           display: flex;
           align-items: center;
           justify-content: space-between;
           gap: 8px;
+          font-size: 12px;
         }
-
-        .plan-continue-badge-wrap {
-          display: flex;
-          align-items: center;
-          gap: 6px;
+        .plan-continue-status {
+          font-weight: 600;
+          color: var(--text-primary);
         }
-
-        .plan-continue-paused-dot {
-          width: 7px;
-          height: 7px;
-          border-radius: 50%;
-          background: var(--warning, #d97706);
-          box-shadow: 0 0 6px var(--warning, #d97706);
-        }
-
-        .plan-continue-badge-text {
-          font-size: 11px;
-          font-weight: 700;
-          letter-spacing: 0.04em;
-          color: var(--warning, #d97706);
-        }
-
         .plan-continue-count {
-          font-size: 10px;
-          font-weight: 700;
-          color: var(--text-secondary);
-          background: var(--bg-elevated);
-          border: 1px solid var(--border-subtle);
-          padding: 2px 8px;
-          border-radius: 10px;
+          color: var(--text-muted);
         }
-
         .plan-continue-next-row {
           display: flex;
-          align-items: center;
-          gap: 8px;
-          font-size: 12px;
-          color: var(--text-primary);
-          background: var(--bg-elevated);
-          padding: 7px 10px;
-          border-radius: var(--radius-sm);
-          border: 1px solid var(--border-base);
+          gap: 6px;
+          font-size: 12.5px;
+          line-height: 1.45;
         }
-
         .plan-continue-next-label {
-          color: var(--brand);
-          font-size: 10px;
-          text-transform: uppercase;
-          font-weight: 700;
-          letter-spacing: 0.05em;
+          color: var(--text-muted);
           flex-shrink: 0;
         }
-
         .plan-continue-next-title {
           color: var(--text-primary);
-          font-weight: 600;
         }
-
         .plan-continue-btn-row {
           display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .plan-continue-btn {
-          display: flex;
-          align-items: center;
-          justify-content: center;
           gap: 6px;
-          font-size: 12px;
-          font-weight: 600;
-          border-radius: var(--radius-sm);
-          padding: 7px 14px;
-          cursor: pointer;
-          transition: all var(--transition-fast);
         }
-
-        .plan-continue-btn--primary {
-          background: var(--brand);
-          color: #fff;
-          border: none;
-          box-shadow: 0 0 12px rgba(255, 107, 0, 0.3);
-          flex: 1.2;
-        }
-
-        .plan-continue-btn--primary:hover {
-          filter: brightness(1.15);
-          box-shadow: 0 0 18px rgba(255, 107, 0, 0.5);
-        }
-
-        .plan-continue-btn--ghost {
-          background: rgba(255, 255, 255, 0.04);
-          color: var(--text-secondary);
-          border: 1px solid var(--border-base);
-          flex: 1;
-        }
-
-        .plan-continue-btn--ghost:hover {
-          background: var(--bg-hover);
+        .plan-continue-btn {
+          padding: 5px 12px;
+          font-size: 12.5px;
           color: var(--text-primary);
+          background: var(--bg-surface);
+          border: 1px solid var(--border-base);
+          border-radius: var(--radius-md);
+          cursor: pointer;
+          transition: background var(--transition-fast);
+        }
+        .plan-continue-btn:hover {
+          background: var(--bg-hover);
+        }
+        .plan-continue-btn--primary {
+          background: var(--accent);
+          border-color: var(--accent);
+          color: #fff;
+        }
+        .plan-continue-btn--primary:hover {
+          background: var(--accent-dim);
         }
 
         .plan-completed-banner {
           display: flex;
           align-items: center;
           gap: 8px;
-          padding: 8px 12px;
-          background: rgba(48, 209, 88, 0.08);
-          border: 1px solid rgba(48, 209, 88, 0.3);
-          border-radius: var(--radius-md);
+          padding: 6px 0;
+          font-size: 12.5px;
           color: var(--success);
-          font-size: 12px;
-          font-weight: 600;
-          flex-shrink: 0;
         }
 
-        .plan-completed-check {
-          font-size: 14px;
-          font-weight: bold;
-        }
-
-        /* ── Continue banner ── */
         .continue-banner {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 10px;
+          gap: 8px;
+          margin: 6px 0;
           padding: 8px 12px;
-          background: rgba(0, 122, 255, 0.06);
-          border: 1px solid rgba(0, 122, 255, 0.25);
-          border-radius: var(--radius-md);
-          font-size: 11.5px;
-          color: var(--text-secondary);
-          flex-shrink: 0;
-        }
-
-        .continue-btn {
-          padding: 5px 14px;
-          background: var(--brand);
-          color: white;
-          border: none;
-          border-radius: var(--radius-md);
-          font-size: 11.5px;
-          font-weight: 600;
-          cursor: pointer;
-          flex-shrink: 0;
-        }
-
-        .continue-btn:hover { filter: brightness(1.1); }
-
-        /* ── ask_user answer card ── */
-        .answer-card {
-          background: rgba(255, 159, 10, 0.05);
-          border: 1px solid rgba(255, 159, 10, 0.3);
-          border-radius: var(--radius-md);
-          padding: 12px;
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
-        }
-
-        .answer-question {
           font-size: 12.5px;
-          font-weight: 600;
-          color: var(--text-primary);
-          line-height: 1.5;
-        }
-
-        .answer-options {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 6px;
-        }
-
-        .answer-option {
-          padding: 6px 12px;
-          background: rgba(255,255,255,0.04);
-          border: 1px solid var(--border-base);
-          border-radius: var(--radius-full);
-          color: var(--text-primary);
-          font-size: 11.5px;
-          cursor: pointer;
-          transition: all var(--transition-fast);
-        }
-
-        .answer-option:hover {
-          background: rgba(255, 159, 10, 0.12);
-          border-color: rgba(255, 159, 10, 0.5);
-        }
-
-        .answer-input-row {
-          display: flex;
-          gap: 6px;
-        }
-
-        .answer-input {
-          flex: 1;
-          background: rgba(0,0,0,0.2);
-          border: 1px solid var(--border-base);
+          color: var(--text-secondary);
+          background: var(--warning-dim);
           border-radius: var(--radius-md);
-          padding: 7px 10px;
+        }
+        .continue-btn {
+          padding: 4px 10px;
           font-size: 12px;
           color: var(--text-primary);
-          outline: none;
-        }
-
-        .answer-send {
-          padding: 7px 14px;
-          background: #ffffff;
-          color: #000000;
-          border: none;
-          border-radius: var(--radius-md);
-          font-size: 11.5px;
-          font-weight: 600;
-          cursor: pointer;
-        }
-
-        .answer-send:disabled {
-          opacity: 0.4;
-          cursor: not-allowed;
-        }
-
-        /* Status badge variants */
-        .status-badge--idle .status-badge-dot   { background: var(--text-muted); }
-        .status-badge--active .status-badge-dot { background: var(--success); animation: pulse-soft 1.5s infinite; box-shadow: 0 0 6px var(--success); }
-        .status-badge--error .status-badge-dot  { background: var(--error); }
-        .status-badge--active { border-color: var(--success-border, rgba(48,209,88,0.3)) !important; color: var(--success) !important; }
-        .status-badge--error  { border-color: var(--error-dim, rgba(255,69,58,0.2)) !important; color: var(--error) !important; }
-
-        /* Telemetry strip */
-        .telem-strip {
-          display: flex;
-          align-items: center;
-          gap: 0;
-          background: rgba(0,0,0,0.18);
-          border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-md);
-          overflow: hidden;
-          flex-shrink: 0;
-        }
-        .telem-item {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          padding: 7px 6px;
-        }
-        .telem-lbl {
-          font-size: 7.5px;
-          text-transform: uppercase;
-          letter-spacing: 0.06em;
-          color: var(--text-muted);
-          font-weight: 700;
-          margin-bottom: 2px;
-        }
-        .telem-val {
-          font-size: 11.5px;
-          font-weight: 600;
-          color: var(--text-primary);
-          font-family: var(--font-mono);
-        }
-        .telem-sep {
-          width: 1px;
-          height: 28px;
-          background: var(--border-subtle);
-          flex-shrink: 0;
-        }
-
-        /* Quick actions */
-        .qa-lbl {
-          font-size: 8.5px;
-          text-transform: uppercase;
-          letter-spacing: 0.06em;
-          color: var(--text-muted);
-          font-weight: 700;
-          padding: 0 2px;
-        }
-        .qa-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 6px;
-        }
-        .qa-card {
-          display: flex;
-          flex-direction: column;
-          align-items: flex-start;
-          padding: 10px 12px;
-          background: rgba(255,255,255,0.025);
-          border: 1px solid var(--border-subtle);
+          background: var(--bg-surface);
+          border: 1px solid var(--border-base);
           border-radius: var(--radius-md);
           cursor: pointer;
-          transition: all var(--transition-fast);
-          text-align: left;
-          position: relative;
-          overflow: hidden;
         }
-        .qa-card::after {
-          content: '';
-          position: absolute;
-          top: 0; left: 0; right: 0;
-          height: 1px;
-          background: linear-gradient(90deg, transparent, var(--brand), transparent);
-          opacity: 0;
-          transition: opacity 0.25s;
-        }
-        .qa-card:hover { background: rgba(255,255,255,0.045); border-color: var(--border-base); transform: translateY(-1px); }
-        .qa-card:hover::after { opacity: 0.5; }
-        .qa-icon  { font-size: 17px; margin-bottom: 5px; }
-        .qa-title { font-size: 11.5px; font-weight: 600; color: var(--text-primary); margin-bottom: 2px; }
-        .qa-desc  { font-size: 10px; color: var(--text-muted); }
-
-        /* Slash reference table */
-        .slash-tbl {
-          background: rgba(255,255,255,0.02);
-          border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-md);
-          overflow: hidden;
-        }
-        .slash-row {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 7px 12px;
-          border-bottom: 1px solid var(--border-subtle);
-          cursor: pointer;
-          transition: background var(--transition-fast);
-          width: 100%;
-          text-align: left;
-          background: none;
-          border-left: none;
-          border-right: none;
-          border-top: none;
-        }
-        .slash-row:last-child { border-bottom: none; }
-        .slash-row:hover { background: rgba(255,255,255,0.035); }
-        .slash-cmd  { font-family: var(--font-mono); font-size: 11px; color: var(--brand); min-width: 90px; }
-        .slash-desc { font-size: 11px; color: var(--text-muted); }
-
-        /* ── Chat Controls: Tier 1 Utility Bar + Tier 2 Horizontal Chips ── */
-        .chat-controls-container {
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-          flex-shrink: 0;
-          width: 100%;
+        .continue-btn:hover {
+          background: var(--bg-hover);
         }
 
-        .chat-utility-bar {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 8px;
-          width: 100%;
-          min-height: 28px;
-        }
-
-        /* Execution Mode Switcher */
-        .mode-toggle-group {
-          display: inline-flex;
-          align-items: center;
-          background: rgba(255, 255, 255, 0.035);
-          border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-full);
-          padding: 2px;
-          gap: 2px;
-          flex-shrink: 0;
-        }
-        .mode-toggle-btn {
-          background: transparent;
-          border: none;
-          color: var(--text-muted);
-          font-size: 10px;
-          font-weight: 500;
-          padding: 2.5px 7px;
-          border-radius: var(--radius-full);
-          cursor: pointer;
-          transition: all var(--transition-fast);
-          display: inline-flex;
-          align-items: center;
-          gap: 3px;
-          user-select: none;
-          white-space: nowrap;
-        }
-        .mode-toggle-btn:hover {
-          color: var(--text-primary);
-          background: rgba(255, 255, 255, 0.05);
-        }
-        .mode-toggle-btn--active {
-          background: rgba(255, 107, 0, 0.16);
-          color: #ff9d42;
-          font-weight: 600;
-          box-shadow: 0 0 8px rgba(255, 107, 0, 0.2);
-        }
-
-        .context-badge-pill {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          padding: 3px 9px;
-          background: rgba(0, 229, 255, 0.05);
-          border: 1px solid rgba(0, 229, 255, 0.2);
-          border-radius: var(--radius-full);
-          font-size: 9.5px;
-          font-family: var(--font-mono);
-          color: #00e5ff;
-          cursor: pointer;
-          transition: all var(--transition-fast);
-          user-select: none;
-          white-space: nowrap;
-          flex-shrink: 0;
-        }
-        .context-badge-pill:hover {
-          background: rgba(0, 229, 255, 0.12);
-          border-color: rgba(0, 229, 255, 0.4);
-          box-shadow: 0 0 10px rgba(0, 229, 255, 0.15);
-        }
-        .context-indicator-dot {
-          width: 5.5px;
-          height: 5.5px;
-          border-radius: 50%;
-          background: #00e5ff;
-          box-shadow: 0 0 6px #00e5ff;
-          display: inline-block;
-        }
-        .context-badge-text {
-          white-space: nowrap;
-          letter-spacing: 0.02em;
-        }
-
-        /* Tier 2: Horizontal Prompt Action Chips */
-        .prompt-chips-track {
-          display: flex;
-          align-items: center;
-          gap: 5px;
-          overflow-x: auto;
-          scrollbar-width: none;
-          -ms-overflow-style: none;
-          padding: 2px 2px;
-          width: 100%;
-          mask-image: linear-gradient(to right, transparent, black 6px, black calc(100% - 6px), transparent);
-          -webkit-mask-image: linear-gradient(to right, transparent, black 6px, black calc(100% - 6px), transparent);
-        }
-        .prompt-chips-track::-webkit-scrollbar {
-          display: none;
-        }
-
-        .prompt-chip-btn {
-          padding: 3.5px 9px;
-          background: rgba(255, 255, 255, 0.03);
-          border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-full);
-          font-size: 10.5px;
-          color: var(--text-secondary);
-          cursor: pointer;
-          font-family: var(--font-mono);
-          transition: all var(--transition-fast);
-          white-space: nowrap;
-          flex-shrink: 0;
-        }
-        .prompt-chip-btn:hover {
-          background: rgba(255, 255, 255, 0.07);
-          border-color: var(--border-base);
-          color: var(--text-primary);
-        }
-
-        /* ── Antigravity Interactive ask_question Decision Card Styles ── */
+        /* ask_user card */
         .ask-question-card {
-          margin: 12px 14px 16px;
-          border-radius: 12px;
-          background: linear-gradient(145deg, rgba(23, 23, 35, 0.95), rgba(15, 15, 24, 0.98));
-          border: 1px solid rgba(99, 102, 241, 0.4);
-          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 20px rgba(99, 102, 241, 0.15);
-          overflow: hidden;
-          animation: askFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-        }
-        @keyframes askFadeIn {
-          from { opacity: 0; transform: translateY(6px); }
-          to { opacity: 1; transform: translateY(0); }
+          margin: 8px 0;
+          padding: 14px;
+          background: var(--bg-surface);
+          border: 1px solid var(--border-base);
+          border-radius: var(--radius-lg);
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          flex-shrink: 0;
         }
         .ask-question-header {
           display: flex;
           align-items: center;
-          justify-content: space-between;
-          padding: 10px 14px;
-          background: rgba(99, 102, 241, 0.08);
-          border-bottom: 1px solid rgba(99, 102, 241, 0.2);
-        }
-        .ask-question-title-wrap {
-          display: flex;
-          align-items: center;
           gap: 8px;
         }
-        .ask-question-pulse {
+        .ask-question-dot {
           width: 7px;
           height: 7px;
           border-radius: 50%;
-          background: #818cf8;
-          box-shadow: 0 0 10px #818cf8;
-          animation: pulseAsk 1.5s infinite;
-        }
-        @keyframes pulseAsk {
-          0%, 100% { opacity: 1; transform: scale(1); }
-          50% { opacity: 0.4; transform: scale(0.85); }
-        }
-        .ask-question-icon {
-          font-size: 13px;
+          background: var(--warning);
+          flex-shrink: 0;
         }
         .ask-question-title {
           font-size: 12px;
           font-weight: 600;
-          color: #c7d2fe;
-          letter-spacing: 0.01em;
-        }
-        .ask-question-badge {
-          font-size: 10px;
-          font-weight: 600;
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-          padding: 2px 7px;
-          border-radius: 9999px;
-          background: rgba(99, 102, 241, 0.25);
-          color: #a5b4fc;
-          border: 1px solid rgba(99, 102, 241, 0.35);
-        }
-        .ask-question-body {
-          padding: 14px;
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
+          color: var(--text-secondary);
         }
         .ask-question-prompt {
           margin: 0;
-          font-size: 13px;
+          font-size: 13.5px;
           line-height: 1.55;
-          color: #f1f5f9;
-          font-weight: 500;
+          color: var(--text-primary);
+          white-space: pre-wrap;
         }
-        .ask-question-options-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-          gap: 8px;
+        .ask-question-options {
+          display: flex;
+          flex-direction: column;
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-md);
+          overflow: hidden;
         }
         .ask-question-option-btn {
           display: flex;
           align-items: center;
-          gap: 9px;
-          padding: 8px 12px;
-          border-radius: 8px;
-          background: rgba(255, 255, 255, 0.04);
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          color: #e2e8f0;
-          font-size: 12px;
-          cursor: pointer;
+          gap: 10px;
+          padding: 8px 10px;
+          background: transparent;
+          border: none;
+          border-bottom: 1px solid var(--border-subtle);
           text-align: left;
-          transition: all 0.15s ease;
+          font-size: 13px;
+          color: var(--text-primary);
+          cursor: pointer;
+          transition: background var(--transition-fast);
+        }
+        .ask-question-option-btn:last-child {
+          border-bottom: none;
         }
         .ask-question-option-btn:hover {
-          background: rgba(99, 102, 241, 0.15);
-          border-color: rgba(99, 102, 241, 0.4);
-          color: #ffffff;
-          transform: translateY(-1px);
+          background: var(--bg-hover);
         }
-        .ask-question-option-btn--selected {
-          background: rgba(99, 102, 241, 0.25) !important;
-          border-color: #818cf8 !important;
-          color: #ffffff !important;
-          box-shadow: 0 0 12px rgba(99, 102, 241, 0.3);
+        .ask-question-option-btn--selected,
+        .ask-question-option-btn--selected:hover {
+          background: var(--bg-overlay);
+          box-shadow: inset 0 0 0 1px var(--border-strong);
         }
         .ask-question-option-num {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
           width: 18px;
           height: 18px;
-          border-radius: 4px;
-          background: rgba(255, 255, 255, 0.08);
-          font-size: 10px;
-          font-family: var(--font-mono);
-          font-weight: 700;
-          color: #a5b4fc;
           flex-shrink: 0;
-        }
-        .ask-question-option-btn--selected .ask-question-option-num {
-          background: #6366f1;
-          color: #ffffff;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-family: var(--font-mono);
+          font-size: 11px;
+          color: var(--text-muted);
+          border: 1px solid var(--border-base);
+          border-radius: 4px;
         }
         .ask-question-option-text {
           flex: 1;
-          line-height: 1.3;
+          min-width: 0;
+          line-height: 1.45;
         }
         .ask-question-input-row {
           display: flex;
-          align-items: center;
-          gap: 8px;
+          gap: 6px;
         }
         .ask-question-input {
           flex: 1;
-          background: rgba(0, 0, 0, 0.35);
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          border-radius: 8px;
-          padding: 8px 12px;
-          font-size: 12px;
-          color: #f8fafc;
+          min-width: 0;
+          padding: 6px 10px;
+          font-family: var(--font-sans);
+          font-size: 13px;
+          color: var(--text-primary);
+          background: var(--bg-elevated);
+          border: 1px solid var(--border-base);
+          border-radius: var(--radius-md);
           outline: none;
-          transition: border-color 0.15s;
-        }
-        .ask-question-input:focus {
-          border-color: #818cf8;
-          box-shadow: 0 0 0 1px #818cf8;
         }
         .ask-question-input::placeholder {
-          color: rgba(148, 163, 184, 0.6);
+          color: var(--text-muted);
+        }
+        .ask-question-input:focus-visible {
+          border-color: var(--accent);
+          box-shadow: 0 0 0 1px var(--accent);
         }
         .ask-question-submit-btn {
-          padding: 8px 14px;
-          border-radius: 8px;
-          background: #4f46e5;
-          border: 1px solid #6366f1;
-          color: #ffffff;
-          font-size: 12px;
-          font-weight: 600;
+          flex-shrink: 0;
+          padding: 6px 12px;
+          font-size: 12.5px;
+          font-weight: 500;
+          color: #fff;
+          background: var(--accent);
+          border: none;
+          border-radius: var(--radius-md);
           cursor: pointer;
-          white-space: nowrap;
-          transition: all 0.15s;
+          transition: background var(--transition-fast), opacity var(--transition-fast);
         }
         .ask-question-submit-btn:hover:not(:disabled) {
-          background: #4338ca;
-          box-shadow: 0 0 12px rgba(99, 102, 241, 0.5);
+          background: var(--accent-dim);
         }
         .ask-question-submit-btn:disabled {
           opacity: 0.4;
           cursor: not-allowed;
         }
-        .ask-question-footer-hints {
-          font-size: 10.5px;
-          color: #94a3b8;
+        .ask-question-hint {
+          font-size: 11.5px;
+          color: var(--text-muted);
+        }
+
+        /* Bottom dock */
+        .chat-bottom-dock {
+          flex-shrink: 0;
           display: flex;
-          justify-content: flex-end;
+          flex-direction: column;
+          gap: 6px;
+          padding: 6px 12px 12px;
+          background: var(--bg-base);
+          z-index: 20;
+        }
+        .chat-utility-bar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+        }
+        .mode-toggle-group {
+          display: inline-flex;
+          gap: 2px;
+          padding: 2px;
+          background: var(--bg-elevated);
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-md);
+        }
+        .mode-toggle-btn {
+          padding: 2px 10px;
+          font-size: 12px;
+          color: var(--text-muted);
+          background: transparent;
+          border: 1px solid transparent;
+          border-radius: 4px;
+          cursor: pointer;
+          transition: background var(--transition-fast), color var(--transition-fast);
+        }
+        .mode-toggle-btn:hover {
+          color: var(--text-primary);
+        }
+        .mode-toggle-btn--active {
+          color: var(--text-primary);
+          background: var(--bg-surface);
+          border-color: var(--border-strong);
+        }
+        .context-badge-pill {
+          font-family: var(--font-mono);
+          font-size: 11px;
+          color: var(--text-muted);
+          background: none;
+          border: none;
+          padding: 2px 6px;
+          border-radius: var(--radius-md);
+          cursor: pointer;
+        }
+        .context-badge-pill:hover {
+          color: var(--text-primary);
+          background: var(--bg-hover);
+        }
+        .prompt-chips-track {
+          display: flex;
+          gap: 4px;
+          overflow-x: auto;
+          scrollbar-width: none;
+        }
+        .prompt-chips-track::-webkit-scrollbar {
+          display: none;
+        }
+        .prompt-chip-btn {
+          flex-shrink: 0;
+          padding: 2px 10px;
+          font-size: 12px;
+          color: var(--text-secondary);
+          background: transparent;
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-full);
+          cursor: pointer;
+          white-space: nowrap;
+          transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+        }
+        .prompt-chip-btn:hover {
+          color: var(--text-primary);
+          background: var(--bg-hover);
+          border-color: var(--border-base);
+        }
+
+        /* Focus */
+        .plan-header:focus-visible,
+        .plan-continue-btn:focus-visible,
+        .continue-btn:focus-visible,
+        .agent-live-stop-btn:focus-visible,
+        .ask-question-option-btn:focus-visible,
+        .ask-question-submit-btn:focus-visible,
+        .mode-toggle-btn:focus-visible,
+        .context-badge-pill:focus-visible,
+        .prompt-chip-btn:focus-visible {
+          outline: 2px solid var(--accent);
+          outline-offset: 1px;
+        }
+        .ask-question-option-btn:focus-visible {
+          outline-offset: -2px;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .stream-caret { animation: none; }
+          .plan-spinner { animation-duration: 2.4s; }
+          .agent-live-dot { animation-duration: 3s; }
+          .plan-toggle { transition: none; }
         }
       `}</style>
-
     </div>
   );
 }

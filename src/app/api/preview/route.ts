@@ -3,6 +3,7 @@ import {
   startPreview,
   stopPreview,
   getPreviewStatus,
+  runCli,
 } from "@/lib/previewManager";
 
 export async function GET(req: NextRequest) {
@@ -20,6 +21,10 @@ export async function POST(req: NextRequest) {
   if (action === "start") {
     const result = await startPreview(projectId);
     return NextResponse.json(result);
+  }
+  if (action === "run") {
+    // CLI projects: run the default command in a sandbox container
+    return NextResponse.json(await runCli(projectId));
   }
   if (action === "stop") {
     const result = stopPreview(projectId);

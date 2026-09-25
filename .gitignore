@@ -44,3 +44,6 @@ next-env.d.ts
 .settings/
 workspaces/*/node_modules/
 workspaces/*/.next/
+
+# generated settings encryption key (src/lib/crypto.ts)
+.platform/settings.key

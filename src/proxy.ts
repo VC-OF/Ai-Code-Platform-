@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createHash, timingSafeEqual } from 'crypto';
 
 // ─── Rate limit store ────────────────────────────────────────────────────────
 interface Bucket {
@@ -99,28 +100,52 @@ function checkOrigin(req: NextRequest): boolean {
 }
 
 // ─── Auth check ──────────────────────────────────────────────────────────────
+// proxy.ts runs on the Node.js runtime in Next 16, so node:crypto is available.
+function safeEqual(a: string | null | undefined, b: string): boolean {
+  if (typeof a !== 'string') return false;
+  // Hash both sides so buffers are equal length and length isn't leaked.
+  const ha = createHash('sha256').update(a).digest();
+  const hb = createHash('sha256').update(b).digest();
+  return timingSafeEqual(ha, hb);
+}
+
+let warnedNoAuth = false;
+
 function checkAuth(req: NextRequest): boolean {
   const requiredToken = process.env.AUTH_TOKEN;
 
   // Auth not configured → local dev mode, allow all
-  if (!requiredToken) return true;
+  if (!requiredToken) {
+    if (!warnedNoAuth) {
+      warnedNoAuth = true;
+      console.warn('[proxy] AUTH_TOKEN is not set — API routes are unauthenticated. Set AUTH_TOKEN for any non-local deployment.');
+    }
+    return true;
+  }
 
-  // Check header first
-  const headerToken = req.headers.get('x-api-key');
-  if (headerToken === requiredToken) return true;
+  if (safeEqual(req.headers.get('x-api-key'), requiredToken)) return true;
+  if (safeEqual(req.cookies.get('auth')?.value, requiredToken)) return true;
 
-  // Check cookie
-  const cookieToken = req.cookies.get('auth')?.value;
-  if (cookieToken === requiredToken) return true;
-
-  // Check bearer token
   const authHeader = req.headers.get('authorization');
-  if (authHeader?.startsWith('Bearer ')) {
-    const bearerToken = authHeader.slice(7);
-    if (bearerToken === requiredToken) return true;
+  if (authHeader?.startsWith('Bearer ') && safeEqual(authHeader.slice(7), requiredToken)) {
+    return true;
   }
 
   return false;
+}
+
+// Client key for rate limiting. Forwarding headers are client-controlled, so
+// they're only trusted behind a reverse proxy (TRUST_PROXY=1); otherwise all
+// requests share one bucket per route (this is a local single-user app).
+function clientKey(req: NextRequest): string {
+  if (process.env.TRUST_PROXY === '1') {
+    return (
+      req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+      req.headers.get('x-real-ip') ||
+      'local'
+    );
+  }
+  return 'local';
 }
 
 // ─── Proxy ───────────────────────────────────────────────────────────────────
@@ -155,10 +180,7 @@ export function proxy(req: NextRequest) {
   }
 
   // ── Rate limit ──
-  const ip =
-    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-    req.headers.get('x-real-ip') ??
-    'local';
+  const ip = clientKey(req);
 
   // Find matching route limit
   const routeKey = Object.keys(ROUTE_LIMITS).find(

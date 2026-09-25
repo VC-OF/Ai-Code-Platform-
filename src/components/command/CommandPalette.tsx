@@ -132,7 +132,10 @@ export default function CommandPalette() {
       >
         {/* ── Search input ────────────────────────────────────────────── */}
         <div className="palette-search">
-          <span className="palette-search-icon">⌕</span>
+          <svg className="palette-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={15} height={15} aria-hidden>
+            <circle cx="11" cy="11" r="7" />
+            <path d="M21 21l-4.3-4.3" />
+          </svg>
           <input
             ref={inputRef}
             type="text"
@@ -147,11 +150,14 @@ export default function CommandPalette() {
           />
           {query && (
             <button
+              type="button"
               className="palette-clear"
               onClick={() => setQuery('')}
               aria-label="Clear"
             >
-              ✕
+              <svg viewBox="0 0 24 24" width={12} height={12} fill="none" stroke="currentColor" strokeWidth={2}>
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
             </button>
           )}
           <kbd className="palette-esc">Esc</kbd>
@@ -218,8 +224,7 @@ export default function CommandPalette() {
         .palette-backdrop {
           position: fixed;
           inset: 0;
-          background: rgba(40, 32, 28, 0.18);
-          backdrop-filter: blur(2px);
+          background: var(--bg-hover);
           z-index: 998;
         }
 
@@ -230,9 +235,9 @@ export default function CommandPalette() {
           transform: translateX(-50%);
           width: min(640px, calc(100vw - 32px));
           background: var(--bg-surface);
-          border: 1px solid var(--border-strong);
-          border-radius: var(--radius-md);
-          box-shadow: var(--shadow-lg), 0 0 0 1px var(--border-subtle);
+          border: 1px solid var(--border-base);
+          border-radius: var(--radius-lg);
+          box-shadow: var(--shadow-lg);
           z-index: 999;
           overflow: hidden;
           display: flex;
@@ -244,13 +249,12 @@ export default function CommandPalette() {
           display: flex;
           align-items: center;
           gap: 10px;
-          padding: 14px 16px;
+          padding: 12px 14px;
           border-bottom: 1px solid var(--border-subtle);
           flex-shrink: 0;
         }
 
         .palette-search-icon {
-          font-size: 18px;
           color: var(--text-muted);
           flex-shrink: 0;
         }
@@ -260,13 +264,14 @@ export default function CommandPalette() {
           background: none;
           border: none;
           color: var(--text-primary);
-          font-size: 1rem;
+          font-size: 14px;
+          font-family: var(--font-sans);
           outline: none;
           min-width: 0;
         }
 
         .palette-input::placeholder {
-          color: var(--text-disabled);
+          color: var(--text-muted);
         }
 
         .palette-clear {
@@ -322,20 +327,17 @@ export default function CommandPalette() {
         }
 
         .palette-group-label {
-          padding: 6px 16px 4px;
-          font-size: 10px;
-          font-weight: 600;
-          letter-spacing: 0.06em;
-          text-transform: uppercase;
-          color: var(--text-disabled);
-          font-family: var(--font-mono);
+          padding: 8px 14px 4px;
+          font-size: 12px;
+          font-weight: 500;
+          color: var(--text-muted);
         }
 
         .palette-footer {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 10px 16px;
+          padding: 8px 14px;
           border-top: 1px solid var(--border-subtle);
           flex-shrink: 0;
         }
@@ -345,7 +347,7 @@ export default function CommandPalette() {
           align-items: center;
           gap: 12px;
           font-size: 11px;
-          color: var(--text-disabled);
+          color: var(--text-muted);
         }
 
         .palette-footer-hints kbd {
@@ -360,8 +362,7 @@ export default function CommandPalette() {
 
         .palette-count {
           font-size: 11px;
-          font-family: var(--font-mono);
-          color: var(--text-disabled);
+          color: var(--text-muted);
         }
       `}</style>
     </>
@@ -410,24 +411,21 @@ function PaletteItem({
         <kbd className="item-shortcut">{command.shortcut}</kbd>
       )}
 
-      {/* Arrow */}
-      {selected && (
-        <span className="item-arrow">→</span>
-      )}
-
       <style jsx>{`
         .palette-item {
           display: flex;
           align-items: center;
-          gap: 12px;
-          width: 100%;
-          padding: 8px 16px;
+          gap: 10px;
+          width: calc(100% - 12px);
+          margin: 0 6px;
+          min-height: 32px;
+          padding: 6px 8px;
           background: none;
           border: none;
           cursor: pointer;
           text-align: left;
           transition: background var(--transition-fast);
-          border-radius: 0;
+          border-radius: var(--radius-md);
         }
 
         .palette-item:hover:not(:disabled) {
@@ -435,7 +433,12 @@ function PaletteItem({
         }
 
         .palette-item--selected {
-          background: var(--brand-glow) !important;
+          background: var(--bg-overlay) !important;
+        }
+
+        .palette-item:focus-visible {
+          outline: 2px solid var(--accent);
+          outline-offset: -2px;
         }
 
         .palette-item--disabled {
@@ -444,8 +447,9 @@ function PaletteItem({
         }
 
         .item-icon {
-          font-size: 16px;
-          width: 24px;
+          font-size: 13px;
+          color: var(--text-muted);
+          width: 18px;
           text-align: center;
           flex-shrink: 0;
         }
@@ -459,9 +463,9 @@ function PaletteItem({
         }
 
         .item-label {
-          font-size: var(--text-sm);
+          font-size: 13px;
           color: var(--text-primary);
-          font-weight: 500;
+          font-weight: 400;
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
@@ -476,8 +480,8 @@ function PaletteItem({
         }
 
         .item-shortcut {
-          padding: 2px 6px;
-          background: var(--bg-overlay);
+          padding: 1px 6px;
+          background: var(--bg-elevated);
           border: 1px solid var(--border-base);
           border-radius: var(--radius-sm);
           font-size: 11px;
@@ -487,11 +491,6 @@ function PaletteItem({
           white-space: nowrap;
         }
 
-        .item-arrow {
-          color: var(--brand);
-          font-size: 14px;
-          flex-shrink: 0;
-        }
       `}</style>
     </button>
   );

@@ -2,24 +2,11 @@ import crossSpawn from 'cross-spawn';
 import { spawn } from 'child_process';
 import crypto from 'crypto';
 import path from 'path';
+import { HOST_ALLOWED_BINS, HOST_ALLOWED_GIT_SUBCOMMANDS } from './permissions';
+import { getSandboxImage, sandboxCacheArgs } from './sandboxImage';
 
 // ─── Whitelist ───────────────────────────────────────────────────────────────
-const ALLOWED_BINS = new Set([
-  // Node
-  'node', 'npm', 'pnpm', 'yarn', 'bun',
-  // TypeScript / Lint
-  'tsc', 'eslint', 'prettier',
-  // Test runners
-  'jest', 'vitest', 'mocha', 'jasmine',
-  // Build tools
-  'vite', 'webpack', 'rollup', 'esbuild', 'turbo',
-  // Git (limited)
-  'git',
-  // Safe UNIX utils
-  'ls', 'cat', 'find', 'grep', 'head',
-  'tail', 'wc', 'echo', 'pwd', 'which',
-  'mkdir', 'touch', 'cp', 'mv',
-]);
+const ALLOWED_BINS = new Set<string>(HOST_ALLOWED_BINS);
 
 // ─── Blocked argument patterns (defense-in-depth for the "safe" utils) ───────
 // NOTE: for 'node', the argument surface is instead validated by a strict
@@ -56,12 +43,34 @@ const BLOCKED_ARG_PATTERNS = [
 ];
 
 // ─── Git-specific allowed subcommands ───────────────────────────────────────
-const ALLOWED_GIT_SUBCMDS = new Set([
-  'status', 'log', 'diff', 'show',
-  'add', 'commit', 'checkout', 'reset',
-  'init', 'rev-parse', 'stash',
-]);
+const ALLOWED_GIT_SUBCMDS = new Set<string>(HOST_ALLOWED_GIT_SUBCOMMANDS);
 
+
+// ─── git: block file-writing / config-override arguments ─────────────────────
+// `--output` (diff/log/show) writes arbitrary files; `-o` does the same for
+// diff/format-patch/archive; `git config` writes and `-c` overrides can set
+// hooks/aliases/core.pager that execute code.
+function validateGitArgs(args: string[]): void {
+  const sub = args[0];
+  if (sub === '-c' || sub?.startsWith('-c') || sub?.startsWith('--config-env')) {
+    throw new CommandError('git -c / --config-env overrides are not allowed.');
+  }
+  if (sub === 'config') {
+    const readForms = new Set(['--get', '--get-all', '--list', '-l', '--get-regexp']);
+    if (!args.slice(1).some((a) => readForms.has(a))) {
+      throw new CommandError('git config write forms are not allowed.');
+    }
+  }
+  const oFlagSubs = new Set(['diff', 'format-patch', 'archive']);
+  for (const arg of args.slice(1)) {
+    if (arg === '--output' || arg.startsWith('--output=') || arg.startsWith('--output-directory')) {
+      throw new CommandError(`git argument '${arg}' (writes files) is not allowed.`);
+    }
+    if (oFlagSubs.has(sub) && (arg === '-o' || /^-o./.test(arg))) {
+      throw new CommandError(`git argument '${arg}' (writes files) is not allowed.`);
+    }
+  }
+}
 // ─── node: strict allowlist, not a blocklist ─────────────────────────────────
 // A blocklist can't keep pace with Node's CLI (--eval=, -r=, --loader=,
 // --inspect, --experimental-* all execute or expose arbitrary code). Instead,
@@ -105,7 +114,25 @@ function validateFindArgs(args: string[]): void {
   }
 }
 
-// ─── Execution limits ────────────────────────────────────────────────────────
+// ─── Other interpreters: block inline-code flags ────────────────────────────
+// Running a workspace script (python main.py) is fine; evaluating a code
+// string passed on the command line (python -c, php -r, deno eval) on the
+// host is not. ruby -e / perl-style -e is already caught by /^-e$/.
+const INLINE_CODE_FLAGS: Record<string, RegExp> = {
+  python: /^-c/, python3: /^-c/, php: /^-r$|^--run$/, deno: /^(eval|repl)$/,
+};
+
+function validateInlineCodeArgs(bin: string, args: string[]): void {
+  const re = INLINE_CODE_FLAGS[bin];
+  if (!re) return;
+  for (const arg of args) {
+    if (re.test(arg)) {
+      throw new CommandError(`${bin} '${arg}' (inline code execution) is not allowed on the host.`);
+    }
+  }
+}
+
+// ─── Execution limits────────────────────────────────────────────────────────
 const LIMITS = {
   timeoutMs:    30_000,        // 30 seconds
   maxBuffer:    5 * 1024 * 1024, // 5 MB
@@ -145,10 +172,15 @@ export class CommandError extends Error {
  * installs, which need the registry), memory/cpu/pid caps. The allowlist
  * and argument checks above still apply before anything is containerized.
  *
- * SANDBOX_IMAGE overrides the image (default node:20 — includes git).
+ * Image: see getSandboxImage() (SANDBOX_IMAGE > open-code-sandbox:1 > node:20).
  */
 const PACKAGE_INSTALL_PATTERN =
-  /\b(npm|pnpm|yarn|bun)\b\s+(install|ci|add|update|i\b)|\bnpx\b/;
+  /\b(npm|pnpm|yarn|bun)\b\s+(install|ci|add|update|i\b)|\bnpx\b|\bpip3?\s+install\b|\bpython3?\s+-m\s+pip\s+install\b|\buv\s+(pip|sync|add|venv|lock|run)\b|\bcargo\s+(build|test|check|clippy|fetch|run|add|install|update|doc)\b|\bgo\s+(mod|get|build|test|vet|run|install)\b|\b(mvn|gradle|gradlew)\b|\bbundle\s+install\b|\bcomposer\s+(install|require|update)\b|\bdotnet\s+(restore|build|test)\b/;
+// Network is also granted to toolchain builds above (cargo/go/mvn/gradle)
+// because they resolve dependencies on demand.
+
+/** $HOME inside sandbox containers (throwaway; caches live on /cache). */
+export const SANDBOX_HOME = '/tmp/home';
 
 export function isDockerMode(): boolean {
   return process.env.SANDBOX_MODE === 'docker';
@@ -167,7 +199,7 @@ function buildDockerInvocation(
   containerName: string,
   extraEnv?: Record<string, string>
 ): { bin: string; args: string[] } {
-  const image = process.env.SANDBOX_IMAGE || 'node:20-slim';
+  const image = getSandboxImage();
   const network = PACKAGE_INSTALL_PATTERN.test(command) ? 'bridge' : 'none';
   const mount = `${path.resolve(cwd).replace(/\\/g, '/')}:/workspace`;
 
@@ -182,13 +214,21 @@ function buildDockerInvocation(
       'run', '--rm', '--init',
       '--name', containerName,
       '--network', network,
-      '--memory', '1g',
-      '--cpus', '1',
+      '--memory', '2g',
+      '--cpus', '2',
       '--pids-limit', '512',
       '-v', mount,
+      // Shared cargo/go/pip/maven caches (paths set by the polyglot image ENV)
+      ...sandboxCacheArgs(),
       '-w', '/workspace',
-      '-e', 'HOME=/workspace',
-      '-e', 'npm_config_cache=/workspace/.npm-cache',
+      // HOME must NOT be the project dir: `cargo init/new` refuses to create
+      // a package in $HOME. User-level installs still persist in the
+      // workspace via PYTHONUSERBASE.
+      '-e', `HOME=${SANDBOX_HOME}`,
+      '-e', 'PYTHONUSERBASE=/workspace/.local',
+      // npm cache on the shared Linux cache volume, not the bind-mounted
+      // workspace: a cold install went from ~4 min to ~1 min on Windows
+      '-e', 'npm_config_cache=/cache/npm',
       '-e', 'CI=true',
       ...envFlags,
       image,
@@ -280,6 +320,8 @@ export async function safeExec(
     //    real code-execution surface via arguments
     if (bin === 'node') validateNodeArgs(args);
     if (bin === 'find') validateFindArgs(args);
+    if (bin === 'git') validateGitArgs(args);
+    validateInlineCodeArgs(bin, args);
 
     // 6. Check args for dangerous patterns. Long flags accept "--flag=value"
     //    as one argument — normalize to the flag portion too, so exact-match
@@ -316,8 +358,11 @@ export async function safeExec(
   return new Promise((resolve, reject) => {
     let timedOut = false;
     let settled = false;
-    let stdout = '';
-    let stderr = '';
+    // Output is capped (head + tail) but the process is NOT killed when it
+    // is chatty — killing turned verbose-but-passing builds/tests into
+    // failures and lost the summary they print last
+    const stdoutBuf = new CappedOutput(LIMITS.maxOutputLen);
+    const stderrBuf = new CappedOutput(LIMITS.maxOutputLen);
 
     const proc = crossSpawn(invocation.bin, invocation.args, {
       cwd,
@@ -350,28 +395,16 @@ export async function safeExec(
       opts.signal?.removeEventListener('abort', onAbort);
     };
 
-    proc.stdout?.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString();
-      if (stdout.length > LIMITS.maxOutputLen) {
-        stdout = stdout.slice(0, LIMITS.maxOutputLen) + '\n[output truncated]';
-        proc.kill('SIGTERM');
-      }
-    });
-
-    proc.stderr?.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString();
-      if (stderr.length > LIMITS.maxOutputLen) {
-        stderr = stderr.slice(0, LIMITS.maxOutputLen) + '\n[output truncated]';
-      }
-    });
+    proc.stdout?.on('data', (chunk: Buffer) => stdoutBuf.push(chunk.toString()));
+    proc.stderr?.on('data', (chunk: Buffer) => stderrBuf.push(chunk.toString()));
 
     proc.on('close', (code: number | null) => {
       if (settled) return;
       settled = true;
       cleanup();
       resolve({
-        stdout: stdout.trimEnd(),
-        stderr: stderr.trimEnd(),
+        stdout: stdoutBuf.toString().trimEnd(),
+        stderr: stderrBuf.toString().trimEnd(),
         code: code ?? 1,
         timedOut,
       });
@@ -384,6 +417,41 @@ export async function safeExec(
       reject(new CommandError(`Process error: ${err.message}`));
     });
   });
+}
+
+// ─── Bounded output buffer ───────────────────────────────────────────────────
+/** Keeps the first 40% and the last 60% of a stream once it exceeds `max`. */
+export class CappedOutput {
+  private head = '';
+  private tail = '';
+  private dropped = 0;
+  private readonly headMax: number;
+  private readonly tailMax: number;
+
+  constructor(max: number) {
+    this.headMax = Math.floor(max * 0.4);
+    this.tailMax = max - this.headMax;
+  }
+
+  push(chunk: string): void {
+    if (this.head.length < this.headMax) {
+      const room = this.headMax - this.head.length;
+      this.head += chunk.slice(0, room);
+      chunk = chunk.slice(room);
+    }
+    if (!chunk) return;
+    this.tail += chunk;
+    if (this.tail.length > this.tailMax) {
+      this.dropped += this.tail.length - this.tailMax;
+      this.tail = this.tail.slice(-this.tailMax);
+    }
+  }
+
+  toString(): string {
+    return this.dropped
+      ? `${this.head}\n[... ${this.dropped} chars of output truncated ...]\n${this.tail}`
+      : this.head + this.tail;
+  }
 }
 
 // ─── Command parser (handles quoted strings) ─────────────────────────────────

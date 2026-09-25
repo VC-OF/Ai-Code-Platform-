@@ -116,48 +116,87 @@ export async function GET(req: NextRequest) {
 }
 
 // ─── POST: run a raw SQL query ────────────────────────────────────────────────
+/**
+ * Guarded SQL console. Rules:
+ *  - exactly one statement (comments stripped, one trailing ";" allowed)
+ *  - read-only by default (SELECT / WITH / EXPLAIN / read-form PRAGMA);
+ *    INSERT/UPDATE/DELETE/REPLACE only when the body passes `allowWrite: true`
+ *  - never: DDL (incl. CREATE TRIGGER), ATTACH/DETACH, VACUUM (INTO), PRAGMA assignments
+ * Read-only is enforced finally via better-sqlite3's `stmt.readonly`.
+ */
+const STRING_LITERALS = /'(?:[^']|'')*'|"(?:[^"]|"")*"/g;
+
+function stripSqlComments(sql: string): string {
+  // Remove comments while leaving string literals intact.
+  return sql.replace(
+    /('(?:[^']|'')*'|"(?:[^"]|"")*")|--[^\n]*|\/\*[\s\S]*?(?:\*\/|$)/g,
+    (_m, str: string | undefined) => (str ? str : " ")
+  );
+}
+
+const FORBIDDEN = /\b(ATTACH|DETACH|VACUUM|DROP|ALTER|TRUNCATE|CREATE|REINDEX)\b/;
+
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { sql } = body as { sql: string; projectId?: string };
+    const body = (await req.json().catch(() => ({}))) as {
+      sql?: unknown;
+      projectId?: string;
+      allowWrite?: unknown;
+    };
+    const rawSql = typeof body.sql === "string" ? body.sql : "";
+    const allowWrite = body.allowWrite === true;
 
-    if (!sql?.trim()) {
+    const sql = stripSqlComments(rawSql).trim().replace(/;\s*$/, "").trim();
+    if (!sql) {
       return NextResponse.json({ error: "No SQL provided" }, { status: 400 });
     }
 
-    const upperSql = sql.trim().toUpperCase();
-    const isSelect = upperSql.startsWith("SELECT") || upperSql.startsWith("PRAGMA") || upperSql.startsWith("EXPLAIN");
-    const isDml    = upperSql.startsWith("INSERT") || upperSql.startsWith("UPDATE") || upperSql.startsWith("DELETE");
-    const isDdl    = upperSql.startsWith("DROP") || upperSql.startsWith("ALTER") || upperSql.startsWith("TRUNCATE");
-
-    if (isDdl) {
+    const upperSql = sql.replace(STRING_LITERALS, "''").toUpperCase();
+    if (upperSql.includes(";")) {
+      return NextResponse.json({ error: "Only a single SQL statement is allowed." }, { status: 400 });
+    }
+    if (FORBIDDEN.test(upperSql)) {
       return NextResponse.json(
-        { error: "DDL statements (DROP/ALTER/TRUNCATE) are not allowed." },
+        { error: "DDL, ATTACH/DETACH, VACUUM and trigger statements are not allowed." },
         { status: 403 }
+      );
+    }
+    if (upperSql.startsWith("PRAGMA") && upperSql.includes("=")) {
+      return NextResponse.json({ error: "PRAGMA assignments are not allowed." }, { status: 403 });
+    }
+
+    const isRead = /^(SELECT|WITH|EXPLAIN|PRAGMA)\b/.test(upperSql);
+    const isDml  = /^(INSERT|UPDATE|DELETE|REPLACE)\b/.test(upperSql);
+    if (!isRead && !isDml) {
+      return NextResponse.json(
+        { error: "Only SELECT/WITH/EXPLAIN/PRAGMA (or INSERT/UPDATE/DELETE with allowWrite) are allowed." },
+        { status: 400 }
       );
     }
 
     const db = getDb();
+    const stmt = db.prepare(sql);
+    // Also catches writes hidden in WITH ... / PRAGMA forms.
+    if (!stmt.readonly && !allowWrite) {
+      return NextResponse.json(
+        { error: "Write statements require allowWrite: true in the request body." },
+        { status: 403 }
+      );
+    }
+
     const t0 = Date.now();
-
-    if (isSelect) {
-      const rows    = db.prepare(sql).all();
-      const elapsed = Date.now() - t0;
-      return NextResponse.json({ rows, elapsed_ms: elapsed, count: rows.length });
+    if (stmt.reader) {
+      const rows = stmt.all();
+      return NextResponse.json({ rows, elapsed_ms: Date.now() - t0, count: rows.length });
     }
 
-    if (isDml) {
-      const info    = db.prepare(sql).run();
-      const elapsed = Date.now() - t0;
-      return NextResponse.json({
-        rows: [],
-        elapsed_ms: elapsed,
-        changes: info.changes,
-        lastInsertRowid: String(info.lastInsertRowid),
-      });
-    }
-
-    return NextResponse.json({ error: "Only SELECT, INSERT, UPDATE, DELETE are allowed." }, { status: 400 });
+    const info = stmt.run();
+    return NextResponse.json({
+      rows: [],
+      elapsed_ms: Date.now() - t0,
+      changes: info.changes,
+      lastInsertRowid: String(info.lastInsertRowid),
+    });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
