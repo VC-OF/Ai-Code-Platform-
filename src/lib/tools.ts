@@ -50,12 +50,28 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "create_file",
       description:
-        "Create a new file or completely overwrite an existing file with the given content. Creates parent directories automatically.",
+        "Create a new file or completely overwrite an existing file with the given content. Creates parent directories automatically. For files longer than ~300 lines, write the first part here and add the rest with append_file, so no single call is too large.",
       parameters: {
         type: "object",
         properties: {
           path: { type: "string", description: "Relative file path" },
           content: { type: "string", description: "Full file content" },
+        },
+        required: ["path", "content"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "append_file",
+      description:
+        "Append content to the end of a file (creates it if missing). Use this to write large files in parts after create_file: keep each part under ~300 lines.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Relative file path" },
+          content: { type: "string", description: "Content to append. Include a leading newline if needed." },
         },
         required: ["path", "content"],
       },
@@ -589,6 +605,21 @@ export async function executeTool(
           success: true,
           output: `Created ${args.path}`,
           summary: `Created ${args.path}`,
+          changedFile: args.path as string,
+        };
+      }
+
+      // ── append_file ────────────────────────────────────────────────────
+      case "append_file": {
+        const filePath = safeResolve(workspace, args.path as string);
+        await fs.mkdir(path.dirname(filePath), { recursive: true });
+        await fs.appendFile(filePath, args.content as string, "utf-8");
+        ctx.filesEdited.add(args.path as string);
+        const lines = (await fs.readFile(filePath, "utf-8")).split("\n").length;
+        return {
+          success: true,
+          output: `Appended to ${args.path} (now ${lines} lines)`,
+          summary: `Appended to ${args.path}`,
           changedFile: args.path as string,
         };
       }

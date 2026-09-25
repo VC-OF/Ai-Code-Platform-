@@ -55,6 +55,25 @@ export function getModel() {
   return process.env.LLM_MODEL || process.env.OPENAI_MODEL || "nemotron-3-ultra:cloud";
 }
 
+/** Upper bound on tokens per reply. Without it providers apply their own
+ *  (often small) default and long file writes get cut off mid-tool-call.
+ *  Override with LLM_MAX_OUTPUT_TOKENS. */
+export function getMaxOutputTokens(): number {
+  const n = Number(process.env.LLM_MAX_OUTPUT_TOKENS);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 16_384;
+}
+
+/** Providers that cap output below our request reject it outright;
+ *  detect that so the call can be retried with the provider default. */
+function isMaxTokensRejection(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /max_tokens|max_completion_tokens|maximum.*tokens|num_predict/i.test(msg) &&
+    /(400|invalid|exceed|too large|must be|less than)/i.test(msg);
+}
+
+// Providers that rejected max_tokens once; skip it for them afterwards
+const noMaxTokens = new Set<string>();
+
 export function getContextWindow(model: string): number {
   return registryContextWindow(model);
 }
@@ -148,16 +167,27 @@ async function callOnce(
 
   return withRetry(
     async () => {
-      const completion = await client.chat.completions.create({
+      const request = (withLimit: boolean) => client.chat.completions.create({
         model: apiModel,
         messages,
         tools: tools?.length ? tools : undefined,
         tool_choice: opts?.toolChoice,
+        ...(withLimit ? { max_tokens: getMaxOutputTokens() } : {}),
       }, { signal: opts?.signal });
+
+      let completion;
+      try {
+        completion = await request(!noMaxTokens.has(provider));
+      } catch (err) {
+        if (!isMaxTokensRejection(err)) throw err;
+        noMaxTokens.add(provider);
+        completion = await request(false);
+      }
 
       return {
         content: completion.choices[0].message.content,
         tool_calls: completion.choices[0].message.tool_calls,
+        finish_reason: completion.choices[0].finish_reason ?? null,
         usage: {
           prompt_tokens: completion.usage?.prompt_tokens ?? 0,
           completion_tokens: completion.usage?.completion_tokens ?? 0,
@@ -213,8 +243,8 @@ export async function* callLLMStream(
 
   for (const model of chain) {
     try {
-      const { client, apiModel } = await getLLMClient(model);
-      stream = await client.chat.completions.create({
+      const { client, provider, apiModel } = await getLLMClient(model);
+      const open = (withLimit: boolean) => client.chat.completions.create({
         model: apiModel,
         messages,
         tools: tools?.length ? tools : undefined,
@@ -223,7 +253,15 @@ export async function* callLLMStream(
         // Ask for real token usage in the final chunk. OpenAI-compatible
         // servers that don't support this simply ignore it.
         stream_options: { include_usage: true },
+        ...(withLimit ? { max_tokens: getMaxOutputTokens() } : {}),
       }, { signal: opts?.signal });
+      try {
+        stream = await open(!noMaxTokens.has(provider));
+      } catch (err) {
+        if (!isMaxTokensRejection(err)) throw err;
+        noMaxTokens.add(provider);
+        stream = await open(false);
+      }
       break;
     } catch (err) {
       if (isAbortError(err)) throw err;
@@ -236,6 +274,7 @@ export async function* callLLMStream(
   if (!stream) throw lastError;
 
   let usage = { prompt_tokens: 0, completion_tokens: 0 };
+  let finishReason: string | null = null;
 
   for await (const chunk of stream) {
     // The usage-only final chunk has an empty choices array
@@ -249,8 +288,8 @@ export async function* callLLMStream(
     if (chunk.choices[0]?.delta?.content) {
       yield { type: 'delta', delta: chunk.choices[0].delta.content };
     }
-    const tc = chunk.choices[0]?.delta?.tool_calls?.[0];
-    if (tc) {
+    // A single chunk may carry deltas for several parallel tool calls
+    for (const tc of chunk.choices[0]?.delta?.tool_calls ?? []) {
       yield {
         type: 'tool_call_delta',
         tool_call: {
@@ -261,7 +300,11 @@ export async function* callLLMStream(
         },
       };
     }
+    if (chunk.choices[0]?.finish_reason) {
+      finishReason = chunk.choices[0].finish_reason;
+    }
   }
 
-  yield { type: 'done', usage };
+  // 'length' means the reply hit the output-token cap and is truncated
+  yield { type: 'done', usage, finishReason };
 }

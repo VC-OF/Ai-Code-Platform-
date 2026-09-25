@@ -7,6 +7,7 @@
 export const APPROVAL_REQUIRED_TOOLS = [
   'edit_file',
   'create_file',
+  'append_file',
   'replace_lines',
   'delete_file',
   'run_command',

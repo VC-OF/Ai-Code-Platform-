@@ -10,6 +10,11 @@ const toolSchemas = {
     content: z.string().max(500_000), // 500KB limit
   }),
   
+  append_file: z.object({
+    path: z.string().min(1).max(500),
+    content: z.string().min(1).max(500_000),
+  }),
+
   edit_file: z.object({
     path: z.string().min(1).max(500),
     oldText: z.string().min(1).max(50_000),

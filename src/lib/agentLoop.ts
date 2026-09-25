@@ -29,7 +29,8 @@ import crypto from 'crypto';
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MAX_STEPS    = 25;
 const MAX_DURATION = 5 * 60_000;   // 5 minutes total
-const STEP_TIMEOUT = 300_000;      // 5 min per LLM call (prevents premature timeout on reasoning models)
+const STEP_TIMEOUT = 300_000;
+const MAX_TRUNCATIONS = 3;         // consecutive cut-off replies before giving up      // 5 min per LLM call (prevents premature timeout on reasoning models)
 const COMPACT_AT   = 0.60;         // Compact at 60% context
 const COMPACT_TO   = 0.40;         // Compact down to 40%
 
@@ -189,6 +190,11 @@ export async function runAgentLoop(
     }
 
     // ── Main execution loop ────────────────────────────────────────────────
+    // Replies cut off by the output-token cap: count in a row, and text
+    // carried over so a continued answer is shown whole
+    let truncations = 0;
+    let carriedText = '';
+
     for (stepIndex = 1; stepIndex <= MAX_STEPS; stepIndex++) {
       // ── Safety checks ────────────────────────────────────────────────────
       cancellation.token.throwIfCancelled();
@@ -298,6 +304,7 @@ export async function runAgentLoop(
           | { id: string; type: 'function'; function: { name: string; arguments: string } }[]
           | null = null;
         let usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+        let finishReason: string | null = null;
 
         const stream = callLLMStream(
           llmConfig,
@@ -332,6 +339,7 @@ export async function runAgentLoop(
           }
 
           if (chunk.type === 'done') {
+            finishReason = chunk.finishReason ?? null;
             if (chunk.usage) {
               usage = {
                 prompt_tokens:     chunk.usage.prompt_tokens,
@@ -393,6 +401,46 @@ export async function runAgentLoop(
           costUsd
         );
 
+        // ── Output cut off by the token cap ─────────────────────────────────
+        if (finishReason === 'length') {
+          truncations++;
+          if (truncations > MAX_TRUNCATIONS) {
+            throw new Error(
+              `The model's reply was cut off by the output-token limit ${truncations} times in a row. ` +
+              'Raise LLM_MAX_OUTPUT_TOKENS, pick a model with a larger output limit, or ask for smaller changes.'
+            );
+          }
+
+          if (toolCalls && toolCalls.length > 0) {
+            // Truncated tool arguments are incomplete — never execute them
+            const names = toolCalls.map((tc) => tc.function.name).join(', ');
+            for (const tc of toolCalls) {
+              emitter.toolError(
+                stepIndex, tc.id, tc.function.name,
+                'Reply was cut off by the output-token limit before this call finished', true,
+                'Retrying in smaller parts'
+              );
+            }
+            messages.push({ role: 'assistant', content: textContent || null } as ContextMessage);
+            messages.push({
+              role: 'user' as const,
+              content:
+                `Your last reply was cut off by the output-token limit while writing ${names}, so nothing was applied. ` +
+                'Write large files in parts: create_file with the first ~300 lines, then append_file for each further part ' +
+                '(each under ~300 lines). For edits, use smaller edit_file or replace_lines calls.',
+            } as ContextMessage);
+          } else {
+            carriedText += textContent;
+            messages.push({ role: 'assistant', content: textContent || null } as ContextMessage);
+            messages.push({
+              role: 'user' as const,
+              content: 'Your reply was cut off by the output-token limit. Continue exactly where you stopped, without repeating anything.',
+            } as ContextMessage);
+          }
+          continue;
+        }
+        truncations = 0;
+
         // If no tool calls = agent is done
         if (!toolCalls || toolCalls.length === 0) {
           // Enforce verification before finishing
@@ -412,7 +460,7 @@ export async function runAgentLoop(
             continue; // Force another step
           }
 
-          finalMessage = textContent;
+          finalMessage = carriedText + textContent;
           break;
         }
 
@@ -443,7 +491,9 @@ export async function runAgentLoop(
               tool_name:   toolName,
               content:
                 `Error: the arguments for ${toolName} were not valid JSON. ` +
-                `Received: ${snippet}\nRe-issue the tool call with valid JSON arguments.`,
+                `Received: ${snippet}\nRe-issue the tool call with valid JSON arguments. ` +
+                'If the content is large, it was probably cut off by the output limit: ' +
+                'split it into create_file with the first part, then append_file for the rest.',
             } as ContextMessage);
             emitter.toolError(
               stepIndex, toolCallId, toolName,
@@ -513,6 +563,7 @@ export async function runAgentLoop(
           if (!checkpointed && (
             toolName === 'edit_file' ||
             toolName === 'create_file' ||
+            toolName === 'append_file' ||
             toolName === 'delete_file' ||
             toolName === 'replace_lines'
           )) {
@@ -779,6 +830,7 @@ function toolStatusFor(toolName: string): AgentStatus {
     web_search:   'reading',
     fetch_url:    'reading',
     create_file:  'writing',
+    append_file:  'writing',
     edit_file:    'writing',
     delete_file:  'writing',
     replace_lines: 'writing',
