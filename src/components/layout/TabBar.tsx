@@ -49,8 +49,8 @@ export default function TabBar({
           type="button"
           className={`tabbar-logo-btn ${active === 'editor' ? 'tabbar-logo-btn--active' : ''}`}
           onClick={() => handleTabToggle('editor')}
-          title="Code Editor"
-          aria-label="Code Editor"
+          title="Code editor"
+          aria-label="Code editor"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={16} height={16}>
             <polyline points="16 18 22 12 16 6" strokeLinecap="round" strokeLinejoin="round" />
@@ -69,8 +69,8 @@ export default function TabBar({
             type="button"
             className={`tabbar-logo-btn ${active === 'preview' ? 'tabbar-logo-btn--active' : ''}`}
             onClick={() => handleTabToggle('preview')}
-            title={active === 'preview' ? "Close Live Preview (Return to Code)" : "Open Live Web Preview"}
-            aria-label="Toggle Live Preview"
+            title={active === 'preview' ? "Close live preview" : "Open live preview"}
+            aria-label="Toggle live preview"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} width={16} height={16}>
               <circle cx="12" cy="12" r="10" />
@@ -84,8 +84,8 @@ export default function TabBar({
           type="button"
           className={`tabbar-logo-btn ${active === 'settings' ? 'tabbar-logo-btn--active' : ''}`}
           onClick={() => handleTabToggle('settings')}
-          title={active === 'settings' ? "Close Settings (Return to Code)" : "Open Project Settings"}
-          aria-label="Toggle Settings"
+          title={active === 'settings' ? "Close settings" : "Project settings"}
+          aria-label="Toggle settings"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} width={16} height={16}>
             <circle cx="12" cy="12" r="3" />
@@ -101,8 +101,8 @@ export default function TabBar({
           type="button"
           className="tabbar-logo-btn"
           onClick={handleTerminalClick}
-          title="Terminal & Console (>_)"
-          aria-label="Toggle Terminal"
+          title="Terminal"
+          aria-label="Toggle terminal"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} width={15} height={15}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M4 17l6-6-6-6M12 19h8" />
@@ -115,8 +115,8 @@ export default function TabBar({
             type="button"
             className={`tabbar-logo-btn ${explorerOpen ? 'tabbar-logo-btn--active' : ''}`}
             onClick={onExplorerToggle}
-            title={explorerOpen ? "Hide File Explorer (Click to close)" : "Show File Explorer (Click to open)"}
-            aria-label="Toggle Files Explorer"
+            title={explorerOpen ? "Hide file explorer" : "Show file explorer"}
+            aria-label="Toggle file explorer"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} width={16} height={16}>
               <rect x="3" y="3" width="18" height="18" rx="2.5" />
@@ -131,8 +131,8 @@ export default function TabBar({
           type="button"
           className="tabbar-logo-btn"
           onClick={() => openPalette(true)}
-          title="Command Palette & Quick Actions (Ctrl+K)"
-          aria-label="More Actions"
+          title="Command palette (Ctrl+K)"
+          aria-label="More actions"
         >
           <svg viewBox="0 0 24 24" fill="currentColor" width={15} height={15}>
             <circle cx="12" cy="5" r="1.75" />
@@ -151,69 +151,62 @@ export default function TabBar({
           padding: 0 8px;
           gap: 8px;
           background: var(--bg-surface);
-          backdrop-filter: blur(20px);
-          -webkit-backdrop-filter: blur(20px);
           border-bottom: 1px solid var(--border-subtle);
           flex-shrink: 0;
           min-width: 0;
           overflow: hidden;
         }
-
         .tabbar-left-logos,
         .tabbar-right-logos {
           display: flex;
           align-items: center;
-          gap: 3px;
+          gap: 2px;
           flex-shrink: 0;
         }
-
         .tabbar-logo-btn {
           width: 28px;
           height: 28px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          border-radius: var(--radius-sm);
+          border-radius: var(--radius-md);
           background: transparent;
-          border: 1px solid transparent;
-          color: var(--text-muted);
+          border: none;
+          color: var(--text-secondary);
           cursor: pointer;
-          transition: all var(--transition-fast);
+          transition: background var(--transition-fast), color var(--transition-fast);
           user-select: none;
           padding: 0;
           position: relative;
         }
-
         .tabbar-logo-btn:hover {
           background: var(--bg-hover);
           color: var(--text-primary);
-          border-color: var(--border-subtle);
         }
-
+        .tabbar-logo-btn:focus-visible {
+          outline: 2px solid var(--accent);
+          outline-offset: 1px;
+        }
         .tabbar-logo-btn--active {
-          color: var(--brand) !important;
-          background: rgba(255, 107, 0, 0.12) !important;
-          border-color: rgba(255, 107, 0, 0.28) !important;
-          box-shadow: 0 1px 4px rgba(255, 107, 0, 0.15);
+          color: var(--text-primary);
+          background: var(--bg-overlay);
         }
-
         .tab-badge {
           position: absolute;
-          top: -2px;
-          right: -2px;
-          min-width: 14px;
-          height: 14px;
+          top: 0;
+          right: 0;
+          min-width: 13px;
+          height: 13px;
           padding: 0 3px;
-          background: var(--brand);
+          background: var(--bg-overlay);
+          border: 1px solid var(--border-base);
           border-radius: var(--radius-full);
           font-size: 8.5px;
-          font-weight: 700;
-          color: white;
+          color: var(--text-secondary);
           display: flex;
           align-items: center;
           justify-content: center;
           font-family: var(--font-mono);
-          box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
         }
       `}</style>
     </div>

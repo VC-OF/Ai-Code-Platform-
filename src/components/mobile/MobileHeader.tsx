@@ -11,16 +11,16 @@ interface MobileHeaderProps {
 }
 
 const STATUS_DOT: Record<AgentStatus, string> = {
-  planning:      '#3b82f6',
-  reading:       '#eab308',
-  writing:       '#22c55e',
-  testing:       '#a855f7',
-  linting:       '#f97316',
-  running:       '#06b6d4',
-  waiting:       '#f59e0b',
-  compacting:    '#6366f1',
-  done:          '#22c55e',
-  error:         '#ef4444',
+  planning:   'var(--accent)',
+  reading:    'var(--accent)',
+  writing:    'var(--accent)',
+  testing:    'var(--accent)',
+  linting:    'var(--accent)',
+  running:    'var(--accent)',
+  waiting:    'var(--warning)',
+  compacting: 'var(--accent)',
+  done:       'var(--success)',
+  error:      'var(--error)',
 };
 
 const IS_ACTIVE: AgentStatus[] = [
@@ -35,6 +35,7 @@ export default function MobileHeader({
   onPaletteOpen,
 }: MobileHeaderProps) {
   const isActive = IS_ACTIVE.includes(status);
+  const statusLabel = isActive ? `Agent ${status}` : status === 'error' ? 'Agent error' : 'Idle';
 
   return (
     <header className="mob-header">
@@ -55,9 +56,11 @@ export default function MobileHeader({
         <div className="mob-status-row">
           <span
             className="mob-status-dot"
+            title={statusLabel}
+            role="img"
+            aria-label={statusLabel}
             style={{
-              background:  STATUS_DOT[status] || '#52525b',
-              animation:   isActive ? 'pulse-soft 1.5s ease infinite' : 'none',
+              background: STATUS_DOT[status] || 'var(--text-disabled)',
             }}
           />
           <span className="mob-project-name">
@@ -82,11 +85,11 @@ export default function MobileHeader({
 
       <style jsx>{`
         .mob-header {
-          height: 52px;
+          height: 48px;
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 0 16px;
+          padding: 0 8px;
           background: var(--bg-surface);
           border-bottom: 1px solid var(--border-subtle);
           flex-shrink: 0;
@@ -106,7 +109,12 @@ export default function MobileHeader({
           color: var(--text-secondary);
           cursor: pointer;
           border-radius: var(--radius-md);
-          transition: all var(--transition-fast);
+          transition: background var(--transition-fast), color var(--transition-fast);
+        }
+
+        .mob-icon-btn:focus-visible {
+          outline: 2px solid var(--accent);
+          outline-offset: 1px;
         }
 
         .mob-icon-btn:active {
@@ -127,17 +135,17 @@ export default function MobileHeader({
         }
 
         .mob-status-dot {
-          width: 7px;
-          height: 7px;
+          width: 6px;
+          height: 6px;
           border-radius: 50%;
           flex-shrink: 0;
         }
 
         .mob-project-name {
-          font-size: var(--text-sm);
-          font-weight: 600;
+          font-size: 14px;
+          font-weight: 500;
           color: var(--text-primary);
-          max-width: 160px;
+          max-width: 200px;
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;

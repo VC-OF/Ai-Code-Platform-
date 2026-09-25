@@ -40,7 +40,7 @@ function TreeEntry({
       <div>
         <button
           onClick={() => toggleFolder(node.fullPath)}
-          className="w-full text-left flex items-center gap-1.5 py-1.5 pr-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-all rounded-md cursor-pointer"
+          className="fe-row pr-2"
           style={{ paddingLeft: `${8 + indent}px` }}
         >
           <svg
@@ -51,7 +51,7 @@ function TreeEntry({
             <path d="M10 6l6 6-6 6V6z" />
           </svg>
           <FolderIcon open={isExpanded} />
-          <span className="text-xs truncate font-medium text-[var(--text-primary)]">
+          <span className="truncate">
             {node.name}
           </span>
         </button>
@@ -80,10 +80,10 @@ function TreeEntry({
     <div className="group relative">
       <button
         onClick={() => onSelect(node.fullPath)}
-        className={`w-full text-left flex items-center gap-1.5 py-1.5 pr-14 text-xs font-mono transition-all cursor-pointer rounded-md ${
+        className={`fe-row fe-row--file pr-14 ${
           isActive
-            ? 'bg-[var(--accent-soft)] text-[var(--brand)] font-semibold border-l-2 border-[var(--brand)]'
-            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
+            ? 'fe-row--active'
+            : ''
         }`}
         style={{ paddingLeft: `${8 + indent + 16}px` }}
         title={node.fullPath}
@@ -91,11 +91,11 @@ function TreeEntry({
         <FileIcon name={node.name} />
         <span className="truncate">{node.name}</span>
       </button>
-      <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 flex items-center gap-0.5">
+      <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 flex items-center gap-0.5">
         <button
           type="button"
           onClick={(e) => onRename(node.fullPath, e)}
-          className="p-1 hover:bg-[var(--bg-hover)] rounded text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all cursor-pointer"
+          className="fe-icon-btn"
           title="Rename"
         >
           <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -105,8 +105,8 @@ function TreeEntry({
         <button
           type="button"
           onClick={(e) => onDelete(node.fullPath, e)}
-          className="p-1 hover:bg-[var(--bg-hover)] rounded text-[var(--error)] transition-opacity cursor-pointer"
-          title="Delete File"
+          className="fe-icon-btn fe-icon-btn--danger"
+          title="Delete file"
         >
           <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -259,14 +259,14 @@ export default function FileExplorer({
     <div className="file-explorer">
       {/* Pane Title Bar */}
       <div className="explorer-header">
-        <span className="explorer-title">File Explorer</span>
+        <span className="explorer-title">Files</span>
         <div className="explorer-actions">
-          <button onClick={createNewFile} className="action-btn" title="New File">
+          <button onClick={createNewFile} className="action-btn" title="New file">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={14} height={14}>
               <path d="M9 12h6M12 9v6M12 3v18" />
             </svg>
           </button>
-          <button onClick={createNewFolder} className="action-btn" title="New Folder">
+          <button onClick={createNewFolder} className="action-btn" title="New folder">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={14} height={14}>
               <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2zM12 11v6M9 14h6" />
             </svg>
@@ -305,10 +305,10 @@ export default function FileExplorer({
               <div key={f.path} className="group relative">
                 <button
                   onClick={() => onFileSelect(f.path)}
-                  className={`w-full text-left flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono transition-all cursor-pointer rounded-md ${
+                  className={`fe-row fe-row--file px-3 ${
                     activeFile === f.path
-                      ? 'bg-[var(--accent-soft)] text-[var(--brand)] font-semibold border-l-2 border-[var(--brand)]'
-                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
+                      ? 'fe-row--active'
+                      : ''
                   }`}
                   title={f.path}
                 >
@@ -339,11 +339,10 @@ export default function FileExplorer({
 
       {/* ── Open Code Editor CTA ────────────────────────────────────────── */}
       <div className="quick-actions-footer">
-        <div className="qa-footer-label">QUICK ACTIONS</div>
         <div className="qa-footer-row">
           <a
             href={`/editor?projectId=${encodeURIComponent(projectId)}`}
-            className="qa-footer-btn qa-footer-btn--primary"
+            className="qa-footer-btn"
             id="btn-open-code-editor"
             title="Open full code editor"
           >
@@ -351,7 +350,7 @@ export default function FileExplorer({
               <polyline points="16 18 22 12 16 6" />
               <polyline points="8 6 2 12 8 18" />
             </svg>
-            Open Code
+            Open code
           </a>
         </div>
       </div>
@@ -369,16 +368,15 @@ export default function FileExplorer({
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 12px 16px;
+          padding: 0 12px;
           border-bottom: 1px solid var(--border-subtle);
-          height: 48px;
+          height: 40px;
         }
 
         .explorer-title {
-          font-size: 11.5px;
-          text-transform: uppercase;
-          letter-spacing: 0.06em;
-          font-weight: 600;
+          font-family: var(--font-sans);
+          font-size: 12px;
+          font-weight: 500;
           color: var(--text-secondary);
         }
 
@@ -399,7 +397,7 @@ export default function FileExplorer({
           color: var(--text-muted);
           border-radius: var(--radius-sm);
           cursor: pointer;
-          transition: all var(--transition-fast);
+          transition: color var(--transition-fast), background var(--transition-fast);
         }
 
         .action-btn:hover {
@@ -414,19 +412,26 @@ export default function FileExplorer({
 
         .search-input {
           width: 100%;
-          background: var(--bg-base);
+          background: var(--bg-elevated);
           border: 1px solid var(--border-base);
           border-radius: var(--radius-md);
           padding: 6px 10px;
-          font-size: 11.5px;
+          font-family: var(--font-sans);
+          font-size: 12px;
           color: var(--text-primary);
           outline: none;
-          transition: all var(--transition-fast);
+          transition: border-color var(--transition-fast);
         }
 
         .search-input:focus {
-          border-color: var(--brand);
-          box-shadow: 0 0 0 2px var(--brand-glow);
+          border-color: var(--border-strong);
+        }
+
+        .search-input:focus-visible,
+        .action-btn:focus-visible,
+        .qa-footer-btn:focus-visible {
+          outline: 2px solid var(--accent);
+          outline-offset: 1px;
         }
 
         .search-input::placeholder {
@@ -462,28 +467,93 @@ export default function FileExplorer({
 
         .empty-message {
           padding: 16px 12px;
-          font-size: 11.5px;
-          color: var(--text-disabled);
-          font-style: italic;
+          font-size: 12px;
+          color: var(--text-muted);
         }
 
         @keyframes spin {
           to { transform: rotate(360deg); }
         }
 
+        @media (prefers-reduced-motion: reduce) {
+          .spinner-dot,
+          .file-explorer :global(.animate-spin) {
+            animation: none;
+          }
+          .file-explorer :global(*) {
+            transition: none;
+          }
+        }
+
+        /* Tree rows (rendered by TreeEntry, so styled via :global) */
+        .file-explorer :global(.fe-row) {
+          width: 100%;
+          text-align: left;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding-top: 4px;
+          padding-bottom: 4px;
+          font-family: var(--font-sans);
+          font-size: 12.5px;
+          color: var(--text-secondary);
+          background: transparent;
+          border: none;
+          border-radius: var(--radius-md);
+          cursor: pointer;
+          position: relative;
+          transition: background var(--transition-fast), color var(--transition-fast);
+        }
+        .file-explorer :global(.fe-row--file) {
+          font-family: var(--font-mono);
+          font-size: 12px;
+        }
+        .file-explorer :global(.fe-row:hover) {
+          background: var(--bg-hover);
+          color: var(--text-primary);
+        }
+        .file-explorer :global(.fe-row--active),
+        .file-explorer :global(.fe-row--active:hover) {
+          background: var(--bg-overlay);
+          color: var(--text-primary);
+        }
+        .file-explorer :global(.fe-row--active::before) {
+          content: '';
+          position: absolute;
+          left: 0;
+          top: 4px;
+          bottom: 4px;
+          width: 2px;
+          border-radius: var(--radius-full);
+          background: var(--accent);
+        }
+        .file-explorer :global(.fe-row:focus-visible),
+        .file-explorer :global(.fe-icon-btn:focus-visible) {
+          outline: 2px solid var(--accent);
+          outline-offset: -2px;
+        }
+        .file-explorer :global(.fe-icon-btn) {
+          padding: 4px;
+          display: flex;
+          background: transparent;
+          border: none;
+          border-radius: var(--radius-md);
+          color: var(--text-muted);
+          cursor: pointer;
+        }
+        .file-explorer :global(.fe-icon-btn:hover) {
+          background: var(--bg-hover);
+          color: var(--text-primary);
+        }
+        .file-explorer :global(.fe-icon-btn--danger:hover) {
+          color: var(--error);
+        }
+
         /* ── Quick Actions Footer ── */
         .quick-actions-footer {
-          padding: 10px 12px 14px;
+          padding: 10px 12px;
           border-top: 1px solid var(--border-subtle);
           flex-shrink: 0;
-        }
-        .qa-footer-label {
-          font-size: 8.5px;
-          text-transform: uppercase;
-          letter-spacing: 0.07em;
-          color: var(--text-muted);
-          font-weight: 700;
-          margin-bottom: 8px;
         }
         .qa-footer-row {
           display: flex;
@@ -494,36 +564,23 @@ export default function FileExplorer({
           display: flex;
           align-items: center;
           justify-content: center;
-          gap: 5px;
-          padding: 7px 6px;
-          font-size: 11px;
+          gap: 6px;
+          padding: 6px 8px;
+          font-family: var(--font-sans);
+          font-size: 12px;
           font-weight: 500;
           border-radius: var(--radius-md);
           cursor: pointer;
-          transition: all var(--transition-fast);
+          transition: background var(--transition-fast), border-color var(--transition-fast);
           background: var(--bg-elevated);
-          border: 1px solid var(--border-subtle);
-          color: var(--text-secondary);
+          border: 1px solid var(--border-base);
+          color: var(--text-primary);
           text-decoration: none;
           white-space: nowrap;
         }
         .qa-footer-btn:hover {
           background: var(--bg-hover);
-          border-color: var(--border-base);
-          color: var(--text-primary);
-        }
-        .qa-footer-btn--primary {
-          background: var(--brand);
-          border-color: var(--brand);
-          color: #fffaf7;
-          font-weight: 600;
-          flex: 1.4;
-        }
-        .qa-footer-btn--primary:hover {
-          background: var(--brand-dim);
-          border-color: var(--brand-dim);
-          box-shadow: var(--shadow-sm);
-          color: #fffaf7;
+          border-color: var(--border-strong);
         }
       `}</style>
     </div>

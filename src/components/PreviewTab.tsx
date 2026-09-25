@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 type Status = "stopped" | "starting" | "running" | "error";
 type Device = "desktop" | "tablet" | "mobile";
@@ -238,33 +238,91 @@ export default function PreviewTab({
     }
   }
 
+  const icon = {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.75,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  };
+  const auditTone =
+    auditResult?.status === "clean"
+      ? "success"
+      : auditResult?.status === "issues_detected"
+        ? "error"
+        : "warning";
+  const auditHeadline = !auditResult
+    ? ""
+    : auditResult.status === "clean"
+      ? "No errors found on this page"
+      : auditResult.status === "issues_detected"
+        ? `${auditResult.totalProblems} ${auditResult.totalProblems === 1 ? "problem" : "problems"} found`
+        : auditResult.status === "offline"
+          ? "Preview is offline"
+          : "Check could not finish";
+  const auditDetail = !auditResult
+    ? ""
+    : auditResult.status === "clean"
+      ? auditResult.title || ""
+      : auditResult.pageErrors?.slice(0, 1).join(" ") ||
+        auditResult.consoleErrors?.slice(0, 1).join(" ") ||
+        auditResult.error ||
+        "";
+
+  const devices: { id: Device; label: string; paths: ReactNode }[] = [
+    {
+      id: "desktop",
+      label: "Desktop view (100%)",
+      paths: (
+        <>
+          <rect x="2" y="4" width="20" height="14" rx="2" />
+          <path d="M8 21h8M12 18v3" />
+        </>
+      ),
+    },
+    {
+      id: "tablet",
+      label: "Tablet view (768px)",
+      paths: (
+        <>
+          <rect x="4" y="2" width="16" height="20" rx="2" />
+          <path d="M12 18h.01" />
+        </>
+      ),
+    },
+    {
+      id: "mobile",
+      label: "Mobile view (375px)",
+      paths: (
+        <>
+          <rect x="6" y="2" width="12" height="20" rx="2" />
+          <path d="M12 18h.01" />
+        </>
+      ),
+    },
+  ];
+
   return (
     <div className="preview-root">
-      {/* ── Preview toolbar ── */}
       <div className="preview-toolbar">
-        <div className="traffic-dots">
-          <span />
-          <span />
-          <span />
-        </div>
-        
         <div className="url-pill">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13}>
-            <rect x="3" y="11" width="18" height="10" rx="2"/>
-            <path d="M7 11V7a5 5 0 0110 0v4"/>
+          <svg {...icon} width={12} height={12} aria-hidden="true">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18" />
           </svg>
-          {url || "server offline"}
+          <span className="url-text">{url || "Server offline"}</span>
         </div>
 
         <button
           className="toolbar-icon"
           onClick={() => setIframeKey((k) => k + 1)}
           title="Reload preview"
+          aria-label="Reload preview"
           disabled={status !== "running"}
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={14} height={14}>
-            <path d="M23 4v6h-6M1 20v-6h6"/>
-            <path d="M3.5 9a9 9 0 0114.5-3.4L23 10M1 14l5-4.6A9 9 0 0020.5 15"/>
+          <svg {...icon} width={14} height={14} aria-hidden="true">
+            <path d="M21 12a9 9 0 11-2.64-6.36M21 4v5h-5" />
           </svg>
         </button>
 
@@ -272,25 +330,28 @@ export default function PreviewTab({
           className={`toolbar-icon ${inspecting ? "toolbar-icon--active" : ""}`}
           onClick={() => setInspecting((v) => !v)}
           title="Inspect: click an element in the preview to edit it via chat"
+          aria-label="Inspect element"
+          aria-pressed={inspecting}
           disabled={status !== "running"}
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={14} height={14}>
-            <path d="M3 3l7.5 18 2.5-7.5L20.5 11z" />
+          <svg {...icon} width={14} height={14} aria-hidden="true">
+            <path d="M4 4l6.5 16 2.2-6.8L19.5 11z" />
           </svg>
         </button>
 
         <button
           className={`toolbar-icon ${auditing ? "toolbar-icon--active" : ""}`}
           onClick={runBrowserAudit}
-          title="Autonomous Verify: Run Playwright DOM & console health audit"
+          title="Check page for console and runtime errors"
+          aria-label="Check page for errors"
           disabled={status !== "running" || auditing}
         >
           {auditing ? (
-            <span className="audit-spin">⟳</span>
+            <span className="spinner" aria-hidden="true" />
           ) : (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={14} height={14}>
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-              <path d="m9 12 2 2 4-4" />
+            <svg {...icon} width={14} height={14} aria-hidden="true">
+              <path d="M12 21s7-3.5 7-9V5.5L12 3 5 5.5V12c0 5.5 7 9 7 9z" />
+              <path d="M9 12l2 2 4-4" />
             </svg>
           )}
         </button>
@@ -299,199 +360,176 @@ export default function PreviewTab({
           className="toolbar-icon"
           onClick={() => url && window.open(url, "_blank")}
           title="Open in new tab"
+          aria-label="Open in new tab"
           disabled={status !== "running"}
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={14} height={14}>
-            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
-            <path d="M15 3h6v6M10 14L21 3"/>
+          <svg {...icon} width={14} height={14} aria-hidden="true">
+            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" />
+            <path d="M15 3h6v6M10 14L21 3" />
           </svg>
         </button>
 
-        <div className="device-toggle">
-          <button
-            className={`di ${device === "desktop" ? "active" : ""}`}
-            onClick={() => setDevice("desktop")}
-            title="Desktop view (100%)"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13}>
-              <rect x="2" y="4" width="20" height="14" rx="2"/>
-              <path d="M8 21h8M12 18v3"/>
-            </svg>
-          </button>
-          <button
-            className={`di ${device === "tablet" ? "active" : ""}`}
-            onClick={() => setDevice("tablet")}
-            title="Tablet view (768px)"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13}>
-              <rect x="4" y="2" width="16" height="20" rx="2"/>
-              <path d="M12 18h.01"/>
-            </svg>
-          </button>
-          <button
-            className={`di ${device === "mobile" ? "active" : ""}`}
-            onClick={() => setDevice("mobile")}
-            title="Mobile view (375px)"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13}>
-              <rect x="6" y="2" width="12" height="20" rx="2"/>
-              <path d="M12 18h.01"/>
-            </svg>
-          </button>
+        <div className="device-toggle" role="group" aria-label="Viewport size">
+          {devices.map((d) => (
+            <button
+              key={d.id}
+              className={`di ${device === d.id ? "active" : ""}`}
+              onClick={() => setDevice(d.id)}
+              title={d.label}
+              aria-label={d.label}
+              aria-pressed={device === d.id}
+            >
+              <svg {...icon} width={13} height={13} aria-hidden="true">
+                {d.paths}
+              </svg>
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* ── Sub-tab switcher ─────────────────────────────────────── */}
-      <div className="preview-subtabs">
-        {(['browser', 'database', 'analytics'] as const).map((t) => (
+      <div className="preview-subtabs" role="tablist">
+        {(["browser", "database", "analytics"] as const).map((t) => (
           <button
             key={t}
-            className={`pst ${previewSubTab === t ? 'pst--active' : ''}`}
+            role="tab"
+            aria-selected={previewSubTab === t}
+            className={`pst ${previewSubTab === t ? "pst--active" : ""}`}
             onClick={() => setPreviewSubTab(t)}
           >
-            {t === 'browser'   ? 'Browser'   :
-             t === 'database'  ? 'Database'  :
-             'Server'}
+            {t === "browser" ? "Browser" : t === "database" ? "Database" : "Server"}
           </button>
         ))}
       </div>
 
-      {previewSubTab === 'browser' && (
-      <div className="preview-layout">
-        {/* ── Preview Canvas ── */}
-        <div className="preview-canvas">
-          {status === "running" ? (
-            <div className={`preview-frame-wrapper ${device}`}>
-              {inspecting && (
-                <div className="inspect-banner">
-                  Click any element to reference it in chat — Esc to cancel
-                </div>
-              )}
-              {auditResult && (
-                <div className={`preview-audit-toast preview-audit-toast--${auditResult.status}`}>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-bold text-xs flex items-center gap-1.5">
-                      {auditResult.status === 'clean' ? '✓ Playwright Verified Clean' : '⚠️ Verification Issues Detected'}
-                    </span>
+      {previewSubTab === "browser" && (
+        <div className="preview-layout">
+          <div className="preview-canvas">
+            {status === "running" ? (
+              <div className={`preview-frame-wrapper ${device}`}>
+                {inspecting && (
+                  <div className="inspect-banner">
+                    Click any element to reference it in chat. Press Esc to cancel.
+                  </div>
+                )}
+                {auditResult && (
+                  <div className="audit-toast" role="status">
+                    <span className={`audit-dot audit-dot--${auditTone}`} aria-hidden="true" />
+                    <div className="audit-body">
+                      <div className="audit-title">{auditHeadline}</div>
+                      {auditDetail && <div className="audit-detail">{auditDetail}</div>}
+                    </div>
                     <button
                       type="button"
-                      className="text-[11px] opacity-70 hover:opacity-100 cursor-pointer"
+                      className="audit-close"
                       onClick={() => setAuditResult(null)}
+                      aria-label="Dismiss"
                     >
-                      ✕
+                      <svg {...icon} width={12} height={12} aria-hidden="true">
+                        <path d="M6 6l12 12M18 6L6 18" />
+                      </svg>
                     </button>
                   </div>
-                  <div className="text-[11px] mt-1 text-slate-300">
-                    {auditResult.status === 'clean' ? (
-                      <span>Page: <strong>{auditResult.title || 'OK'}</strong> · 0 uncaught errors · DOM verified.</span>
-                    ) : (
-                      <span>
-                        Found {auditResult.totalProblems} problem(s):{' '}
-                        {auditResult.pageErrors?.slice(0, 1).join(' ') ||
-                          auditResult.consoleErrors?.slice(0, 1).join(' ') ||
-                          auditResult.error}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-              <iframe
-                key={`${iframeKey}-${inspecting}`}
-                src={
-                  inspecting
-                    ? `/api/preview-proxy?projectId=${encodeURIComponent(projectId)}&path=/`
-                    : url
-                }
-                className="preview-iframe"
-              />
-            </div>
-          ) : (
-            <div className="preview-offline">
-              <div className="preview-offline-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={24} height={24}>
-                  <path d="M1 1l22 22M16.72 11.06A10.94 10.94 0 0119 12.55M5 12.55a10.94 10.94 0 015.17-2.39M10.71 5.05A16 16 0 0122.58 9M1.42 9a15.91 15.91 0 014.7-2.88M8.53 16.11a6 6 0 016.95 0M12 20h.01"/>
-                </svg>
-              </div>
-              <h3 className="preview-offline-title">Preview server offline</h3>
-              <p className="preview-offline-desc">
-                {status === "starting"
-                  ? "Development server is starting up. Please wait..."
-                  : "Start the preview server to visualize your application live as changes are made."}
-              </p>
-              {status !== "starting" && (
-                <button className="start-server-btn" onClick={start}>
-                  Start preview server
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* ── Terminal build logs panel ── */}
-        <div className="terminal-panel">
-          <div className="term-head">
-            <span className="term-label">Interactive Terminal</span>
-            <button className="term-clear" onClick={() => setLogs([])}>
-              Clear
-            </button>
-          </div>
-
-          <div className="term-body">
-            {logs.length > 0 ? (
-              <pre className="term-pre">{logs.join("")}</pre>
-            ) : (
-              <div className="term-empty">No output logs received yet.</div>
-            )}
-            {executingCommand && (
-              <div className="term-running">
-                <span className="term-spin" />
-                Running command...
-              </div>
-            )}
-            <div ref={logsEndRef} />
-          </div>
-
-          <div className="term-input-row">
-            <div className="term-input-inner">
-              <span className="term-prompt">$</span>
-              <input
-                type="text"
-                placeholder="Run shell command…"
-                value={commandInput}
-                onChange={(e) => setCommandInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    runCustomCommand();
+                )}
+                <iframe
+                  key={`${iframeKey}-${inspecting}`}
+                  src={
+                    inspecting
+                      ? `/api/preview-proxy?projectId=${encodeURIComponent(projectId)}&path=/`
+                      : url
                   }
-                }}
-                disabled={executingCommand}
-                className="term-field"
-              />
-              <button
-                onClick={runCustomCommand}
-                disabled={executingCommand || !commandInput.trim()}
-                className="term-submit"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} width={13} height={13}>
-                  <line x1="22" y1="2" x2="11" y2="13" />
-                  <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                </svg>
+                  className="preview-iframe"
+                  title="Preview"
+                />
+              </div>
+            ) : (
+              <div className="preview-offline">
+                <div className="preview-offline-icon">
+                  <svg {...icon} width={20} height={20} aria-hidden="true">
+                    <rect x="3" y="4" width="18" height="14" rx="2" />
+                    <path d="M8 21h8M12 18v3" />
+                  </svg>
+                </div>
+                <h3 className="preview-offline-title">
+                  {status === "starting" ? "Starting preview server" : "Preview server offline"}
+                </h3>
+                <p className="preview-offline-desc">
+                  {status === "starting"
+                    ? "The development server is starting up."
+                    : "Start the preview server to see your app update live as changes are made."}
+                </p>
+                {status !== "starting" && (
+                  <button className="start-server-btn" onClick={start}>
+                    Start preview server
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="terminal-panel">
+            <div className="term-head">
+              <span className="term-label">Terminal</span>
+              <button className="term-clear" onClick={() => setLogs([])}>
+                Clear
               </button>
             </div>
+
+            <div className="term-body">
+              {logs.length > 0 ? (
+                <pre className="term-pre">{logs.join("")}</pre>
+              ) : (
+                <div className="term-empty">No output yet.</div>
+              )}
+              {executingCommand && (
+                <div className="term-running">
+                  <span className="spinner" aria-hidden="true" />
+                  Running command…
+                </div>
+              )}
+              <div ref={logsEndRef} />
+            </div>
+
+            <div className="term-input-row">
+              <div className="term-input-inner">
+                <span className="term-prompt">$</span>
+                <input
+                  type="text"
+                  placeholder="Run shell command…"
+                  aria-label="Shell command"
+                  value={commandInput}
+                  onChange={(e) => setCommandInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      runCustomCommand();
+                    }
+                  }}
+                  disabled={executingCommand}
+                  className="term-field"
+                />
+                <button
+                  onClick={runCustomCommand}
+                  disabled={executingCommand || !commandInput.trim()}
+                  className="term-submit"
+                  aria-label="Run command"
+                >
+                  <svg {...icon} width={13} height={13} aria-hidden="true">
+                    <path d="M5 12h14M13 6l6 6-6 6" />
+                  </svg>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
       )}
 
-      {/* ── Database sub-tab (live platform-DB stats) ─────────────── */}
-      {previewSubTab === 'database' && (
+      {previewSubTab === "database" && (
         <div className="subtab-panel">
           <div className="sta-grid">
             {[
-              { lbl: 'TABLES', val: dbStats ? String(dbStats.tables) : '…', sub: 'in platform db' },
-              { lbl: 'ROWS',   val: dbStats ? String(dbStats.rows)   : '…', sub: 'total records'  },
-              { lbl: 'SIZE',   val: dbStats ? `${dbStats.sizeKb}KB`  : '…', sub: 'database size'  },
+              { lbl: "Tables", val: dbStats ? String(dbStats.tables) : "…", sub: "In platform database" },
+              { lbl: "Rows", val: dbStats ? String(dbStats.rows) : "…", sub: "Total records" },
+              { lbl: "Size", val: dbStats ? `${dbStats.sizeKb} KB` : "…", sub: "Database size" },
             ].map((c) => (
               <div key={c.lbl} className="sta-card">
                 <div className="sta-lbl">{c.lbl}</div>
@@ -504,18 +542,17 @@ export default function PreviewTab({
         </div>
       )}
 
-      {/* ── Server sub-tab (live dev-server info) ─────────────────── */}
-      {previewSubTab === 'analytics' && (
+      {previewSubTab === "analytics" && (
         <div className="subtab-panel">
           <div className="sta-grid">
             {[
-              { lbl: 'STATUS',    val: status,                        sub: 'dev server'       },
-              { lbl: 'URL',       val: url ? url.replace(/^https?:\/\//, '') : '—', sub: 'preview address' },
-              { lbl: 'LOG LINES', val: String(logs.length),           sub: 'buffered output'  },
+              { lbl: "Status", val: status, sub: "Dev server", mono: false },
+              { lbl: "URL", val: url ? url.replace(/^https?:\/\//, "") : "—", sub: "Preview address", mono: true },
+              { lbl: "Log lines", val: String(logs.length), sub: "Buffered output", mono: false },
             ].map((c) => (
               <div key={c.lbl} className="sta-card">
                 <div className="sta-lbl">{c.lbl}</div>
-                <div className="sta-val">{c.val}</div>
+                <div className={`sta-val ${c.mono ? "sta-val--mono" : ""}`}>{c.val}</div>
                 <div className="sta-sub">{c.sub}</div>
               </div>
             ))}
@@ -524,32 +561,44 @@ export default function PreviewTab({
         </div>
       )}
 
-      {/* ── Build status dock footer control ── */}
       <div className="preview-dock">
         <div className="dock-left">
-          <button className="dock-btn ghost" onClick={start} disabled={status === "starting" || status === "running"}>
+          <button className="dock-btn" onClick={start} disabled={status === "starting" || status === "running"}>
             Start server
           </button>
-          <button className="dock-btn ghost" onClick={stop} disabled={status === "stopped"}>
+          <button className="dock-btn" onClick={stop} disabled={status === "stopped"}>
             Stop server
           </button>
           <button
-            className="dock-btn deploy"
+            className="dock-btn"
             onClick={deploy}
             disabled={deploying}
             title="Deploy this workspace to Vercel (needs VERCEL_TOKEN in Settings)"
           >
-            {deploying ? "Deploying…" : "▲ Deploy"}
+            <svg {...icon} width={12} height={12} aria-hidden="true">
+              <path d="M12 4l9 16H3z" />
+            </svg>
+            {deploying ? "Deploying…" : "Deploy"}
           </button>
         </div>
         <div className="dock-right">
+          <span
+            className={`dock-dot ${status === "running" ? "dock-dot--on" : status === "error" ? "dock-dot--err" : ""}`}
+            aria-hidden="true"
+          />
           {deployUrl ? (
-            <a href={deployUrl} target="_blank" rel="noreferrer" className="dock-status-text online">
+            <a href={deployUrl} target="_blank" rel="noreferrer" className="dock-status-text mono">
               {deployUrl.replace(/^https:\/\//, "")}
             </a>
           ) : (
-            <span className={`dock-status-text ${status === "running" ? "online" : ""}`}>
-              {status === "running" && url ? `Running at ${url}` : `Server ${status}`}
+            <span className="dock-status-text">
+              {status === "running" && url ? (
+                <>
+                  Running at <span className="mono">{url}</span>
+                </>
+              ) : (
+                `Server ${status}`
+              )}
             </span>
           )}
         </div>
@@ -562,292 +611,286 @@ export default function PreviewTab({
           height: 100%;
           min-height: 0;
           background: var(--bg-base);
+          font-family: var(--font-sans);
+          font-size: 13px;
+          color: var(--text-primary);
+        }
+        button:focus-visible,
+        a:focus-visible {
+          outline: 2px solid var(--accent);
+          outline-offset: 1px;
+        }
+        .mono {
+          font-family: var(--font-mono);
         }
 
-        /* ── Toolbar ── */
+        /* Toolbar */
         .preview-toolbar {
           display: flex;
           align-items: center;
-          gap: 8px;
-          border-radius: var(--radius-sm);
-          border: 1px solid var(--border-subtle);
-          background: var(--panel);
-          padding: 10px 14px;
-          margin: 16px 20px 0;
-        }
-
-        .traffic-dots {
-          display: flex;
-          gap: 6px;
+          gap: 4px;
+          padding: 8px 12px;
+          border-bottom: 1px solid var(--border-subtle);
+          background: var(--bg-surface);
           flex-shrink: 0;
         }
-
-        .traffic-dots span {
-          width: 9px;
-          height: 9px;
-          border-radius: 50%;
-          background: rgba(255, 255, 255, 0.12);
-        }
-
         .url-pill {
           flex: 1;
+          min-width: 0;
           display: flex;
           align-items: center;
           gap: 8px;
-          background: rgba(255, 255, 255, 0.03);
+          margin-right: 4px;
+          background: var(--bg-elevated);
           border: 1px solid var(--border-subtle);
-          border-radius: 8px;
-          padding: 7px 12px;
+          border-radius: var(--radius-md);
+          padding: 5px 10px;
           font-family: var(--font-mono);
           font-size: 12px;
           color: var(--text-secondary);
         }
-
         .url-pill svg {
-          color: var(--green);
+          color: var(--text-muted);
           flex-shrink: 0;
         }
-
+        .url-text {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
         .toolbar-icon {
-          width: 30px;
-          height: 30px;
-          border-radius: 8px;
+          width: 28px;
+          height: 28px;
+          border-radius: var(--radius-md);
           display: flex;
           align-items: center;
           justify-content: center;
           color: var(--text-secondary);
           background: transparent;
-          border: none;
+          border: 1px solid transparent;
           cursor: pointer;
           flex-shrink: 0;
           transition: background var(--transition-fast), color var(--transition-fast);
         }
-
         .toolbar-icon:hover:not(:disabled) {
-          background: rgba(255, 255, 255, 0.05);
+          background: var(--bg-hover);
+          color: var(--text-primary);
+        }
+        .toolbar-icon:disabled {
+          color: var(--text-disabled);
+          cursor: not-allowed;
+        }
+        .toolbar-icon.toolbar-icon--active {
+          background: var(--bg-overlay);
+          color: var(--text-primary);
+        }
+        .device-toggle {
+          display: flex;
+          margin-left: 4px;
+          padding: 2px;
+          gap: 2px;
+          border-radius: var(--radius-md);
+          border: 1px solid var(--border-subtle);
+          background: var(--bg-elevated);
+          flex-shrink: 0;
+        }
+        .di {
+          width: 24px;
+          height: 22px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: var(--text-muted);
+          background: transparent;
+          border: none;
+          border-radius: var(--radius-sm);
+          cursor: pointer;
+          transition: background var(--transition-fast), color var(--transition-fast);
+        }
+        .di:hover {
+          color: var(--text-primary);
+          background: var(--bg-hover);
+        }
+        .di.active {
+          background: var(--bg-overlay);
           color: var(--text-primary);
         }
 
-        .toolbar-icon:disabled {
-          opacity: 0.3;
-          cursor: not-allowed;
+        /* Sub-tabs */
+        .preview-subtabs {
+          display: flex;
+          gap: 4px;
+          padding: 0 12px;
+          border-bottom: 1px solid var(--border-subtle);
+          background: var(--bg-surface);
+          flex-shrink: 0;
+        }
+        .pst {
+          padding: 8px;
+          background: none;
+          border: none;
+          border-bottom: 2px solid transparent;
+          font-family: var(--font-sans);
+          font-size: 12px;
+          color: var(--text-muted);
+          cursor: pointer;
+          margin-bottom: -1px;
+          transition: color var(--transition-fast), border-color var(--transition-fast);
+        }
+        .pst:hover {
+          color: var(--text-primary);
+        }
+        .pst.pst--active {
+          color: var(--text-primary);
+          border-bottom-color: var(--accent);
         }
 
-        .toolbar-icon--active {
-          background: var(--brand-glow) !important;
-          color: var(--brand) !important;
+        /* Layout */
+        .preview-layout {
+          display: flex;
+          flex-direction: column;
+          flex: 1;
+          min-height: 0;
+          padding: 12px;
+          gap: 12px;
+          overflow: hidden;
         }
-
+        .preview-canvas {
+          flex: 1;
+          min-height: 0;
+          border-radius: var(--radius-md);
+          border: 1px solid var(--border-subtle);
+          background: var(--bg-surface);
+          overflow: hidden;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          position: relative;
+        }
+        .preview-frame-wrapper {
+          width: 100%;
+          height: 100%;
+          position: relative;
+          transition: max-width 0.2s ease;
+        }
+        .preview-frame-wrapper.tablet,
+        .preview-frame-wrapper.mobile {
+          height: 96%;
+          border: 1px solid var(--border-strong);
+          border-radius: var(--radius-md);
+          overflow: hidden;
+        }
+        .preview-frame-wrapper.tablet {
+          max-width: 768px;
+        }
+        .preview-frame-wrapper.mobile {
+          max-width: 375px;
+        }
+        .preview-iframe {
+          width: 100%;
+          height: 100%;
+          border: 0;
+          background: var(--bg-base);
+          display: block;
+        }
         .inspect-banner {
           position: absolute;
           top: 8px;
           left: 50%;
           transform: translateX(-50%);
           z-index: 5;
-          background: rgba(0, 0, 0, 0.75);
-          border: 1px solid var(--brand);
-          color: var(--text-primary);
-          font-size: 11px;
-          padding: 5px 12px;
-          border-radius: var(--radius-full);
-          pointer-events: none;
-        }
-
-        .device-toggle {
-          display: flex;
-          border-radius: 8px;
-          border: 1px solid var(--border-subtle);
-          overflow: hidden;
-          flex-shrink: 0;
-        }
-
-        .device-toggle .di {
-          width: 30px;
-          height: 30px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: var(--text-muted);
-          background: transparent;
-          border: none;
-          cursor: pointer;
-          transition: all var(--transition-fast);
-        }
-
-        .device-toggle .di:first-child {
-          border-right: 1px solid var(--border-subtle);
-        }
-
-        .device-toggle .di:hover {
+          background: var(--bg-elevated);
+          border: 1px solid var(--border-base);
           color: var(--text-secondary);
+          font-size: 12px;
+          padding: 5px 12px;
+          border-radius: var(--radius-lg);
+          box-shadow: var(--shadow-lg);
+          pointer-events: none;
+          white-space: nowrap;
         }
 
-        .preview-root {
+        /* Audit toast */
+        .audit-toast {
+          position: absolute;
+          top: 12px;
+          left: 50%;
+          transform: translateX(-50%);
+          z-index: 100;
           display: flex;
-          flex-direction: column;
-          height: 100%;
-          background: var(--bg-base);
+          align-items: flex-start;
+          gap: 10px;
+          min-width: 280px;
+          max-width: 520px;
+          padding: 10px 10px 10px 12px;
+          background: var(--bg-elevated);
+          border: 1px solid var(--border-base);
+          border-radius: var(--radius-lg);
+          box-shadow: var(--shadow-lg);
+          animation: auditIn 0.15s ease-out;
         }
-
-        /* ── Toolbar ── */
-        .preview-toolbar {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          border-radius: 12px;
-          border: 1px solid var(--border-subtle);
-          background: var(--panel);
-          padding: 8px 12px;
-          margin: 12px 16px 0;
-          flex-shrink: 0;
+        @keyframes auditIn {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
+          }
         }
-
-        .traffic-dots {
-          display: flex;
-          gap: 6px;
-          flex-shrink: 0;
-        }
-
-        .traffic-dots span {
+        .audit-dot {
           width: 8px;
           height: 8px;
           border-radius: 50%;
-          background: var(--border-strong);
-        }
-
-        .url-pill {
-          flex: 1;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          background: var(--bg-deep);
-          border: 1px solid var(--border-subtle);
-          border-radius: 8px;
-          padding: 6px 12px;
-          font-family: var(--font-mono);
-          font-size: 11.5px;
-          color: var(--text-secondary);
-        }
-
-        .url-pill svg {
-          color: var(--green);
+          margin-top: 5px;
           flex-shrink: 0;
         }
-
-        .toolbar-icon {
-          width: 28px;
-          height: 28px;
-          border-radius: 6px;
+        .audit-dot--success {
+          background: var(--success);
+        }
+        .audit-dot--error {
+          background: var(--error);
+        }
+        .audit-dot--warning {
+          background: var(--warning);
+        }
+        .audit-body {
+          flex: 1;
+          min-width: 0;
+        }
+        .audit-title {
+          font-size: 13px;
+          font-weight: 500;
+          color: var(--text-primary);
+        }
+        .audit-detail {
+          margin-top: 2px;
+          font-size: 12px;
+          color: var(--text-secondary);
+          overflow: hidden;
+          display: -webkit-box;
+          -webkit-line-clamp: 3;
+          -webkit-box-orient: vertical;
+          word-break: break-word;
+        }
+        .audit-close {
+          width: 22px;
+          height: 22px;
           display: flex;
           align-items: center;
           justify-content: center;
-          color: var(--text-secondary);
           background: transparent;
           border: none;
+          border-radius: var(--radius-md);
+          color: var(--text-muted);
           cursor: pointer;
           flex-shrink: 0;
-          transition: background var(--transition-fast), color var(--transition-fast);
         }
-
-        .toolbar-icon:hover:not(:disabled) {
-          background: rgba(255, 255, 255, 0.05);
+        .audit-close:hover {
+          background: var(--bg-hover);
           color: var(--text-primary);
         }
 
-        .toolbar-icon:disabled {
-          opacity: 0.3;
-          cursor: not-allowed;
-        }
-
-        .device-toggle {
-          display: flex;
-          border-radius: 8px;
-          border: 1px solid var(--border-subtle);
-          overflow: hidden;
-          flex-shrink: 0;
-        }
-
-        .device-toggle .di {
-          width: 28px;
-          height: 28px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: var(--text-muted);
-          background: transparent;
-          border: none;
-          cursor: pointer;
-          transition: all var(--transition-fast);
-        }
-
-        .device-toggle .di:first-child {
-          border-right: 1px solid var(--border-subtle);
-        }
-
-        .device-toggle .di:hover {
-          color: var(--text-secondary);
-        }
-
-        .device-toggle .di.active {
-          background: var(--brand-glow);
-          color: var(--brand);
-        }
-
-        /* ── Layout columns (Stacked vertically) ── */
-        .preview-layout {
-          display: flex;
-          flex-direction: column;
-          flex: 1;
-          min-height: 0;
-          padding: 12px 16px 12px;
-          gap: 12px;
-          overflow: hidden;
-        }
-
-        .preview-canvas {
-          flex: 1;
-          min-height: 0;
-          border-radius: var(--radius-sm);
-          border: 1px solid var(--border-subtle);
-          background: var(--bg-deep);
-          overflow: hidden;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          position: relative;
-        }
-
-        .preview-frame-wrapper {
-          width: 100%;
-          height: 100%;
-          position: relative;
-          transition: max-width 0.3s ease;
-        }
-
-        .preview-frame-wrapper.tablet {
-          max-width: 768px;
-          height: 96%;
-          border: 8px solid var(--border-strong);
-          border-radius: 10px;
-          box-shadow: var(--shadow-md);
-        }
-
-        .preview-frame-wrapper.mobile {
-          max-width: 375px;
-          height: 95%;
-          border: 8px solid var(--border-strong);
-          border-radius: 10px;
-          box-shadow: var(--shadow-md);
-        }
-
-        .preview-iframe {
-          width: 100%;
-          height: 100%;
-          border: 0;
-          background: white;
-        }
-
-        /* ── Offline state ── */
+        /* Offline */
         .preview-offline {
           display: flex;
           align-items: center;
@@ -855,106 +898,95 @@ export default function PreviewTab({
           flex-direction: column;
           text-align: center;
           padding: 16px;
-          max-width: 300px;
+          max-width: 320px;
           max-height: 100%;
           overflow-y: auto;
         }
-
         .preview-offline-icon {
-          width: 48px;
-          height: 48px;
-          border-radius: 12px;
-          background: rgba(255, 255, 255, 0.04);
+          width: 40px;
+          height: 40px;
+          border-radius: var(--radius-md);
+          background: var(--bg-elevated);
           border: 1px solid var(--border-subtle);
           display: flex;
           align-items: center;
           justify-content: center;
           color: var(--text-muted);
-          margin-bottom: 14px;
+          margin-bottom: 12px;
         }
-
         .preview-offline-title {
-          font-family: var(--font-brand);
-          font-size: 15px;
-          font-weight: 600;
+          font-family: var(--font-sans);
+          font-size: 14px;
+          font-weight: 500;
           color: var(--text-primary);
-          margin-bottom: 6px;
+          margin: 0 0 4px;
         }
-
         .preview-offline-desc {
-          font-size: 11.5px;
+          font-size: 12px;
           color: var(--text-muted);
           line-height: 1.5;
-          margin-bottom: 16px;
+          margin: 0 0 14px;
         }
-
         .start-server-btn {
-          background: var(--brand);
-          border: none;
-          color: #fff;
+          background: var(--accent);
+          border: 1px solid var(--accent);
+          color: var(--text-on-accent);
+          font-family: var(--font-sans);
           font-weight: 500;
-          font-size: 12.5px;
-          padding: 8px 16px;
+          font-size: 12px;
+          padding: 6px 12px;
           border-radius: var(--radius-md);
           cursor: pointer;
-          box-shadow: var(--shadow-sm);
-          transition: all var(--transition-fast);
+          transition: background var(--transition-fast);
         }
-
         .start-server-btn:hover {
-          filter: brightness(1.15);
+          background: var(--accent-dim);
+          border-color: var(--accent-dim);
         }
 
-        .start-server-btn:active {
-          transform: scale(0.97);
-        }
-
-        /* ── Terminal Panel (Full width, shorter height) ── */
+        /* Terminal */
         .terminal-panel {
           width: 100%;
           height: 160px;
           border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-sm);
-          background: var(--bg-deep);
+          border-radius: var(--radius-md);
+          background: var(--bg-surface);
           display: flex;
           flex-direction: column;
           flex-shrink: 0;
+          overflow: hidden;
         }
-
         .term-head {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 8px 12px;
+          padding: 6px 10px;
           border-bottom: 1px solid var(--border-subtle);
         }
-
         .term-label {
-          font-size: 9px;
-          text-transform: uppercase;
-          letter-spacing: 0.06em;
-          color: var(--text-muted);
-          font-weight: 600;
+          font-size: 12px;
+          color: var(--text-secondary);
+          font-weight: 500;
         }
-
         .term-clear {
-          font-size: 10.5px;
+          font-family: var(--font-sans);
+          font-size: 12px;
           color: var(--text-muted);
           background: transparent;
           border: none;
+          border-radius: var(--radius-md);
+          padding: 2px 6px;
           cursor: pointer;
-          font-weight: 500;
         }
-
         .term-clear:hover {
-          color: var(--text-secondary);
+          color: var(--text-primary);
+          background: var(--bg-hover);
         }
-
         .term-body {
           flex: 1;
-          padding: 10px 12px;
+          padding: 8px 10px;
           font-family: var(--font-mono);
-          font-size: 11px;
+          font-size: 12px;
           line-height: 1.5;
           overflow-y: auto;
           display: flex;
@@ -962,61 +994,43 @@ export default function PreviewTab({
           gap: 6px;
           background: var(--bg-base);
         }
-
         .term-pre {
           white-space: pre-wrap;
           color: var(--text-secondary);
+          margin: 0;
+          font-family: var(--font-mono);
         }
-
         .term-empty {
           color: var(--text-muted);
-          font-style: italic;
-          font-size: 11px;
         }
-
         .term-running {
-          color: var(--brand);
+          color: var(--text-secondary);
           display: flex;
           align-items: center;
           gap: 6px;
         }
-
-        .term-spin {
-          width: 8px;
-          height: 8px;
-          border: 1.5px solid var(--brand);
-          border-top-color: transparent;
-          border-radius: 50%;
-          animation: spin-term 0.8s linear infinite;
-        }
-
-        @keyframes spin-term {
-          to { transform: rotate(360deg); }
-        }
-
         .term-input-row {
-          padding: 8px 10px;
+          padding: 6px 8px;
           border-top: 1px solid var(--border-subtle);
-          background: var(--bg-deep);
         }
-
         .term-input-inner {
           display: flex;
           align-items: center;
           gap: 8px;
-          background: var(--bg-base);
+          background: var(--bg-elevated);
           border: 1px solid var(--border-subtle);
           border-radius: var(--radius-md);
-          padding: 4px 8px;
+          padding: 3px 4px 3px 8px;
         }
-
+        .term-input-inner:focus-within {
+          outline: 2px solid var(--accent);
+          outline-offset: -1px;
+        }
         .term-prompt {
-          color: var(--brand);
+          color: var(--text-muted);
           font-family: var(--font-mono);
-          font-weight: bold;
           font-size: 12px;
         }
-
         .term-field {
           flex: 1;
           background: transparent;
@@ -1024,232 +1038,193 @@ export default function PreviewTab({
           outline: none;
           color: var(--text-primary);
           font-family: var(--font-mono);
-          font-size: 11px;
+          font-size: 12px;
           padding: 0;
         }
-
         .term-field::placeholder {
           color: var(--text-muted);
         }
-
         .term-submit {
+          width: 22px;
+          height: 22px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
           background: transparent;
           border: none;
-          color: var(--text-muted);
+          border-radius: var(--radius-md);
+          color: var(--text-secondary);
           cursor: pointer;
-          padding: 2px;
-          transition: color var(--transition-fast);
+          transition: background var(--transition-fast), color var(--transition-fast);
         }
-
         .term-submit:hover:not(:disabled) {
-          color: var(--brand);
+          background: var(--bg-hover);
+          color: var(--text-primary);
         }
-
         .term-submit:disabled {
-          opacity: 0.3;
+          color: var(--text-disabled);
+          cursor: not-allowed;
+        }
+        .spinner {
+          display: inline-block;
+          width: 10px;
+          height: 10px;
+          border: 1.5px solid var(--border-strong);
+          border-top-color: var(--text-secondary);
+          border-radius: 50%;
+          animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+          to {
+            transform: rotate(360deg);
+          }
         }
 
-        /* ── Dock Footer ── */
+        /* Dock */
         .preview-dock {
-          height: 42px;
+          height: 40px;
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 0 16px;
+          gap: 12px;
+          padding: 0 12px;
           border-top: 1px solid var(--border-subtle);
-          margin-top: 8px;
+          background: var(--bg-surface);
           flex-shrink: 0;
         }
-
         .dock-left {
           display: flex;
           gap: 6px;
         }
-
         .dock-btn {
-          font-size: 11px;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          font-family: var(--font-sans);
+          font-size: 12px;
           font-weight: 500;
-          padding: 5px 10px;
+          padding: 4px 10px;
           border-radius: var(--radius-md);
-          cursor: pointer;
-          transition: all var(--transition-fast);
-        }
-
-        .dock-btn.ghost {
           background: var(--bg-elevated);
-          border: 1px solid var(--border-subtle);
+          border: 1px solid var(--border-base);
           color: var(--text-secondary);
+          cursor: pointer;
+          transition: background var(--transition-fast), color var(--transition-fast);
         }
-
-        .dock-btn.ghost:hover:not(:disabled) {
+        .dock-btn:hover:not(:disabled) {
           background: var(--bg-hover);
           color: var(--text-primary);
         }
-
-        .dock-btn.ghost:disabled {
-          opacity: 0.4;
+        .dock-btn:disabled {
+          color: var(--text-disabled);
           cursor: not-allowed;
         }
-
-        .dock-btn.deploy {
-          background: var(--brand);
-          border: none;
-          color: #fffaf7;
-          font-weight: 600;
-        }
-
-        .dock-btn.deploy:hover:not(:disabled) {
-          background: var(--brand-dim);
-        }
-
-        .dock-btn.deploy:disabled {
-          opacity: 0.5;
-          cursor: wait;
-        }
-
         .dock-right {
           display: flex;
           align-items: center;
+          gap: 6px;
+          min-width: 0;
         }
-
-        .dock-status-text {
-          font-size: 11px;
-          color: var(--text-muted);
-          font-weight: 500;
-        }
-
-        .dock-status-text.online {
-          color: var(--green);
-        }
-
-        /* Preview sub-tab switcher */
-        .preview-subtabs {
-          display: flex;
-          gap: 2px;
-          padding: 8px 20px 0;
-          border-bottom: 1px solid var(--border-subtle);
+        .dock-dot {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: var(--text-disabled);
           flex-shrink: 0;
         }
-        .pst {
-          padding: 7px 14px;
-          background: none;
-          border: none;
-          border-bottom: 2px solid transparent;
-          font-size: 11.5px;
-          color: var(--text-muted);
-          cursor: pointer;
-          transition: all var(--transition-fast);
-          font-family: var(--font-sans);
-          margin-bottom: -1px;
+        .dock-dot--on {
+          background: var(--success);
         }
-        .pst:hover { color: var(--text-primary); }
-        .pst--active {
-          color: var(--brand);
-          border-bottom-color: var(--brand);
+        .dock-dot--err {
+          background: var(--error);
+        }
+        .dock-status-text {
+          font-size: 12px;
+          color: var(--text-muted);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        a.dock-status-text {
+          color: var(--text-secondary);
+          text-decoration: none;
+        }
+        a.dock-status-text:hover {
+          color: var(--text-primary);
+          text-decoration: underline;
         }
 
         /* Sub-tab panels */
         .subtab-panel {
           flex: 1;
           min-height: 0;
-          padding: 16px 20px;
+          padding: 12px;
           overflow-y: auto;
           display: flex;
           flex-direction: column;
           gap: 12px;
         }
-
         .sta-grid {
           display: grid;
           grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 10px;
+          gap: 8px;
         }
-
         .sta-card {
-          background: var(--bg-deep);
+          background: var(--bg-surface);
           border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-sm);
-          padding: 12px 14px;
+          border-radius: var(--radius-md);
+          padding: 10px 12px;
+          min-width: 0;
         }
-
         .sta-lbl {
-          font-size: 8px;
-          letter-spacing: 0.07em;
-          font-weight: 700;
-          text-transform: uppercase;
+          font-size: 12px;
           color: var(--text-muted);
           margin-bottom: 4px;
         }
-
         .sta-val {
-          font-size: 22px;
-          font-weight: 700;
+          font-size: 18px;
+          font-weight: 500;
           color: var(--text-primary);
-          font-family: var(--font-brand);
-          line-height: 1.1;
-          margin-bottom: 3px;
+          line-height: 1.2;
+          margin-bottom: 2px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
         }
-
+        .sta-val--mono {
+          font-family: var(--font-mono);
+          font-size: 13px;
+          line-height: 1.7;
+        }
         .sta-sub {
-          font-size: 10px;
+          font-size: 12px;
           color: var(--text-muted);
         }
-
         .subtab-hint {
-          font-size: 11.5px;
+          font-size: 12px;
           color: var(--text-muted);
-          padding: 10px 14px;
-          background: rgba(255,255,255,0.02);
+          padding: 8px 12px;
+          background: var(--bg-surface);
           border: 1px solid var(--border-subtle);
           border-radius: var(--radius-md);
-          font-style: italic;
         }
 
-        /* ── Autonomous Browser Verification Toast ── */
-        .preview-audit-toast {
-          position: absolute;
-          top: 12px;
-          left: 50%;
-          transform: translateX(-50%);
-          z-index: 100;
-          min-width: 320px;
-          max-width: 520px;
-          padding: 10px 14px;
-          border-radius: 10px;
-          backdrop-filter: blur(12px);
-          box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5), 0 0 15px rgba(99, 102, 241, 0.2);
-          animation: auditSlideDown 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-        }
-        @keyframes auditSlideDown {
-          from { opacity: 0; transform: translate(-50%, -10px); }
-          to { opacity: 1; transform: translate(-50%, 0); }
-        }
-        .preview-audit-toast--clean {
-          background: rgba(16, 40, 28, 0.95);
-          border: 1px solid rgba(52, 211, 153, 0.5);
-          color: #a7f3d0;
-        }
-        .preview-audit-toast--issues_detected {
-          background: rgba(45, 20, 20, 0.95);
-          border: 1px solid rgba(248, 113, 113, 0.5);
-          color: #fecaca;
-        }
-        .preview-audit-toast--error,
-        .preview-audit-toast--offline {
-          background: rgba(35, 25, 15, 0.95);
-          border: 1px solid rgba(251, 191, 36, 0.5);
-          color: #fde68a;
-        }
-        .audit-spin {
-          display: inline-block;
-          animation: spinAudit 1s linear infinite;
-        }
-        @keyframes spinAudit {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
+        @media (prefers-reduced-motion: reduce) {
+          .audit-toast,
+          .spinner {
+            animation: none;
+          }
+          .preview-frame-wrapper,
+          .toolbar-icon,
+          .di,
+          .pst,
+          .dock-btn,
+          .term-submit,
+          .start-server-btn {
+            transition: none;
+          }
         }
       `}</style>
-
     </div>
   );
 }

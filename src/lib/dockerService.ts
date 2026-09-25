@@ -52,7 +52,10 @@ export async function getDockerStatus(forceRefresh = false): Promise<DockerInfo>
       { timeout: 6000 }
     );
 
-    let parsed: any = {};
+    let parsed: {
+      MemTotal?: number; ServerVersion?: string; ContainersRunning?: number;
+      Containers?: number; Images?: number; NCPU?: number; OSType?: string;
+    } = {};
     try {
       parsed = JSON.parse(infoOut);
     } catch {
@@ -203,7 +206,10 @@ export async function execInDocker(
       stderr: result.stderr,
       exitCode: 0,
     };
-  } catch (err: any) {
+  } catch (caught: unknown) {
+    const err = caught as {
+      killed?: boolean; stdout?: string; stderr?: string; message?: string; code?: unknown;
+    };
     // On timeout execFile only kills the docker CLI; the container keeps running
     if (err?.killed) {
       execFile('docker', ['kill', containerName], () => {});

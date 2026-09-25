@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { languageFor } from '@/lib/file-utils';
 
@@ -41,7 +41,10 @@ export default function ChangesReviewModal({
   onReverted,
   onRollbackComplete,
 }: ChangesReviewModalProps) {
-  const activeFiles = filesChanged || changedFiles || [];
+  const activeFiles = useMemo(
+    () => filesChanged || changedFiles || [],
+    [filesChanged, changedFiles]
+  );
   const [diffFiles, setDiffFiles] = useState<FileDiffItem[]>([]);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [checkpoints, setCheckpoints] = useState<CheckpointItem[]>([]);
@@ -131,9 +134,16 @@ export default function ChangesReviewModal({
   }, [projectId, activeFiles]);
 
   useEffect(() => {
-    if (isOpen) {
-      loadChangesAndCheckpoints();
-    }
+    if (!isOpen) return;
+    // Defer the load to a microtask so state updates don't run synchronously
+    // inside the effect body; ignore the run if the effect was torn down.
+    let cancelled = false;
+    Promise.resolve().then(() => {
+      if (!cancelled) void loadChangesAndCheckpoints();
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen, loadChangesAndCheckpoints]);
 
   const handleRevert = async () => {
@@ -174,14 +184,14 @@ export default function ChangesReviewModal({
   return (
     <>
       <div className="crm-backdrop" onClick={onClose} />
-      <div className="crm-modal animate-slide-up">
+      <div className="crm-modal" role="dialog" aria-modal="true" aria-labelledby="crm-title">
         {/* Header */}
         <div className="crm-header">
           <div className="crm-title-area">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={18} height={18} className="crm-icon">
               <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
             </svg>
-            <h3 className="crm-title">Visual Diff Review & Checkpoints</h3>
+            <h3 id="crm-title" className="crm-title">Review changes</h3>
             <span className="crm-count-badge">
               {diffFiles.length} file{diffFiles.length === 1 ? '' : 's'} changed
             </span>
@@ -205,8 +215,10 @@ export default function ChangesReviewModal({
               </button>
             </div>
 
-            <button type="button" className="crm-close-btn" onClick={onClose} title="Close (Esc)">
-              ✕
+            <button type="button" className="crm-close-btn" onClick={onClose} title="Close" aria-label="Close">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" width={14} height={14} aria-hidden="true">
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
             </button>
           </div>
         </div>
@@ -216,11 +228,11 @@ export default function ChangesReviewModal({
           {/* Left: Files & Checkpoints sidebar */}
           <div className="crm-sidebar">
             <div className="crm-sidebar-section">
-              <div className="crm-sidebar-label">CHANGED FILES</div>
+              <div className="crm-sidebar-label">Changed files</div>
               {loading ? (
-                <div className="crm-empty-state">Scanning workspace diffs…</div>
+                <div className="crm-empty-state">Loading changes…</div>
               ) : diffFiles.length === 0 ? (
-                <div className="crm-empty-state">No uncommitted changes detected. Workspace matches clean HEAD.</div>
+                <div className="crm-empty-state">No uncommitted changes.</div>
               ) : (
                 <div className="crm-file-list">
                   {diffFiles.map((file) => (
@@ -248,7 +260,7 @@ export default function ChangesReviewModal({
             {/* Checkpoint rollbacks */}
             {checkpoints.length > 0 && (
               <div className="crm-sidebar-section crm-sidebar-section--checkpoints">
-                <div className="crm-sidebar-label">ROLLBACK CHECKPOINTS</div>
+                <div className="crm-sidebar-label">Checkpoints</div>
                 <div className="crm-checkpoint-list">
                   {checkpoints.slice(0, 8).map((cp) => (
                     <button
@@ -277,12 +289,16 @@ export default function ChangesReviewModal({
               <>
                 <div className="crm-editor-bar">
                   <span className="crm-active-file-title">
-                    📄 {currentDiff.path}
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" width={12} height={12} aria-hidden="true">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                      <polyline points="14 2 14 8 20 8" />
+                    </svg>
+                    {currentDiff.path}
                   </span>
                   <div className="crm-diff-legend">
                     <span className="crm-legend-item crm-legend-item--red">Original (HEAD)</span>
                     <span className="crm-legend-sep">→</span>
-                    <span className="crm-legend-item crm-legend-item--green">Modified (Agent)</span>
+                    <span className="crm-legend-item crm-legend-item--green">Modified</span>
                   </div>
                 </div>
                 <div className="crm-diff-container">
@@ -290,7 +306,7 @@ export default function ChangesReviewModal({
                     original={currentDiff.original}
                     modified={currentDiff.modified}
                     language={languageFor(currentDiff.path)}
-                    theme="vs-dark"
+                    theme={typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme') === 'light' ? 'vs' : 'vs-dark'}
                     options={{
                       readOnly: true,
                       renderSideBySide: viewMode === 'side-by-side',
@@ -306,7 +322,7 @@ export default function ChangesReviewModal({
               </>
             ) : (
               <div className="crm-no-diff">
-                <p>Select a modified file to inspect unified line-by-line diffs.</p>
+                <p>Select a changed file to view its diff.</p>
               </div>
             )}
           </div>
@@ -326,7 +342,7 @@ export default function ChangesReviewModal({
                   <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
                   <path d="M3 3v5h5" />
                 </svg>
-                {reverting ? 'Reverting workspace…' : `⏪ Undo Turn (Rollback to ${selectedSha.slice(0, 7)})`}
+                {reverting ? 'Reverting workspace…' : `Roll back to ${selectedSha.slice(0, 7)}`}
               </button>
             )}
           </div>
@@ -343,8 +359,7 @@ export default function ChangesReviewModal({
         .crm-backdrop {
           position: fixed;
           inset: 0;
-          background: rgba(0, 0, 0, 0.75);
-          backdrop-filter: blur(6px);
+          background: var(--scrim);
           z-index: 1000;
         }
 
@@ -354,24 +369,25 @@ export default function ChangesReviewModal({
           left: 4%;
           right: 4%;
           bottom: 4%;
-          background: var(--bg-surface, #131418);
-          border: 1px solid var(--border-base, rgba(255, 255, 255, 0.15));
-          border-radius: var(--radius-lg, 12px);
+          background: var(--bg-surface);
+          border: 1px solid var(--border-base);
+          border-radius: var(--radius-lg);
           display: flex;
           flex-direction: column;
           z-index: 1001;
-          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+          box-shadow: var(--shadow-lg);
           overflow: hidden;
+          font-family: var(--font-sans);
         }
 
         .crm-header {
-          height: 48px;
+          height: 44px;
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 0 18px;
-          background: var(--bg-deep, #0c0d10);
-          border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+          padding: 0 16px;
+          background: var(--bg-surface);
+          border-bottom: 1px solid var(--border-subtle);
           flex-shrink: 0;
         }
 
@@ -382,39 +398,32 @@ export default function ChangesReviewModal({
         }
 
         .crm-icon {
-          color: var(--brand, #f97316);
+          color: var(--text-muted);
         }
 
         .crm-title {
-          font-size: 13.5px;
+          font-size: 13px;
           font-weight: 600;
-          color: var(--text-primary, #ffffff);
+          color: var(--text-primary);
           margin: 0;
-          font-family: var(--font-brand, sans-serif);
         }
 
         .crm-count-badge {
-          font-size: 10.5px;
-          font-weight: 600;
-          padding: 2px 8px;
-          background: rgba(249, 115, 22, 0.12);
-          border: 1px solid rgba(249, 115, 22, 0.3);
-          border-radius: 12px;
-          color: var(--brand, #f97316);
-          font-family: var(--font-mono, monospace);
+          font-size: 12px;
+          color: var(--text-muted);
         }
 
         .crm-header-actions {
           display: flex;
           align-items: center;
-          gap: 12px;
+          gap: 8px;
         }
 
         .crm-view-toggles {
           display: flex;
-          background: var(--bg-surface, #1e1e24);
-          border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
-          border-radius: 6px;
+          background: var(--bg-elevated);
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-md);
           padding: 2px;
           gap: 2px;
         }
@@ -422,23 +431,23 @@ export default function ChangesReviewModal({
         .crm-toggle-btn {
           background: transparent;
           border: none;
-          color: var(--text-muted, #94a3b8);
-          font-size: 11px;
+          color: var(--text-muted);
+          font-family: var(--font-sans);
+          font-size: 12px;
           font-weight: 500;
-          padding: 3px 9px;
-          border-radius: 4px;
+          padding: 3px 10px;
+          border-radius: var(--radius-sm);
           cursor: pointer;
-          transition: all 0.15s ease;
+          transition: background var(--transition-fast), color var(--transition-fast);
         }
 
         .crm-toggle-btn:hover {
-          color: var(--text-primary, #ffffff);
+          color: var(--text-primary);
         }
 
         .crm-toggle-btn--active {
-          background: var(--bg-hover, rgba(255, 255, 255, 0.12));
-          color: var(--text-primary, #ffffff);
-          font-weight: 600;
+          background: var(--bg-overlay);
+          color: var(--text-primary);
         }
 
         .crm-close-btn {
@@ -449,16 +458,15 @@ export default function ChangesReviewModal({
           justify-content: center;
           background: transparent;
           border: none;
-          color: var(--text-muted, #94a3b8);
-          font-size: 13px;
-          border-radius: 6px;
+          color: var(--text-muted);
+          border-radius: var(--radius-md);
           cursor: pointer;
-          transition: all 0.15s ease;
+          transition: background var(--transition-fast), color var(--transition-fast);
         }
 
         .crm-close-btn:hover {
-          background: var(--bg-hover, rgba(255, 255, 255, 0.1));
-          color: var(--text-primary, #ffffff);
+          background: var(--bg-hover);
+          color: var(--text-primary);
         }
 
         .crm-body {
@@ -470,8 +478,8 @@ export default function ChangesReviewModal({
 
         .crm-sidebar {
           width: 280px;
-          border-right: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
-          background: var(--bg-surface, #131418);
+          border-right: 1px solid var(--border-subtle);
+          background: var(--bg-surface);
           display: flex;
           flex-direction: column;
           overflow-y: auto;
@@ -482,64 +490,67 @@ export default function ChangesReviewModal({
           padding: 12px;
           display: flex;
           flex-direction: column;
-          gap: 6px;
+          gap: 4px;
         }
 
         .crm-sidebar-section--checkpoints {
-          border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+          border-top: 1px solid var(--border-subtle);
         }
 
         .crm-sidebar-label {
-          font-size: 9px;
-          font-weight: 700;
-          letter-spacing: 0.06em;
-          color: var(--text-muted, #64748b);
+          font-size: 12px;
+          font-weight: 500;
+          color: var(--text-muted);
           margin-bottom: 4px;
+          padding: 0 4px;
         }
 
         .crm-empty-state {
-          font-size: 11px;
-          color: var(--text-muted, #64748b);
+          font-size: 12px;
+          color: var(--text-muted);
           padding: 8px 4px;
           line-height: 1.4;
         }
 
-        .crm-file-list {
+        .crm-file-list,
+        .crm-checkpoint-list {
           display: flex;
           flex-direction: column;
-          gap: 3px;
+          gap: 2px;
         }
 
-        .crm-file-item {
+        .crm-file-item,
+        .crm-checkpoint-item {
           display: flex;
           align-items: center;
-          gap: 7px;
-          padding: 6px 8px;
-          border-radius: 6px;
+          gap: 8px;
+          padding: 5px 8px;
+          border-radius: var(--radius-md);
           background: transparent;
-          border: 1px solid transparent;
+          border: none;
           cursor: pointer;
           text-align: left;
           width: 100%;
-          transition: all 0.15s ease;
+          transition: background var(--transition-fast);
         }
 
-        .crm-file-item:hover {
-          background: var(--bg-hover, rgba(255, 255, 255, 0.05));
+        .crm-file-item:hover,
+        .crm-checkpoint-item:hover {
+          background: var(--bg-hover);
         }
 
-        .crm-file-item--active {
-          background: rgba(249, 115, 22, 0.1) !important;
-          border-color: rgba(249, 115, 22, 0.3) !important;
+        .crm-file-item--active,
+        .crm-file-item--active:hover,
+        .crm-checkpoint-item--active,
+        .crm-checkpoint-item--active:hover {
+          background: var(--bg-overlay);
         }
 
         .crm-file-badge {
-          font-size: 9px;
-          font-weight: 800;
-          font-family: var(--font-mono, monospace);
-          width: 15px;
-          height: 15px;
-          border-radius: 3px;
+          font-size: 11px;
+          font-weight: 600;
+          font-family: var(--font-mono);
+          width: 12px;
           display: flex;
           align-items: center;
           justify-content: center;
@@ -547,32 +558,30 @@ export default function ChangesReviewModal({
         }
 
         .crm-file-badge--modified {
-          background: rgba(234, 179, 8, 0.18);
-          color: #facc15;
+          color: var(--warning);
         }
 
         .crm-file-badge--added {
-          background: rgba(34, 197, 94, 0.18);
-          color: #4ade80;
+          color: var(--success);
         }
 
         .crm-file-badge--deleted {
-          background: rgba(239, 68, 68, 0.18);
-          color: #f87171;
+          color: var(--error);
         }
 
         .crm-file-name {
-          font-size: 11.5px;
-          font-weight: 500;
-          color: var(--text-primary, #ffffff);
+          font-family: var(--font-mono);
+          font-size: 12px;
+          color: var(--text-primary);
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
         }
 
         .crm-file-dir {
-          font-size: 9.5px;
-          color: var(--text-muted, #64748b);
+          font-family: var(--font-mono);
+          font-size: 11px;
+          color: var(--text-muted);
           margin-left: auto;
           white-space: nowrap;
           overflow: hidden;
@@ -580,49 +589,16 @@ export default function ChangesReviewModal({
           max-width: 90px;
         }
 
-        /* Checkpoints list */
-        .crm-checkpoint-list {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-        }
-
-        .crm-checkpoint-item {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          padding: 6px 8px;
-          border-radius: 6px;
-          background: transparent;
-          border: 1px solid transparent;
-          cursor: pointer;
-          text-align: left;
-          width: 100%;
-          transition: all 0.15s ease;
-        }
-
-        .crm-checkpoint-item:hover {
-          background: var(--bg-hover, rgba(255, 255, 255, 0.05));
-        }
-
-        .crm-checkpoint-item--active {
-          background: rgba(59, 130, 246, 0.12) !important;
-          border-color: rgba(59, 130, 246, 0.3) !important;
-        }
-
         .crm-cp-sha {
-          font-family: var(--font-mono, monospace);
-          font-size: 9.5px;
-          color: #60a5fa;
-          background: rgba(59, 130, 246, 0.1);
-          padding: 1px 4px;
-          border-radius: 3px;
+          font-family: var(--font-mono);
+          font-size: 11px;
+          color: var(--text-muted);
           flex-shrink: 0;
         }
 
         .crm-cp-msg {
-          font-size: 10.5px;
-          color: var(--text-secondary, #cbd5e1);
+          font-size: 12px;
+          color: var(--text-secondary);
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
@@ -630,18 +606,17 @@ export default function ChangesReviewModal({
         }
 
         .crm-cp-time {
-          font-size: 9px;
-          color: var(--text-muted, #64748b);
+          font-size: 11px;
+          color: var(--text-muted);
           flex-shrink: 0;
         }
 
-        /* Right editor area */
         .crm-editor-area {
           flex: 1;
           display: flex;
           flex-direction: column;
           min-width: 0;
-          background: var(--bg-deep, #0a0b0e);
+          background: var(--bg-base);
         }
 
         .crm-editor-bar {
@@ -650,29 +625,34 @@ export default function ChangesReviewModal({
           align-items: center;
           justify-content: space-between;
           padding: 0 14px;
-          background: var(--bg-surface, #131418);
-          border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+          background: var(--bg-surface);
+          border-bottom: 1px solid var(--border-subtle);
           flex-shrink: 0;
         }
 
         .crm-active-file-title {
-          font-size: 11.5px;
-          font-family: var(--font-mono, monospace);
-          color: var(--text-primary, #ffffff);
-          font-weight: 500;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 12px;
+          font-family: var(--font-mono);
+          color: var(--text-primary);
+        }
+
+        .crm-active-file-title :global(svg) {
+          color: var(--text-muted);
         }
 
         .crm-diff-legend {
           display: flex;
           align-items: center;
           gap: 6px;
-          font-size: 10px;
-          font-family: var(--font-mono, monospace);
+          font-size: 12px;
         }
 
-        .crm-legend-item--red { color: #f87171; }
-        .crm-legend-item--green { color: #4ade80; }
-        .crm-legend-sep { color: var(--text-muted, #64748b); }
+        .crm-legend-item--red { color: var(--error); }
+        .crm-legend-item--green { color: var(--success); }
+        .crm-legend-sep { color: var(--text-muted); }
 
         .crm-diff-container {
           flex: 1;
@@ -685,19 +665,18 @@ export default function ChangesReviewModal({
           display: flex;
           align-items: center;
           justify-content: center;
-          color: var(--text-muted, #64748b);
-          font-size: 12px;
+          color: var(--text-muted);
+          font-size: 13px;
         }
 
-        /* Footer */
         .crm-footer {
-          height: 48px;
+          height: 52px;
           display: flex;
           align-items: center;
           justify-content: space-between;
           padding: 0 16px;
-          background: var(--bg-deep, #0c0d10);
-          border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+          background: var(--bg-surface);
+          border-top: 1px solid var(--border-subtle);
           flex-shrink: 0;
         }
 
@@ -705,45 +684,67 @@ export default function ChangesReviewModal({
         .crm-footer-right {
           display: flex;
           align-items: center;
-          gap: 10px;
+          gap: 8px;
         }
 
         .crm-btn {
           display: inline-flex;
           align-items: center;
           gap: 6px;
-          font-size: 11.5px;
-          font-weight: 600;
-          padding: 6px 14px;
-          border-radius: 6px;
+          font-family: var(--font-sans);
+          font-size: 12.5px;
+          font-weight: 500;
+          padding: 6px 12px;
+          border-radius: var(--radius-md);
           cursor: pointer;
-          transition: all 0.15s ease;
+          transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
         }
 
         .crm-btn--revert {
-          background: rgba(239, 68, 68, 0.12);
-          color: #f87171;
-          border: 1px solid rgba(239, 68, 68, 0.3);
+          background: transparent;
+          color: var(--text-secondary);
+          border: 1px solid var(--border-base);
         }
 
         .crm-btn--revert:hover:not(:disabled) {
-          background: #ef4444;
-          color: #ffffff;
+          background: var(--bg-hover);
+          border-color: var(--border-strong);
+          color: var(--error);
         }
 
         .crm-btn--revert:disabled {
-          opacity: 0.5;
+          color: var(--text-disabled);
           cursor: not-allowed;
         }
 
         .crm-btn--ghost {
-          background: var(--bg-surface, #1e1e24);
-          color: var(--text-primary, #ffffff);
-          border: 1px solid var(--border-base, rgba(255, 255, 255, 0.15));
+          background: var(--bg-elevated);
+          color: var(--text-primary);
+          border: 1px solid var(--border-base);
         }
 
         .crm-btn--ghost:hover {
-          background: var(--bg-hover, rgba(255, 255, 255, 0.1));
+          background: var(--bg-hover);
+          border-color: var(--border-strong);
+        }
+
+        .crm-toggle-btn:focus-visible,
+        .crm-close-btn:focus-visible,
+        .crm-file-item:focus-visible,
+        .crm-checkpoint-item:focus-visible,
+        .crm-btn:focus-visible {
+          outline: 2px solid var(--accent);
+          outline-offset: 1px;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .crm-toggle-btn,
+          .crm-close-btn,
+          .crm-file-item,
+          .crm-checkpoint-item,
+          .crm-btn {
+            transition: none;
+          }
         }
       `}</style>
     </>

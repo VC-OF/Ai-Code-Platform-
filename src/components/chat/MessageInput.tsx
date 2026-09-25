@@ -203,15 +203,13 @@ export default function MessageInput({
 
       {/* Active file context badge */}
       {activeFile && (
-        <div className="context-badge">
-          <span className="context-icon">📄</span>
+        <div className="context-badge" title="Active file is included as context">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={11} height={11} aria-hidden="true">
+            <path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z" /><path d="M14 3v6h6" />
+          </svg>
           <span className="context-path">{activeFile}</span>
-          <span className="context-label">active</span>
         </div>
       )}
-
-      {/* Pane title */}
-      <div className="input-title">WHAT DO YOU WANT TO BUILD?</div>
 
       {/* Attachments preview row */}
       {attachments.length > 0 && (
@@ -219,9 +217,12 @@ export default function MessageInput({
           {attachments.map((att) => (
             <div key={att.id} className="attachment-preview-card">
               {att.type.startsWith('image/') ? (
+                // eslint-disable-next-line @next/next/no-img-element -- local data URL preview
                 <img src={att.content} alt={att.name} className="attachment-preview-thumb" />
               ) : (
-                <span className="attachment-preview-icon">📄</span>
+                <svg className="attachment-preview-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={12} height={12} aria-hidden="true">
+                  <path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z" /><path d="M14 3v6h6" />
+                </svg>
               )}
               <span className="attachment-preview-name" title={att.name}>{att.name}</span>
               <button
@@ -229,6 +230,7 @@ export default function MessageInput({
                 onClick={() => removeAttachment(att.id)}
                 className="btn-remove-attachment"
                 title="Remove attachment"
+                aria-label={`Remove ${att.name}`}
               >
                 &times;
               </button>
@@ -237,148 +239,135 @@ export default function MessageInput({
         </div>
       )}
 
-      {/* Input row */}
-      <div className="input-row">
-        <textarea
-          ref={ref}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={
-            isStreaming
-              ? 'Reply, steer, or answer the agent…'
-              : 'Describe what to build...'
-          }
-          disabled={disabled}
-          rows={1}
-          className="input-textarea"
-        />
+      <textarea
+        ref={ref}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={handleKeyDown}
+        placeholder={
+          isStreaming
+            ? 'Reply, steer, or answer the agent…'
+            : 'Describe what to build…'
+        }
+        disabled={disabled}
+        rows={1}
+        className="input-textarea"
+        aria-label="Message"
+      />
 
-        <div className="input-action-buttons">
-          {!isStreaming && (
+      {/* Toolbar */}
+      <div className="input-toolbar">
+        {!isStreaming && (
+          <>
             <button
               type="button"
               onClick={triggerFileInput}
               className="btn-attach"
               title="Attach files or images"
+              aria-label="Attach files or images"
               disabled={disabled}
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={14} height={14}>
                 <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
               </svg>
             </button>
-          )}
-
-          {!isStreaming && (
-            <>
-              <button
-                type="button"
-                onClick={captureScreenshot}
-                className="btn-attach"
-                title="Capture a screenshot"
-                aria-label="Capture a screenshot"
-                disabled={disabled}
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13}>
-                  <rect x="3" y="4" width="18" height="16" rx="2" />
-                  <circle cx="12" cy="12" r="3" />
-                  <path d="M8 4l1-2h6l1 2" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                onClick={toggleVoice}
-                className={`btn-attach ${isListening ? 'btn-attach--active' : ''}`}
-                title={isListening ? 'Stop voice input' : 'Start voice input'}
-                aria-label={isListening ? 'Stop voice input' : 'Start voice input'}
-                disabled={disabled}
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13}>
-                  <rect x="9" y="2" width="6" height="12" rx="3" />
-                  <path d="M5 11a7 7 0 0014 0M12 18v4M8 22h8" />
-                </svg>
-              </button>
-            </>
-          )}
-
-          {isStreaming && (
-            <button onClick={onCancel} className="btn-stop" title="Stop execution (Esc)">
-              <span className="stop-icon">■</span>
+            <button
+              type="button"
+              onClick={captureScreenshot}
+              className="btn-attach"
+              title="Capture a screenshot"
+              aria-label="Capture a screenshot"
+              disabled={disabled}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={14} height={14}>
+                <rect x="3" y="4" width="18" height="16" rx="2" />
+                <circle cx="12" cy="12" r="3" />
+                <path d="M8 4l1-2h6l1 2" />
+              </svg>
             </button>
-          )}
-          <button
-            onClick={handleSendClick}
-            disabled={disabled || !canSend}
-            className="btn-send"
-            title={isStreaming ? 'Send to the running agent' : 'Send instruction'}
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} width={13} height={13}>
-              <path d="M12 19V5M5 12l7-7 7 7" />
+            <button
+              type="button"
+              onClick={toggleVoice}
+              className={`btn-attach ${isListening ? 'btn-attach--active' : ''}`}
+              title={isListening ? 'Stop voice input' : 'Start voice input'}
+              aria-label={isListening ? 'Stop voice input' : 'Start voice input'}
+              aria-pressed={isListening}
+              disabled={disabled}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={14} height={14}>
+                <rect x="9" y="2" width="6" height="12" rx="3" />
+                <path d="M5 11a7 7 0 0014 0M12 18v4M8 22h8" />
+              </svg>
+            </button>
+          </>
+        )}
+
+        <span className="input-shortcut-hint">Ctrl + Enter to send</span>
+
+        {isStreaming && (
+          <button type="button" onClick={onCancel} className="btn-stop" title="Stop (Esc)" aria-label="Stop">
+            <svg viewBox="0 0 24 24" width={10} height={10} aria-hidden="true">
+              <rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor" />
             </svg>
           </button>
-        </div>
+        )}
+        <button
+          type="button"
+          onClick={handleSendClick}
+          disabled={disabled || !canSend}
+          className="btn-send"
+          title={isStreaming ? 'Send to the running agent' : 'Send'}
+          aria-label="Send"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} width={14} height={14}>
+            <path d="M12 19V5M5 12l7-7 7 7" />
+          </svg>
+        </button>
       </div>
-
-      <span className="input-shortcut-hint">(Cmd + Enter to send)</span>
 
       <style jsx>{`
         .input-area {
           background: var(--bg-surface);
-          border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-md);
-          padding: 8px 12px;
+          border: 1px solid var(--border-base);
+          border-radius: 14px;
+          padding: 10px 10px 8px 14px;
           display: flex;
           flex-direction: column;
           gap: 6px;
           flex-shrink: 0;
+          transition: border-color var(--transition-fast);
         }
 
-        .input-title {
-          font-size: 9px;
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-          color: var(--text-muted);
-          font-weight: 600;
-          margin-bottom: 2px;
+        .input-area:focus-within {
+          border-color: var(--border-strong);
         }
 
         .context-badge {
           display: flex;
           align-items: center;
-          gap: var(--space-1);
-          padding: 4px var(--space-2);
-          background: var(--brand-glow);
-          border: 1px solid var(--accent-border);
-          border-radius: var(--radius-sm);
+          gap: 6px;
+          padding: 2px 8px;
+          background: var(--bg-elevated);
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-full);
+          color: var(--text-muted);
           width: fit-content;
           max-width: 100%;
         }
 
-        .context-icon { font-size: 11px; }
-
         .context-path {
           font-family: var(--font-mono);
-          font-size: 10px;
-          color: var(--text-primary);
+          font-size: 11px;
+          color: var(--text-secondary);
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
         }
 
-        .context-label {
-          font-size: 9px;
-          text-transform: uppercase;
-          color: var(--brand);
-          font-weight: 700;
-          letter-spacing: 0.05em;
-        }
-
-        /* Attachments list style */
         .attachments-preview-list {
           display: flex;
           flex-wrap: wrap;
-          gap: 8px;
-          margin-bottom: 4px;
+          gap: 6px;
         }
 
         .attachment-preview-card {
@@ -387,10 +376,9 @@ export default function MessageInput({
           gap: 6px;
           background: var(--bg-elevated);
           border: 1px solid var(--border-subtle);
-          border-radius: 6px;
-          padding: 4px 8px;
-          position: relative;
-          max-width: 180px;
+          border-radius: var(--radius-md);
+          padding: 4px 6px 4px 8px;
+          max-width: 200px;
         }
 
         .attachment-preview-thumb {
@@ -402,150 +390,144 @@ export default function MessageInput({
         }
 
         .attachment-preview-icon {
-          font-size: 12px;
+          color: var(--text-muted);
+          flex-shrink: 0;
         }
 
         .attachment-preview-name {
-          font-size: 10.5px;
+          font-size: 11.5px;
           color: var(--text-secondary);
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
-          max-width: 110px;
+          max-width: 130px;
         }
 
         .btn-remove-attachment {
           background: transparent;
           border: none;
           color: var(--text-muted);
-          font-size: 13px;
-          font-weight: 700;
+          font-size: 14px;
           cursor: pointer;
           padding: 0 2px;
           line-height: 1;
           display: flex;
           align-items: center;
+          border-radius: var(--radius-sm);
           transition: color var(--transition-fast);
         }
 
         .btn-remove-attachment:hover {
-          color: var(--error);
-        }
-
-        .input-row {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          background: var(--bg-base);
-          border: 1px solid var(--border-base);
-          border-radius: var(--radius-md);
-          padding: 8px 12px;
-          transition: all var(--transition-fast);
-        }
-
-        .input-row:focus-within {
-          border-color: var(--accent-border);
+          color: var(--text-primary);
         }
 
         .input-textarea {
-          flex: 1;
+          width: 100%;
           background: none;
           border: none;
           outline: none;
           resize: none;
           color: var(--text-primary);
           font-family: var(--font-sans);
-          font-size: 12.5px;
+          font-size: 13.5px;
           line-height: 1.5;
-          min-height: 20px;
-          max-height: 120px;
+          min-height: 22px;
+          max-height: 160px;
+          padding: 2px 0;
         }
 
         .input-textarea::placeholder {
           color: var(--text-muted);
         }
 
-        .input-action-buttons {
+        .input-toolbar {
           display: flex;
           align-items: center;
-          gap: 6px;
-          flex-shrink: 0;
+          gap: 2px;
         }
 
         .btn-attach {
-          width: 24px;
-          height: 24px;
+          width: 28px;
+          height: 28px;
           display: flex;
           align-items: center;
           justify-content: center;
-          background: var(--bg-elevated);
-          color: var(--text-secondary);
-          border: 1px solid var(--border-subtle);
-          border-radius: 50%;
+          background: transparent;
+          color: var(--text-muted);
+          border: none;
+          border-radius: var(--radius-md);
           cursor: pointer;
-          transition: all var(--transition-fast);
+          transition: background var(--transition-fast), color var(--transition-fast);
         }
 
         .btn-attach:hover:not(:disabled) {
           background: var(--bg-hover);
-          border-color: var(--border-base);
           color: var(--text-primary);
         }
 
         .btn-attach:disabled {
-          opacity: 0.25;
+          opacity: 0.4;
           cursor: not-allowed;
         }
 
         .btn-attach--active {
-          color: var(--brand);
-          border-color: var(--accent-border);
-          background: var(--brand-glow);
-          animation: pulse-soft 1.4s ease-in-out infinite;
+          color: var(--text-primary);
+          background: var(--bg-overlay);
         }
 
         .btn-send,
         .btn-stop {
-          width: 24px;
-          height: 24px;
+          width: 28px;
+          height: 28px;
           display: flex;
           align-items: center;
           justify-content: center;
           border: none;
-          border-radius: 50%;
+          border-radius: var(--radius-md);
           cursor: pointer;
-          transition: all var(--transition-fast);
+          flex-shrink: 0;
+          transition: background var(--transition-fast), opacity var(--transition-fast);
         }
 
         .btn-send {
-          background: var(--brand);
-          color: #fffaf7;
+          background: var(--accent);
+          color: #fff;
+          margin-left: 4px;
         }
 
         .btn-send:hover:not(:disabled) {
-          background: var(--brand-dim);
+          background: var(--accent-dim);
         }
 
         .btn-send:disabled {
-          opacity: 0.25;
+          opacity: 0.35;
           cursor: not-allowed;
         }
 
         .btn-stop {
-          background: var(--error);
-          color: white;
+          background: var(--bg-elevated);
+          color: var(--text-primary);
+          border: 1px solid var(--border-base);
         }
 
-        .stop-icon {
-          font-size: 8px;
-          font-weight: 700;
+        .btn-stop:hover {
+          background: var(--bg-overlay);
+        }
+
+        .btn-attach:focus-visible,
+        .btn-send:focus-visible,
+        .btn-stop:focus-visible,
+        .btn-remove-attachment:focus-visible {
+          outline: 2px solid var(--accent);
+          outline-offset: 1px;
         }
 
         .input-shortcut-hint {
-          font-size: 10px;
-          color: var(--text-muted);
-          margin-top: -6px;
-          margin-bottom: 4px;
+          margin-left: auto;
+          margin-right: 6px;
+          font-size: 11px;
+          color: var(--text-disabled);
+          white-space: nowrap;
         }
       `}</style>
     </div>

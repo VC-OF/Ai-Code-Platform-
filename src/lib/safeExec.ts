@@ -62,6 +62,32 @@ const ALLOWED_GIT_SUBCMDS = new Set([
   'init', 'rev-parse', 'stash',
 ]);
 
+
+// ─── git: block file-writing / config-override arguments ─────────────────────
+// `--output` (diff/log/show) writes arbitrary files; `-o` does the same for
+// diff/format-patch/archive; `git config` writes and `-c` overrides can set
+// hooks/aliases/core.pager that execute code.
+function validateGitArgs(args: string[]): void {
+  const sub = args[0];
+  if (sub === '-c' || sub?.startsWith('-c') || sub?.startsWith('--config-env')) {
+    throw new CommandError('git -c / --config-env overrides are not allowed.');
+  }
+  if (sub === 'config') {
+    const readForms = new Set(['--get', '--get-all', '--list', '-l', '--get-regexp']);
+    if (!args.slice(1).some((a) => readForms.has(a))) {
+      throw new CommandError('git config write forms are not allowed.');
+    }
+  }
+  const oFlagSubs = new Set(['diff', 'format-patch', 'archive']);
+  for (const arg of args.slice(1)) {
+    if (arg === '--output' || arg.startsWith('--output=') || arg.startsWith('--output-directory')) {
+      throw new CommandError(`git argument '${arg}' (writes files) is not allowed.`);
+    }
+    if (oFlagSubs.has(sub) && (arg === '-o' || /^-o./.test(arg))) {
+      throw new CommandError(`git argument '${arg}' (writes files) is not allowed.`);
+    }
+  }
+}
 // ─── node: strict allowlist, not a blocklist ─────────────────────────────────
 // A blocklist can't keep pace with Node's CLI (--eval=, -r=, --loader=,
 // --inspect, --experimental-* all execute or expose arbitrary code). Instead,
@@ -280,6 +306,7 @@ export async function safeExec(
     //    real code-execution surface via arguments
     if (bin === 'node') validateNodeArgs(args);
     if (bin === 'find') validateFindArgs(args);
+    if (bin === 'git') validateGitArgs(args);
 
     // 6. Check args for dangerous patterns. Long flags accept "--flag=value"
     //    as one argument — normalize to the flag portion too, so exact-match

@@ -20,15 +20,15 @@ interface StatusIndicatorProps {
 export function StatusIndicator({ status, elapsedSeconds }: StatusIndicatorProps) {
   const configs: Record<AgentStatus, { label: string; tone: string; pulse: boolean; icon: 'spin' | 'dot' | 'warn' | 'error' }> = {
     planning:   { label: 'Planning', tone: 'active', pulse: true, icon: 'spin' },
-    reading:    { label: 'Reading Files', tone: 'info', pulse: true, icon: 'spin' },
-    writing:    { label: 'Writing Changes', tone: 'active', pulse: true, icon: 'spin' },
-    linting:    { label: 'Linting Code', tone: 'info', pulse: true, icon: 'spin' },
-    testing:    { label: 'Testing Suite', tone: 'info', pulse: true, icon: 'spin' },
-    running:    { label: 'Running Task', tone: 'active', pulse: true, icon: 'spin' },
-    waiting:    { label: 'Waiting for Your Answer', tone: 'warning', pulse: true, icon: 'warn' },
+    reading:    { label: 'Reading files', tone: 'info', pulse: true, icon: 'spin' },
+    writing:    { label: 'Writing changes', tone: 'active', pulse: true, icon: 'spin' },
+    linting:    { label: 'Linting code', tone: 'info', pulse: true, icon: 'spin' },
+    testing:    { label: 'Running tests', tone: 'info', pulse: true, icon: 'spin' },
+    running:    { label: 'Running task', tone: 'active', pulse: true, icon: 'spin' },
+    waiting:    { label: 'Waiting for your answer', tone: 'warning', pulse: true, icon: 'warn' },
     done:       { label: 'Idle', tone: 'neutral', pulse: false, icon: 'dot' },
     error:      { label: 'Failed', tone: 'error', pulse: false, icon: 'error' },
-    compacting: { label: 'Compacting Context', tone: 'info', pulse: true, icon: 'spin' },
+    compacting: { label: 'Compacting context', tone: 'info', pulse: true, icon: 'spin' },
   };
 
   const config = configs[status] || configs.done;
@@ -54,39 +54,22 @@ export function StatusIndicator({ status, elapsedSeconds }: StatusIndicatorProps
           display: inline-flex;
           align-items: center;
           gap: 6px;
-          padding: 3px 9px;
+          padding: 2px 8px;
           border: 1px solid var(--border-base);
           border-radius: var(--radius-full);
           background: var(--bg-elevated);
           color: var(--text-secondary);
           font-size: var(--text-xs);
-          font-weight: 600;
-          line-height: 1.2;
-          transition: all var(--transition-fast);
+          font-weight: 500;
+          line-height: 1.3;
+          transition: color var(--transition-fast), border-color var(--transition-fast);
         }
-        .status-indicator--active {
-          color: var(--brand);
-          background: var(--brand-glow);
-          border-color: var(--accent-border);
-          box-shadow: 0 0 8px rgba(255, 107, 0, 0.15);
-        }
-        .status-indicator--info {
-          color: var(--cyan, #06b6d4);
-          background: rgba(6, 182, 212, 0.08);
-          border-color: rgba(6, 182, 212, 0.3);
-        }
-        .status-indicator--warning {
-          color: var(--warning, #f59e0b);
-          background: rgba(245, 158, 11, 0.08);
-          border-color: rgba(245, 158, 11, 0.3);
-        }
-        .status-indicator--error {
-          color: var(--error, #ef4444);
-          background: rgba(239, 68, 68, 0.08);
-          border-color: var(--error, #ef4444);
-        }
+        .status-indicator--active { color: var(--accent); }
+        .status-indicator--info { color: var(--text-secondary); }
+        .status-indicator--warning { color: var(--warning); background: var(--warning-dim); }
+        .status-indicator--error { color: var(--error); background: var(--error-dim); }
         .status-spinner {
-          animation: spin 0.85s linear infinite;
+          animation: status-spin 0.9s linear infinite;
           flex-shrink: 0;
         }
         .status-indicator__dot {
@@ -97,18 +80,21 @@ export function StatusIndicator({ status, elapsedSeconds }: StatusIndicatorProps
           flex-shrink: 0;
         }
         .status-indicator--pulse .status-indicator__dot {
-          animation: status-pulse 1.4s ease-in-out infinite;
+          animation: status-pulse 1.6s ease-in-out infinite;
         }
         .status-indicator__time {
-          font-family: var(--font-mono, monospace);
-          font-size: 10px;
-          opacity: 0.85;
+          font-family: var(--font-mono);
+          font-size: 10.5px;
+          color: var(--text-muted);
         }
-        @keyframes spin {
+        @keyframes status-spin {
           100% { transform: rotate(360deg); }
         }
         @keyframes status-pulse {
-          50% { opacity: 0.35; }
+          50% { opacity: 0.4; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .status-spinner, .status-indicator--pulse .status-indicator__dot { animation-duration: 2.4s; }
         }
       `}</style>
     </div>

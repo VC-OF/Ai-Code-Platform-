@@ -12,7 +12,7 @@ const MonacoEditor = dynamic(() => import('@monaco-editor/react'), {
   loading: () => (
     <div className="monaco-loading-placeholder">
       <div className="monaco-spinner" />
-      <span>Loading VS Code Editor…</span>
+      <span>Loading editor…</span>
     </div>
   ),
 });
@@ -24,7 +24,7 @@ const MonacoDiffEditor = dynamic(
     loading: () => (
       <div className="monaco-loading-placeholder">
         <div className="monaco-spinner" />
-        <span>Loading Diff View…</span>
+        <span>Loading diff…</span>
       </div>
     ),
   }
@@ -32,17 +32,17 @@ const MonacoDiffEditor = dynamic(
 
 // ─── File Icon Helper ──────────────────────────────────────────────────────────
 function fileIcon(n: string) {
-  if (n.endsWith('.tsx') || n.endsWith('.jsx')) return '⚛';
+  if (n.endsWith('.tsx') || n.endsWith('.jsx')) return '◈';
   if (n.endsWith('.ts') || n.endsWith('.js')) return '◈';
-  if (n.endsWith('.css') || n.endsWith('.scss')) return '🎨';
+  if (n.endsWith('.css') || n.endsWith('.scss')) return '#';
   if (n.endsWith('.json')) return '{}';
-  if (n.endsWith('.md')) return '📝';
-  if (n.endsWith('.yml') || n.endsWith('.yaml')) return '⚙';
+  if (n.endsWith('.md')) return '¶';
+  if (n.endsWith('.yml') || n.endsWith('.yaml')) return '≡';
   if (n.endsWith('.sh') || n.endsWith('.bash')) return '$';
-  if (n.includes('.env')) return '🔑';
-  if (n.endsWith('.html')) return '🌐';
-  if (n.endsWith('.py')) return '🐍';
-  if (n.endsWith('.sql')) return '🗄';
+  if (n.includes('.env')) return '•';
+  if (n.endsWith('.html')) return '◇';
+  if (n.endsWith('.py')) return '◆';
+  if (n.endsWith('.sql')) return '▦';
   return '◌';
 }
 
@@ -111,7 +111,7 @@ function SideNode({
             >
               <path d="M10 6l6 6-6 6V6z" />
             </svg>
-            <span className="s-folder-ic">{isExp ? '📂' : '📁'}</span>
+            <span className="s-folder-ic">{isExp ? '▾' : '▸'}</span>
             <span className="s-nm">{node.name}</span>
           </button>
           {hov && (
@@ -274,12 +274,20 @@ function DbPanel({ projectId }: { projectId: string }) {
     if (!sql.trim()) return;
     setSqlRunning(true);
     setSqlRes(null);
-    fetch('/api/database', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sql, projectId }),
-    })
-      .then((r) => r.json())
+    const post = (allowWrite: boolean) =>
+      fetch('/api/database', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sql, projectId, allowWrite }),
+      });
+    post(false)
+      .then(async (r) => {
+        // Writes are rejected unless explicitly allowed; confirm before retrying.
+        if (r.status === 403 && window.confirm('This statement changes data. Run it anyway?')) {
+          r = await post(true);
+        }
+        return r.json();
+      })
       .then((d) => setSqlRes(d))
       .catch((e) => setSqlRes({ error: String(e) }))
       .finally(() => setSqlRunning(false));
@@ -300,12 +308,12 @@ function DbPanel({ projectId }: { projectId: string }) {
     }
   };
 
-  const COLORS = ['#6366f1', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899'];
+  const COLORS = ['var(--accent)', 'var(--success)', 'var(--info)', 'var(--warning)', 'var(--cyan)', 'var(--text-muted)'];
 
   return (
     <div className="ed-db">
       <div className="ed-db-hdr">
-        <span className="ed-db-title">🗄 Database Explorer</span>
+        <span className="ed-db-title">Database</span>
         <span className="ed-db-pill">{overview ? '● Connected' : '○ …'}</span>
         <button
           className="ed-db-ref"
@@ -338,7 +346,7 @@ function DbPanel({ projectId }: { projectId: string }) {
           <>
             {overview.project && (
               <div className="db-sec">
-                <div className="db-sec-ttl">📁 Project</div>
+                <div className="db-sec-ttl">Project</div>
                 {[
                   ['Name', overview.project.name],
                   ['ID', overview.project.id],
@@ -428,7 +436,7 @@ function DbPanel({ projectId }: { projectId: string }) {
               }}
             />
             <button className="db-qrun" disabled={sqlRunning} onClick={runSql}>
-              {sqlRunning ? '⏳ Running…' : '▶ Run Query (Ctrl+Enter)'}
+              {sqlRunning ? 'Running…' : 'Run query (Ctrl+Enter)'}
             </button>
             {sqlRes && (
               <div className="db-qresult">
@@ -634,7 +642,7 @@ function AgentPanel({ projectId }: { projectId: string }) {
       </div>
 
       <a href={`/?projectId=${projectId}`} className="ed-ag-btn">
-        💬 Switch to Agent Workspace
+        Back to chat
       </a>
     </div>
   );
@@ -1035,7 +1043,6 @@ function EditorInner() {
       {/* ── Top VS Code Menu Bar ── */}
       <div className="vs-topbar">
         <div className="vs-topbar-left">
-          <span className="vs-logo">⚡</span>
           <span className="vs-app-title">Open Code</span>
           <span className="vs-proj-tag">{projectId}</span>
           <div className="vs-menu-items">
@@ -1061,7 +1068,7 @@ function EditorInner() {
           {syncNotice && <span className="vs-sync-notice">{syncNotice}</span>}
           {saveMsg && <span className="vs-save-notice">{saveMsg}</span>}
           <a href={`/?projectId=${projectId}`} className="vs-back-btn" id="btn-back-to-agent">
-            ← Back to Agent
+            Back to chat
           </a>
         </div>
       </div>
@@ -1141,7 +1148,7 @@ function EditorInner() {
               }}
               title="AI Agent Status"
             >
-              <span className={`vs-act-agent-dot ${agentRunning ? 'act' : ''}`}>⚡</span>
+              <span className={`vs-act-agent-dot ${agentRunning ? 'act' : ''}`}><svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.8}><circle cx="12" cy="12" r="4" /></svg></span>
             </button>
           </div>
         </div>
@@ -1408,14 +1415,13 @@ function EditorInner() {
               )
             ) : (
               <div className="vs-welcome-view">
-                <div className="vs-welcome-logo">⚡</div>
-                <h2 className="vs-welcome-title">Open Code Editor</h2>
+                                <h2 className="vs-welcome-title">No file open</h2>
                 <p className="vs-welcome-desc">
                   Select a file from the explorer or start by creating a new file.
                 </p>
                 <div className="vs-welcome-actions">
                   <button className="vs-welcome-btn" onClick={() => newFile()}>
-                    + New File (Ctrl+N)
+                    New file (Ctrl+N)
                   </button>
                   <button className="vs-welcome-btn secondary" onClick={() => setQuickOpen(true)}>
                     Search Files (Ctrl+P)
@@ -1444,7 +1450,7 @@ function EditorInner() {
                 {agentRunning ? '● Agent Working…' : '○ Agent Idle'}
               </span>
               <span className="vs-status-item">
-                {dirtyFiles.has(activeFile ?? '') ? '● Unsaved Changes' : '✓ Saved'}
+                {dirtyFiles.has(activeFile ?? '') ? '● Unsaved changes' : '✓ Saved'}
               </span>
             </div>
 
@@ -1471,7 +1477,7 @@ function EditorInner() {
         <div className="vs-quickopen-backdrop" onClick={() => setQuickOpen(false)}>
           <div className="vs-quickopen-modal" onClick={(e) => e.stopPropagation()}>
             <div className="vs-quickopen-input-row">
-              <span className="vs-quickopen-icon">🔍</span>
+              <span className="vs-quickopen-icon">⌕</span>
               <input
                 className="vs-quickopen-input"
                 placeholder="Search file by name… (Esc to close)"
@@ -1520,8 +1526,8 @@ function EditorInner() {
           flex-direction: column;
           height: 100vh;
           width: 100vw;
-          background: #1e1e1e;
-          color: #cccccc;
+          background: var(--bg-base);
+          color: var(--text-secondary);
           font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
           overflow: hidden;
           user-select: none;
@@ -1530,8 +1536,8 @@ function EditorInner() {
         /* Top Title Bar */
         .vs-topbar {
           height: 38px;
-          background: #323233;
-          border-bottom: 1px solid #252526;
+          background: var(--bg-surface);
+          border-bottom: 1px solid var(--border-subtle);
           display: flex;
           align-items: center;
           justify-content: space-between;
@@ -1544,17 +1550,17 @@ function EditorInner() {
           gap: 8px;
         }
         .vs-logo {
-          color: #e5a00d;
+          color: var(--accent);
           font-size: 15px;
         }
         .vs-app-title {
           font-weight: 600;
           font-size: 12px;
-          color: #e7e7e7;
+          color: var(--text-primary);
         }
         .vs-proj-tag {
           font-size: 11px;
-          color: #858585;
+          color: var(--text-muted);
           margin-right: 6px;
         }
         .vs-menu-items {
@@ -1564,14 +1570,14 @@ function EditorInner() {
         .vs-menu-btn {
           background: none;
           border: none;
-          color: #cccccc;
+          color: var(--text-secondary);
           font-size: 11.5px;
           padding: 2px 7px;
           border-radius: 3px;
           cursor: pointer;
         }
         .vs-menu-btn:hover {
-          background: rgba(255, 255, 255, 0.1);
+          background: var(--bg-hover);
         }
 
         .vs-topbar-center {
@@ -1582,22 +1588,22 @@ function EditorInner() {
         }
         .vs-search-palette-btn {
           width: 100%;
-          background: #3c3c3c;
-          border: 1px solid #454545;
+          background: var(--bg-elevated);
+          border: 1px solid var(--border-subtle);
           border-radius: 6px;
           padding: 4px 10px;
           display: flex;
           align-items: center;
           gap: 8px;
-          color: #9d9d9d;
+          color: var(--text-muted);
           font-size: 11.5px;
           cursor: pointer;
           transition: all 0.15s;
         }
         .vs-search-palette-btn:hover {
-          background: #474747;
-          color: #e7e7e7;
-          border-color: #007acc;
+          background: var(--bg-hover);
+          color: var(--text-primary);
+          border-color: var(--accent);
         }
 
         .vs-topbar-right {
@@ -1607,18 +1613,19 @@ function EditorInner() {
         }
         .vs-sync-notice {
           font-size: 11px;
-          color: #4ec9b0;
+          color: var(--success);
           font-weight: 500;
         }
         .vs-save-notice {
           font-size: 11px;
-          color: #388a34;
+          color: var(--success);
           font-weight: 500;
         }
         .vs-back-btn {
           font-size: 11.5px;
-          color: #ffffff;
-          background: #0e639c;
+          color: var(--text-secondary);
+          background: var(--bg-elevated);
+          border: 1px solid var(--border-base);
           padding: 3px 10px;
           border-radius: 4px;
           text-decoration: none;
@@ -1626,7 +1633,7 @@ function EditorInner() {
           transition: background 0.15s;
         }
         .vs-back-btn:hover {
-          background: #1177bb;
+          background: var(--accent-dim);
         }
 
         /* Workspace Body */
@@ -1640,8 +1647,8 @@ function EditorInner() {
         /* Activity Bar */
         .vs-activitybar {
           width: 48px;
-          background: #333333;
-          border-right: 1px solid #252526;
+          background: var(--bg-surface);
+          border-right: 1px solid var(--border-subtle);
           display: flex;
           flex-direction: column;
           justify-content: space-between;
@@ -1660,7 +1667,7 @@ function EditorInner() {
           border-radius: 6px;
           background: transparent;
           border: none;
-          color: #858585;
+          color: var(--text-muted);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -1669,26 +1676,25 @@ function EditorInner() {
           position: relative;
         }
         .vs-act-btn:hover {
-          color: #ffffff;
+          color: var(--text-primary);
         }
         .vs-act-btn.act {
-          color: #ffffff;
-          border-left: 2px solid #ffffff;
+          color: var(--text-primary);
+          border-left: 2px solid var(--text-primary);
         }
         .vs-act-agent-dot {
           font-size: 16px;
-          color: #858585;
+          color: var(--text-muted);
         }
         .vs-act-agent-dot.act {
-          color: #e5a00d;
-          animation: pulse-soft 1.8s infinite;
+          color: var(--accent);
         }
 
         /* Primary Sidebar */
         .vs-sidebar {
           width: 260px;
-          background: #252526;
-          border-right: 1px solid #1e1e1e;
+          background: var(--bg-surface);
+          border-right: 1px solid var(--border-subtle);
           display: flex;
           flex-direction: column;
           flex-shrink: 0;
@@ -1700,14 +1706,13 @@ function EditorInner() {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          border-bottom: 1px solid #1e1e1e;
+          border-bottom: 1px solid var(--border-subtle);
           flex-shrink: 0;
         }
         .vs-side-title {
           font-size: 11px;
           font-weight: 700;
-          letter-spacing: 0.06em;
-          color: #bbbbbb;
+          color: var(--text-secondary);
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
@@ -1719,37 +1724,37 @@ function EditorInner() {
         .vs-icon-btn {
           background: transparent;
           border: none;
-          color: #858585;
+          color: var(--text-muted);
           cursor: pointer;
           font-size: 13px;
           padding: 2px 4px;
           border-radius: 3px;
         }
         .vs-icon-btn:hover {
-          color: #ffffff;
-          background: rgba(255, 255, 255, 0.1);
+          color: var(--text-primary);
+          background: var(--bg-hover);
         }
 
         .vs-side-searchbox {
           padding: 8px 10px;
-          border-bottom: 1px solid #1e1e1e;
+          border-bottom: 1px solid var(--border-subtle);
           flex-shrink: 0;
         }
         .vs-search-input {
           width: 100%;
-          background: #3c3c3c;
-          border: 1px solid #3c3c3c;
+          background: var(--bg-elevated);
+          border: 1px solid var(--border-subtle);
           border-radius: 4px;
           padding: 5px 8px;
-          color: #cccccc;
+          color: var(--text-secondary);
           font-size: 12px;
           outline: none;
         }
         .vs-search-input:focus {
-          border-color: #007acc;
+          border-color: var(--accent);
         }
         .vs-search-input::placeholder {
-          color: #707070;
+          color: var(--text-muted);
         }
 
         .vs-tree-scroll {
@@ -1760,7 +1765,7 @@ function EditorInner() {
         .vs-empty-hint {
           padding: 16px;
           font-size: 12px;
-          color: #707070;
+          color: var(--text-muted);
           text-align: center;
         }
 
@@ -1774,10 +1779,10 @@ function EditorInner() {
           position: relative;
         }
         .s-row:hover {
-          background: #2a2d2e;
+          background: var(--bg-hover);
         }
         .s-row.act {
-          background: #37373d;
+          background: var(--bg-overlay);
         }
         .s-dir {
           cursor: pointer;
@@ -1790,7 +1795,7 @@ function EditorInner() {
           background: none;
           border: none;
           cursor: pointer;
-          color: #cccccc;
+          color: var(--text-secondary);
           font-size: 12.5px;
           white-space: nowrap;
           overflow: hidden;
@@ -1799,12 +1804,12 @@ function EditorInner() {
           text-align: left;
         }
         .s-row.act .s-row-btn {
-          color: #ffffff;
+          color: var(--text-primary);
           font-weight: 500;
         }
         .s-chev {
           transition: transform 0.15s;
-          color: #858585;
+          color: var(--text-muted);
           flex-shrink: 0;
         }
         .s-chev.open {
@@ -1826,7 +1831,7 @@ function EditorInner() {
           width: 6px;
           height: 6px;
           border-radius: 50%;
-          background: #e5a00d;
+          background: var(--accent);
           flex-shrink: 0;
           margin-left: 4px;
         }
@@ -1834,24 +1839,24 @@ function EditorInner() {
           width: 4px;
           height: 4px;
           border-radius: 50%;
-          background: #007acc;
+          background: var(--accent);
           flex-shrink: 0;
           margin-left: 4px;
         }
         .s-action-btn {
           background: none;
           border: none;
-          color: #858585;
+          color: var(--text-muted);
           font-size: 12px;
           cursor: pointer;
           padding: 0 5px;
           border-radius: 3px;
         }
         .s-action-btn:hover {
-          color: #ffffff;
+          color: var(--text-primary);
         }
         .s-del-btn:hover {
-          color: #f14c4c !important;
+          color: var(--error) !important;
         }
 
         /* Search panel */
@@ -1864,7 +1869,7 @@ function EditorInner() {
         .vs-results-count {
           padding: 6px 12px;
           font-size: 11px;
-          color: #858585;
+          color: var(--text-muted);
         }
 
         /* Editor Region */
@@ -1872,7 +1877,7 @@ function EditorInner() {
           flex: 1;
           display: flex;
           flex-direction: column;
-          background: #1e1e1e;
+          background: var(--bg-base);
           min-width: 0;
           min-height: 0;
           overflow: hidden;
@@ -1881,11 +1886,11 @@ function EditorInner() {
         /* Tabs Bar */
         .vs-tabbar {
           height: 35px;
-          background: #252526;
+          background: var(--bg-surface);
           display: flex;
           align-items: center;
           justify-content: space-between;
-          border-bottom: 1px solid #1e1e1e;
+          border-bottom: 1px solid var(--border-subtle);
           flex-shrink: 0;
         }
         .vs-tabs-scroll {
@@ -1901,22 +1906,22 @@ function EditorInner() {
           padding: 0 12px;
           height: 100%;
           font-size: 12px;
-          color: #969696;
-          background: #2d2d2d;
-          border-right: 1px solid #252526;
+          color: var(--text-muted);
+          background: var(--bg-surface);
+          border-right: 1px solid var(--border-subtle);
           cursor: pointer;
           flex-shrink: 0;
           max-width: 200px;
           transition: background 0.1s;
         }
         .vs-tab:hover {
-          background: #2a2a2a;
-          color: #cccccc;
+          background: var(--bg-hover);
+          color: var(--text-secondary);
         }
         .vs-tab.cur {
-          background: #1e1e1e;
-          color: #ffffff;
-          border-top: 2px solid #007acc;
+          background: var(--bg-base);
+          color: var(--text-primary);
+          border-top: 2px solid var(--accent);
         }
         .vs-tab-icon {
           font-size: 12px;
@@ -1928,13 +1933,13 @@ function EditorInner() {
         }
         .vs-tab-dirty {
           font-size: 12px;
-          color: #e5a00d;
+          color: var(--accent);
           padding: 0 3px;
         }
         .vs-tab-close {
           background: none;
           border: none;
-          color: #858585;
+          color: var(--text-muted);
           font-size: 11px;
           padding: 2px 4px;
           border-radius: 3px;
@@ -1943,8 +1948,8 @@ function EditorInner() {
         }
         .vs-tab-close:hover {
           opacity: 1;
-          color: #ffffff;
-          background: rgba(255, 255, 255, 0.15);
+          color: var(--text-primary);
+          background: var(--bg-hover);
         }
 
         .vs-tabbar-actions {
@@ -1954,9 +1959,9 @@ function EditorInner() {
           padding-right: 12px;
         }
         .vs-action-pill {
-          background: #3c3c3c;
-          border: 1px solid #4a4a4a;
-          color: #cccccc;
+          background: var(--bg-elevated);
+          border: 1px solid var(--border-subtle);
+          color: var(--text-secondary);
           border-radius: 4px;
           padding: 3px 8px;
           font-size: 11px;
@@ -1964,38 +1969,38 @@ function EditorInner() {
           transition: all 0.15s;
         }
         .vs-action-pill:hover:not(:disabled) {
-          background: #505050;
-          color: #ffffff;
+          background: var(--bg-hover);
+          color: var(--text-primary);
         }
         .vs-action-pill.active {
-          background: #007acc;
-          border-color: #007acc;
-          color: #ffffff;
+          background: var(--accent);
+          border-color: var(--accent);
+          color: var(--bg-surface);
         }
         .vs-action-pill:disabled {
           opacity: 0.4;
           cursor: not-allowed;
         }
         .vs-save-btn {
-          background: #0e639c;
-          border-color: #0e639c;
-          color: #ffffff;
+          background: var(--accent);
+          border-color: var(--accent);
+          color: var(--bg-surface);
           font-weight: 500;
         }
         .vs-save-btn:hover:not(:disabled) {
-          background: #1177bb;
+          background: var(--accent-dim);
         }
 
         /* Breadcrumbs */
         .vs-breadcrumbs {
           height: 24px;
-          background: #1e1e1e;
-          border-bottom: 1px solid #252526;
+          background: var(--bg-base);
+          border-bottom: 1px solid var(--border-subtle);
           display: flex;
           align-items: center;
           padding: 0 16px;
           font-size: 11px;
-          color: #858585;
+          color: var(--text-muted);
           gap: 4px;
           flex-shrink: 0;
         }
@@ -2008,25 +2013,24 @@ function EditorInner() {
           gap: 4px;
         }
         .vs-bc-folder {
-          color: #858585;
+          color: var(--text-muted);
         }
         .vs-bc-file {
-          color: #cccccc;
+          color: var(--text-secondary);
           font-weight: 500;
         }
         .vs-bc-sep {
-          color: #555555;
+          color: var(--text-disabled);
         }
         .vs-bc-lang {
           margin-left: auto;
           font-size: 10px;
-          color: #707070;
-          text-transform: uppercase;
+          color: var(--text-muted);
         }
         .vs-bc-diff-tag {
           font-size: 10.5px;
-          color: #e5a00d;
-          background: rgba(229, 160, 13, 0.15);
+          color: var(--accent);
+          background: var(--accent-soft);
           padding: 1px 6px;
           border-radius: 3px;
         }
@@ -2044,14 +2048,14 @@ function EditorInner() {
           align-items: center;
           justify-content: center;
           gap: 12px;
-          color: #858585;
+          color: var(--text-muted);
           font-size: 12px;
         }
         .monaco-spinner {
           width: 24px;
           height: 24px;
-          border: 2px solid #3c3c3c;
-          border-top-color: #007acc;
+          border: 2px solid var(--border-subtle);
+          border-top-color: var(--accent);
           border-radius: 50%;
           animation: spin-slow 1s linear infinite;
         }
@@ -2069,16 +2073,16 @@ function EditorInner() {
         }
         .vs-welcome-logo {
           font-size: 42px;
-          color: #e5a00d;
+          color: var(--accent);
         }
         .vs-welcome-title {
           font-size: 18px;
           font-weight: 600;
-          color: #cccccc;
+          color: var(--text-secondary);
         }
         .vs-welcome-desc {
           font-size: 12.5px;
-          color: #858585;
+          color: var(--text-muted);
           max-width: 400px;
         }
         .vs-welcome-actions {
@@ -2087,9 +2091,9 @@ function EditorInner() {
           margin-top: 8px;
         }
         .vs-welcome-btn {
-          background: #007acc;
+          background: var(--accent);
           border: none;
-          color: #ffffff;
+          color: var(--bg-surface);
           padding: 7px 16px;
           border-radius: 4px;
           font-size: 12px;
@@ -2097,14 +2101,14 @@ function EditorInner() {
           font-weight: 500;
         }
         .vs-welcome-btn:hover {
-          background: #0062a3;
+          background: var(--accent-dim);
         }
         .vs-welcome-btn.secondary {
-          background: #3c3c3c;
-          border: 1px solid #4a4a4a;
+          background: var(--bg-elevated);
+          border: 1px solid var(--border-subtle);
         }
         .vs-welcome-btn.secondary:hover {
-          background: #474747;
+          background: var(--bg-hover);
         }
         .vs-welcome-shortcuts {
           display: flex;
@@ -2117,27 +2121,28 @@ function EditorInner() {
           align-items: center;
           gap: 10px;
           font-size: 11.5px;
-          color: #707070;
+          color: var(--text-muted);
         }
         .vs-sc-item kbd {
-          background: #2d2d2d;
-          border: 1px solid #3c3c3c;
+          background: var(--bg-surface);
+          border: 1px solid var(--border-subtle);
           border-radius: 3px;
           padding: 2px 6px;
           font-family: monospace;
-          color: #cccccc;
+          color: var(--text-secondary);
         }
 
         /* Status Bar */
         .vs-statusbar {
           height: 22px;
-          background: #007acc;
+          background: var(--bg-surface);
+          border-top: 1px solid var(--border-subtle);
           display: flex;
           align-items: center;
           justify-content: space-between;
           padding: 0 12px;
           font-size: 11px;
-          color: #ffffff;
+          color: var(--text-muted);
           flex-shrink: 0;
         }
         .vs-status-left,
@@ -2156,7 +2161,7 @@ function EditorInner() {
           font-weight: 600;
         }
         .vs-status-item.agent-pill.running {
-          color: #fffae0;
+          color: var(--text-primary);
           font-weight: 600;
         }
 
@@ -2164,7 +2169,7 @@ function EditorInner() {
         .vs-quickopen-backdrop {
           position: fixed;
           inset: 0;
-          background: rgba(0, 0, 0, 0.5);
+          background: var(--bg-hover);
           display: flex;
           justify-content: center;
           padding-top: 50px;
@@ -2173,10 +2178,10 @@ function EditorInner() {
         .vs-quickopen-modal {
           width: 550px;
           max-height: 400px;
-          background: #252526;
-          border: 1px solid #454545;
+          background: var(--bg-surface);
+          border: 1px solid var(--border-subtle);
           border-radius: 6px;
-          box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
+          box-shadow: var(--shadow-lg);
           display: flex;
           flex-direction: column;
           overflow: hidden;
@@ -2185,19 +2190,19 @@ function EditorInner() {
           display: flex;
           align-items: center;
           padding: 8px 12px;
-          background: #2d2d2d;
-          border-bottom: 1px solid #3c3c3c;
+          background: var(--bg-surface);
+          border-bottom: 1px solid var(--border-subtle);
           gap: 8px;
         }
         .vs-quickopen-icon {
           font-size: 13px;
-          color: #858585;
+          color: var(--text-muted);
         }
         .vs-quickopen-input {
           flex: 1;
           background: transparent;
           border: none;
-          color: #ffffff;
+          color: var(--text-primary);
           font-size: 13px;
           outline: none;
         }
@@ -2209,7 +2214,7 @@ function EditorInner() {
         .vs-quickopen-empty {
           padding: 18px;
           text-align: center;
-          color: #707070;
+          color: var(--text-muted);
           font-size: 12px;
         }
         .vs-quickopen-item {
@@ -2219,12 +2224,12 @@ function EditorInner() {
           padding: 7px 12px;
           cursor: pointer;
           font-size: 12px;
-          color: #cccccc;
+          color: var(--text-secondary);
         }
         .vs-quickopen-item:hover,
         .vs-quickopen-item.highlight {
-          background: #094771;
-          color: #ffffff;
+          background: var(--bg-overlay);
+          color: var(--text-primary);
         }
         .vs-qo-icon {
           font-size: 13px;
@@ -2235,11 +2240,11 @@ function EditorInner() {
         .vs-qo-path {
           margin-left: auto;
           font-size: 11px;
-          color: #858585;
+          color: var(--text-muted);
         }
         .vs-quickopen-item:hover .vs-qo-path,
         .vs-quickopen-item.highlight .vs-qo-path {
-          color: #b0d4f1;
+          color: var(--text-primary);
         }
 
         /* Agent Panel */
@@ -2258,7 +2263,7 @@ function EditorInner() {
         .ed-ag-title {
           font-size: 12px;
           font-weight: 700;
-          color: #cccccc;
+          color: var(--text-secondary);
         }
         .ed-ag-badge {
           font-size: 11px;
@@ -2267,18 +2272,18 @@ function EditorInner() {
           font-weight: 500;
         }
         .badge-running {
-          background: rgba(229, 160, 13, 0.2);
-          color: #e5a00d;
-          border: 1px solid rgba(229, 160, 13, 0.3);
+          background: var(--accent-soft);
+          color: var(--accent);
+          border: 1px solid var(--accent-border);
         }
         .badge-idle {
-          background: rgba(255, 255, 255, 0.05);
-          color: #858585;
-          border: 1px solid rgba(255, 255, 255, 0.1);
+          background: var(--bg-hover);
+          color: var(--text-muted);
+          border: 1px solid var(--border-subtle);
         }
         .ed-ag-card {
-          background: #1e1e1e;
-          border: 1px solid #333333;
+          background: var(--bg-base);
+          border: 1px solid var(--border-subtle);
           border-radius: 6px;
           padding: 10px 12px;
           display: flex;
@@ -2291,20 +2296,20 @@ function EditorInner() {
           font-size: 11.5px;
         }
         .ed-ag-prop {
-          color: #858585;
+          color: var(--text-muted);
         }
         .ed-ag-val {
-          color: #e7e7e7;
+          color: var(--text-primary);
         }
         .ed-ag-desc {
           font-size: 11.5px;
-          color: #858585;
+          color: var(--text-muted);
           line-height: 1.5;
         }
         .ed-ag-btn {
           margin-top: auto;
-          background: #007acc;
-          color: #ffffff;
+          background: var(--accent);
+          color: var(--bg-surface);
           padding: 8px 12px;
           border-radius: 4px;
           text-align: center;
@@ -2313,7 +2318,7 @@ function EditorInner() {
           text-decoration: none;
         }
         .ed-ag-btn:hover {
-          background: #0062a3;
+          background: var(--accent-dim);
         }
 
         /* Database & Source Control Styles */
@@ -2328,41 +2333,41 @@ function EditorInner() {
           align-items: center;
           gap: 6px;
           padding: 10px 12px;
-          border-bottom: 1px solid #1e1e1e;
+          border-bottom: 1px solid var(--border-subtle);
         }
         .ed-db-title {
           font-size: 12px;
           font-weight: 600;
-          color: #e7e7e7;
+          color: var(--text-primary);
           flex: 1;
         }
         .ed-db-pill {
           font-size: 10px;
-          color: #4ec9b0;
-          background: rgba(78, 201, 176, 0.1);
-          border: 1px solid rgba(78, 201, 176, 0.25);
+          color: var(--success);
+          background: var(--success-dim);
+          border: 1px solid var(--border-subtle);
           border-radius: 10px;
           padding: 2px 7px;
         }
         .ed-db-ref {
           background: none;
           border: none;
-          color: #858585;
+          color: var(--text-muted);
           font-size: 13px;
           cursor: pointer;
         }
         .ed-db-ref:hover {
-          color: #ffffff;
+          color: var(--text-primary);
         }
         .ed-db-stabs {
           display: flex;
-          border-bottom: 1px solid #1e1e1e;
+          border-bottom: 1px solid var(--border-subtle);
           overflow-x: auto;
         }
         .ed-db-stab {
           padding: 7px 10px;
           font-size: 11px;
-          color: #858585;
+          color: var(--text-muted);
           background: none;
           border: none;
           border-bottom: 2px solid transparent;
@@ -2370,11 +2375,11 @@ function EditorInner() {
           white-space: nowrap;
         }
         .ed-db-stab:hover {
-          color: #cccccc;
+          color: var(--text-secondary);
         }
         .ed-db-stab.on {
-          color: #007acc;
-          border-bottom-color: #007acc;
+          color: var(--accent);
+          border-bottom-color: var(--accent);
         }
         .ed-db-body {
           flex: 1;
@@ -2387,7 +2392,7 @@ function EditorInner() {
         .ed-db-load {
           padding: 12px;
           font-size: 11px;
-          color: #858585;
+          color: var(--text-muted);
           font-style: italic;
         }
         .db-sec {
@@ -2398,9 +2403,9 @@ function EditorInner() {
         .db-sec-ttl {
           font-size: 10.5px;
           font-weight: 600;
-          color: #bbbbbb;
+          color: var(--text-secondary);
           padding-bottom: 4px;
-          border-bottom: 1px solid #1e1e1e;
+          border-bottom: 1px solid var(--border-subtle);
         }
         .db-kv {
           display: flex;
@@ -2408,10 +2413,10 @@ function EditorInner() {
           font-size: 11px;
         }
         .db-k {
-          color: #858585;
+          color: var(--text-muted);
         }
         .db-v {
-          color: #cccccc;
+          color: var(--text-secondary);
           font-family: monospace;
           font-size: 10px;
         }
@@ -2421,8 +2426,8 @@ function EditorInner() {
           gap: 6px;
         }
         .db-stat-card {
-          background: #1e1e1e;
-          border: 1px solid #333333;
+          background: var(--bg-base);
+          border: 1px solid var(--border-subtle);
           border-radius: 6px;
           padding: 8px 10px;
           display: flex;
@@ -2431,25 +2436,24 @@ function EditorInner() {
         }
         .db-stat-l {
           font-size: 8.5px;
-          text-transform: uppercase;
-          color: #858585;
+          color: var(--text-muted);
           font-weight: 700;
         }
         .db-stat-v {
           font-size: 15px;
           font-weight: 700;
         }
-        .c0 { color: #569cd6; }
-        .c1 { color: #c586c0; }
-        .c2 { color: #dcdcaa; }
-        .c3 { color: #4ec9b0; }
+        .c0 { color: var(--info); }
+        .c1 { color: var(--text-secondary); }
+        .c2 { color: var(--warning); }
+        .c3 { color: var(--success); }
         .db-stat-s {
           font-size: 9.5px;
-          color: #707070;
+          color: var(--text-muted);
         }
         .db-tbl-card {
-          background: #1e1e1e;
-          border: 1px solid #333333;
+          background: var(--bg-base);
+          border: 1px solid var(--border-subtle);
           border-radius: 6px;
           overflow: hidden;
         }
@@ -2458,17 +2462,17 @@ function EditorInner() {
           align-items: center;
           gap: 6px;
           padding: 6px 10px;
-          border-bottom: 1px solid #2a2a2a;
+          border-bottom: 1px solid var(--border-subtle);
           font-size: 11.5px;
         }
         .db-tbl-nm {
           flex: 1;
-          color: #e7e7e7;
+          color: var(--text-primary);
           font-weight: 500;
         }
         .db-tbl-cnt {
           font-size: 10px;
-          color: #858585;
+          color: var(--text-muted);
         }
         .db-cols {
           display: flex;
@@ -2480,52 +2484,51 @@ function EditorInner() {
           display: flex;
           align-items: center;
           gap: 4px;
-          background: #252526;
-          border: 1px solid #333333;
+          background: var(--bg-surface);
+          border: 1px solid var(--border-subtle);
           border-radius: 3px;
           padding: 2px 6px;
           font-size: 10px;
         }
         .db-col-nm {
-          color: #cccccc;
+          color: var(--text-secondary);
         }
         .db-col-type {
-          color: #858585;
+          color: var(--text-muted);
           font-family: monospace;
         }
         .db-ql {
           font-size: 10px;
-          color: #858585;
-          text-transform: uppercase;
+          color: var(--text-muted);
           font-weight: 700;
         }
         .db-qi {
           width: 100%;
-          background: #1e1e1e;
-          border: 1px solid #3c3c3c;
+          background: var(--bg-base);
+          border: 1px solid var(--border-subtle);
           border-radius: 4px;
           padding: 8px 10px;
-          color: #dcdcaa;
+          color: var(--warning);
           font-family: monospace;
           font-size: 11.5px;
           outline: none;
           resize: none;
         }
         .db-qi:focus {
-          border-color: #007acc;
+          border-color: var(--accent);
         }
         .db-qrun {
           padding: 6px;
-          background: #0e639c;
+          background: var(--accent);
           border: none;
           border-radius: 4px;
-          color: white;
+          color: var(--bg-surface);
           font-size: 11.5px;
           font-weight: 500;
           cursor: pointer;
         }
         .db-qrun:hover:not(:disabled) {
-          background: #1177bb;
+          background: var(--accent-dim);
         }
         .db-qrun:disabled {
           opacity: 0.5;
@@ -2537,19 +2540,19 @@ function EditorInner() {
         }
         .db-qmeta {
           font-size: 10px;
-          color: #858585;
+          color: var(--text-muted);
         }
         .db-qerr {
           font-size: 11px;
-          color: #f14c4c;
-          background: rgba(241, 76, 76, 0.1);
-          border: 1px solid rgba(241, 76, 76, 0.25);
+          color: var(--error);
+          background: var(--error-dim);
+          border: 1px solid var(--border-subtle);
           border-radius: 4px;
           padding: 6px 8px;
         }
         .db-qtw {
           overflow-x: auto;
-          border: 1px solid #333333;
+          border: 1px solid var(--border-subtle);
           border-radius: 4px;
           max-height: 200px;
           overflow-y: auto;
@@ -2562,15 +2565,15 @@ function EditorInner() {
         }
         .db-qt th {
           padding: 5px 8px;
-          background: #252526;
-          color: #858585;
+          background: var(--bg-surface);
+          color: var(--text-muted);
           text-align: left;
-          border-bottom: 1px solid #333333;
+          border-bottom: 1px solid var(--border-subtle);
         }
         .db-qt td {
           padding: 4px 8px;
-          color: #cccccc;
-          border-bottom: 1px solid #2a2a2a;
+          color: var(--text-secondary);
+          border-bottom: 1px solid var(--border-subtle);
           white-space: nowrap;
           max-width: 160px;
           overflow: hidden;
@@ -2589,17 +2592,17 @@ function EditorInner() {
           display: flex;
           align-items: flex-start;
           justify-content: space-between;
-          border-bottom: 1px solid #1e1e1e;
+          border-bottom: 1px solid var(--border-subtle);
           padding-bottom: 8px;
         }
         .ed-sc-title {
           font-size: 11px;
           font-weight: 700;
-          color: #cccccc;
+          color: var(--text-secondary);
         }
         .ed-sc-branch {
           font-size: 10px;
-          color: #858585;
+          color: var(--text-muted);
           margin-top: 2px;
         }
         .ed-sc-actions {
@@ -2608,29 +2611,29 @@ function EditorInner() {
           gap: 6px;
         }
         .ed-sc-actions input {
-          background: #1e1e1e;
-          border: 1px solid #3c3c3c;
+          background: var(--bg-base);
+          border: 1px solid var(--border-subtle);
           border-radius: 4px;
           padding: 6px 8px;
-          color: #cccccc;
+          color: var(--text-secondary);
           font-size: 11.5px;
           outline: none;
         }
         .ed-sc-actions input:focus {
-          border-color: #007acc;
+          border-color: var(--accent);
         }
         .ed-sc-actions button {
-          background: #0e639c;
+          background: var(--accent);
           border: none;
           border-radius: 4px;
           padding: 6px;
-          color: white;
+          color: var(--bg-surface);
           font-size: 11px;
           font-weight: 500;
           cursor: pointer;
         }
         .ed-sc-actions button:hover:not(:disabled) {
-          background: #1177bb;
+          background: var(--accent-dim);
         }
         .ed-sc-actions button:disabled {
           opacity: 0.45;
@@ -2638,9 +2641,9 @@ function EditorInner() {
         }
         .ed-sc-notice {
           font-size: 10.5px;
-          color: #4ec9b0;
-          background: rgba(78, 201, 176, 0.1);
-          border: 1px solid rgba(78, 201, 176, 0.2);
+          color: var(--success);
+          background: var(--success-dim);
+          border: 1px solid var(--border-subtle);
           border-radius: 4px;
           padding: 6px 8px;
         }
@@ -2651,147 +2654,38 @@ function EditorInner() {
         }
         .ed-sc-label {
           font-size: 10px;
-          color: #858585;
+          color: var(--text-muted);
           font-weight: 700;
-          text-transform: uppercase;
         }
         .ed-sc-change {
           display: flex;
           align-items: center;
           gap: 6px;
           font-size: 11px;
-          color: #cccccc;
+          color: var(--text-secondary);
         }
         .ed-sc-change code {
-          color: #e5a00d;
+          color: var(--accent);
           font-family: monospace;
           font-weight: bold;
         }
         .ed-sc-empty {
           font-size: 11px;
-          color: #707070;
+          color: var(--text-muted);
           font-style: italic;
         }
         .ed-sc-graph {
           margin: 0;
           max-height: 180px;
           overflow: auto;
-          background: #1e1e1e;
-          border: 1px solid #333333;
+          background: var(--bg-base);
+          border: 1px solid var(--border-subtle);
           border-radius: 4px;
           padding: 8px;
           font-size: 10px;
-          color: #858585;
+          color: var(--text-muted);
           white-space: pre-wrap;
           font-family: monospace;
-        }
-
-        /* Light Theme Overrides */
-        html[data-theme='light'] .vs-shell {
-          background: #ffffff;
-          color: #333333;
-        }
-        html[data-theme='light'] .vs-topbar {
-          background: #dddddd;
-          border-bottom-color: #cccccc;
-        }
-        html[data-theme='light'] .vs-app-title {
-          color: #222222;
-        }
-        html[data-theme='light'] .vs-search-palette-btn {
-          background: #f3f3f3;
-          border-color: #d0d0d0;
-          color: #555555;
-        }
-        html[data-theme='light'] .vs-activitybar {
-          background: #2c2c2c;
-        }
-        html[data-theme='light'] .vs-sidebar {
-          background: #f3f3f3;
-          border-right-color: #e5e5e5;
-        }
-        html[data-theme='light'] .vs-side-head {
-          border-bottom-color: #e5e5e5;
-        }
-        html[data-theme='light'] .vs-side-title {
-          color: #333333;
-        }
-        html[data-theme='light'] .vs-search-input {
-          background: #ffffff;
-          border-color: #d0d0d0;
-          color: #333333;
-        }
-        html[data-theme='light'] .s-row:hover {
-          background: #e8e8e8;
-        }
-        html[data-theme='light'] .s-row.act {
-          background: #e4e6f1;
-        }
-        html[data-theme='light'] .s-row-btn {
-          color: #333333;
-        }
-        html[data-theme='light'] .vs-editor-region {
-          background: #ffffff;
-        }
-        html[data-theme='light'] .vs-tabbar {
-          background: #ececec;
-          border-bottom-color: #e0e0e0;
-        }
-        html[data-theme='light'] .vs-tab {
-          background: #e4e4e4;
-          color: #666666;
-          border-right-color: #e0e0e0;
-        }
-        html[data-theme='light'] .vs-tab.cur {
-          background: #ffffff;
-          color: #333333;
-        }
-        html[data-theme='light'] .vs-breadcrumbs {
-          background: #ffffff;
-          border-bottom-color: #f0f0f0;
-          color: #666666;
-        }
-        html[data-theme='light'] .vs-action-pill {
-          background: #f0f0f0;
-          border-color: #d5d5d5;
-          color: #333333;
-        }
-        html[data-theme='light'] .vs-quickopen-modal {
-          background: #ffffff;
-          border-color: #cccccc;
-        }
-        html[data-theme='light'] .vs-quickopen-input-row {
-          background: #f3f3f3;
-          border-bottom-color: #e0e0e0;
-        }
-        html[data-theme='light'] .vs-quickopen-input {
-          color: #333333;
-        }
-        html[data-theme='light'] .vs-quickopen-item {
-          color: #333333;
-        }
-        html[data-theme='light'] .vs-quickopen-item:hover,
-        html[data-theme='light'] .vs-quickopen-item.highlight {
-          background: #e8e8e8;
-          color: #000000;
-        }
-        html[data-theme='light'] .ed-agent-head .ed-ag-title,
-        html[data-theme='light'] .ed-db-title,
-        html[data-theme='light'] .ed-sc-title {
-          color: #333333;
-        }
-        html[data-theme='light'] .ed-ag-card,
-        html[data-theme='light'] .db-stat-card,
-        html[data-theme='light'] .db-tbl-card,
-        html[data-theme='light'] .ed-sc-actions input,
-        html[data-theme='light'] .ed-sc-graph {
-          background: #ffffff;
-          border-color: #e0e0e0;
-        }
-        html[data-theme='light'] .ed-ag-val,
-        html[data-theme='light'] .db-v,
-        html[data-theme='light'] .ed-sc-change {
-          color: #333333;
         }
       `}</style>
     </div>
@@ -2808,12 +2702,12 @@ export default function EditorPage() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            background: '#1e1e1e',
-            color: '#858585',
-            fontFamily: 'Inter, system-ui, sans-serif',
+            background: 'var(--bg-base)',
+            color: 'var(--text-muted)',
+            fontFamily: 'var(--font-sans)',
           }}
         >
-          Loading Open Code Editor…
+          Loading editor…
         </div>
       }
     >

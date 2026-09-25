@@ -22,7 +22,9 @@ export default function TerminalPanel({ projectId, onClose }: TerminalPanelProps
   const inputRef = useRef<HTMLInputElement>(null);
 
   const scrollToBottom = useCallback(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    logsEndRef.current?.scrollIntoView({
+      behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+    });
   }, []);
 
   useEffect(() => {
@@ -97,8 +99,11 @@ export default function TerminalPanel({ projectId, onClose }: TerminalPanelProps
       {/* Header Bar */}
       <div className="terminal-header">
         <div className="terminal-header-left">
-          <span className="term-prompt-icon">&gt;_</span>
-          <span className="term-title">Interactive Terminal</span>
+          <svg className="term-prompt-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" width={14} height={14} aria-hidden="true">
+            <polyline points="4 17 10 11 4 5" />
+            <line x1="12" y1="19" x2="20" y2="19" />
+          </svg>
+          <span className="term-title">Terminal</span>
           <span className="term-pill">node:20</span>
           {executing && (
             <span className="term-exec-indicator">
@@ -137,10 +142,12 @@ export default function TerminalPanel({ projectId, onClose }: TerminalPanelProps
               type="button"
               className="term-close-btn"
               onClick={onClose}
-              title="Close Terminal"
+              title="Close terminal"
               aria-label="Close"
             >
-              ✕
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" width={12} height={12} aria-hidden="true">
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
             </button>
           )}
         </div>
@@ -177,8 +184,12 @@ export default function TerminalPanel({ projectId, onClose }: TerminalPanelProps
           disabled={executing || !commandInput.trim()}
           className="term-send-btn"
           title="Run command"
+          aria-label="Run command"
         >
-          ↵
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" width={12} height={12} aria-hidden="true">
+            <polyline points="9 10 4 15 9 20" />
+            <path d="M20 4v7a4 4 0 0 1-4 4H4" />
+          </svg>
         </button>
       </div>
 
@@ -188,11 +199,11 @@ export default function TerminalPanel({ projectId, onClose }: TerminalPanelProps
           flex-direction: column;
           height: 100%;
           min-height: 0;
-          background: #0d1117;
-          color: #c9d1d9;
-          font-family: var(--font-mono, 'JetBrains Mono', 'Fira Code', monospace);
+          background: var(--bg-base);
+          color: var(--text-primary);
+          font-family: var(--font-mono);
           font-size: 12px;
-          border-top: 1px solid var(--border-subtle, #30363d);
+          border-top: 1px solid var(--border-subtle);
           overflow: hidden;
         }
 
@@ -201,10 +212,11 @@ export default function TerminalPanel({ projectId, onClose }: TerminalPanelProps
           align-items: center;
           justify-content: space-between;
           padding: 6px 12px;
-          background: #161b22;
-          border-bottom: 1px solid #21262d;
+          background: var(--bg-surface);
+          border-bottom: 1px solid var(--border-subtle);
           flex-shrink: 0;
           user-select: none;
+          font-family: var(--font-sans);
         }
 
         .terminal-header-left {
@@ -214,39 +226,38 @@ export default function TerminalPanel({ projectId, onClose }: TerminalPanelProps
         }
 
         .term-prompt-icon {
-          color: var(--brand, #f97316);
-          font-weight: 700;
-          font-size: 13px;
+          color: var(--text-muted);
         }
 
         .term-title {
-          font-weight: 600;
+          font-weight: 500;
           font-size: 12px;
-          color: #e6edf3;
+          color: var(--text-primary);
         }
 
         .term-pill {
-          font-size: 10px;
+          font-family: var(--font-mono);
+          font-size: 11px;
           padding: 1px 6px;
-          border-radius: 4px;
-          background: rgba(56, 189, 248, 0.15);
-          color: #38bdf8;
-          border: 1px solid rgba(56, 189, 248, 0.25);
+          border-radius: var(--radius-sm);
+          background: var(--bg-elevated);
+          color: var(--text-muted);
+          border: 1px solid var(--border-subtle);
         }
 
         .term-exec-indicator {
           display: flex;
           align-items: center;
           gap: 5px;
-          font-size: 11px;
-          color: #f59e0b;
+          font-size: 12px;
+          color: var(--text-secondary);
         }
 
         .term-spin {
           width: 8px;
           height: 8px;
-          border: 1.5px solid rgba(245, 158, 11, 0.3);
-          border-top-color: #f59e0b;
+          border: 1.5px solid var(--border-strong);
+          border-top-color: var(--text-secondary);
           border-radius: 50%;
           animation: spin 0.8s linear infinite;
         }
@@ -258,40 +269,42 @@ export default function TerminalPanel({ projectId, onClose }: TerminalPanelProps
         .terminal-header-right {
           display: flex;
           align-items: center;
-          gap: 6px;
+          gap: 4px;
         }
 
         .term-tool-btn {
-          background: #21262d;
-          color: #8b949e;
-          border: 1px solid #30363d;
-          border-radius: 4px;
+          background: transparent;
+          color: var(--text-secondary);
+          border: 1px solid var(--border-base);
+          border-radius: var(--radius-md);
           padding: 2px 8px;
-          font-size: 11px;
+          font-size: 12px;
           cursor: pointer;
-          font-family: inherit;
-          transition: all 0.15s ease;
+          font-family: var(--font-mono);
+          transition: background var(--transition-fast), color var(--transition-fast);
         }
 
         .term-tool-btn:hover {
-          color: #e6edf3;
-          background: #30363d;
+          color: var(--text-primary);
+          background: var(--bg-hover);
         }
 
         .term-close-btn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
           background: transparent;
           border: none;
-          color: #8b949e;
+          color: var(--text-muted);
           cursor: pointer;
-          padding: 3px 6px;
-          border-radius: 4px;
-          font-size: 11px;
-          transition: color 0.15s ease;
+          padding: 4px;
+          border-radius: var(--radius-md);
+          transition: background var(--transition-fast), color var(--transition-fast);
         }
 
         .term-close-btn:hover {
-          color: #f85149;
-          background: rgba(248, 81, 73, 0.1);
+          color: var(--text-primary);
+          background: var(--bg-hover);
         }
 
         .terminal-body {
@@ -307,12 +320,12 @@ export default function TerminalPanel({ projectId, onClose }: TerminalPanelProps
         .term-line {
           white-space: pre-wrap;
           word-break: break-all;
-          line-height: 1.45;
-          color: #c9d1d9;
+          line-height: 1.5;
+          color: var(--text-secondary);
         }
 
         .term-line--cmd {
-          color: #58a6ff;
+          color: var(--text-primary);
           font-weight: 600;
           margin-top: 4px;
         }
@@ -321,52 +334,76 @@ export default function TerminalPanel({ projectId, onClose }: TerminalPanelProps
           display: flex;
           align-items: center;
           padding: 6px 12px;
-          background: #161b22;
-          border-top: 1px solid #21262d;
+          background: var(--bg-surface);
+          border-top: 1px solid var(--border-subtle);
           gap: 8px;
           flex-shrink: 0;
         }
 
         .term-cursor-prompt {
-          color: #3fb950;
-          font-weight: 700;
-          font-size: 13px;
+          color: var(--text-muted);
+          font-weight: 600;
+          font-size: 12px;
         }
 
         .term-input {
           flex: 1;
           background: transparent;
           border: none;
-          color: #f0f6fc;
+          color: var(--text-primary);
           font-family: inherit;
           font-size: 12px;
           outline: none;
         }
 
         .term-input::placeholder {
-          color: #484f58;
+          color: var(--text-muted);
         }
 
         .term-send-btn {
-          background: var(--brand, #f97316);
-          color: white;
-          border: none;
-          border-radius: 4px;
-          padding: 2px 8px;
-          font-size: 12px;
-          font-weight: 700;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: var(--accent);
+          color: var(--text-on-accent);
+          border: 1px solid var(--accent);
+          border-radius: var(--radius-md);
+          padding: 4px 8px;
           cursor: pointer;
-          opacity: 0.9;
-          transition: opacity 0.15s ease;
+          transition: background var(--transition-fast);
         }
 
         .term-send-btn:hover:not(:disabled) {
-          opacity: 1;
+          background: var(--accent-dim);
         }
 
         .term-send-btn:disabled {
-          opacity: 0.4;
+          background: var(--bg-elevated);
+          border-color: var(--border-base);
+          color: var(--text-disabled);
           cursor: not-allowed;
+        }
+
+        .term-tool-btn:focus-visible,
+        .term-close-btn:focus-visible,
+        .term-send-btn:focus-visible {
+          outline: 2px solid var(--accent);
+          outline-offset: 1px;
+        }
+
+        .terminal-input-bar:focus-within {
+          box-shadow: inset 0 1px 0 var(--border-strong);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .term-spin {
+            animation: none;
+          }
+          .term-tool-btn,
+          .term-close-btn,
+          .term-send-btn {
+            transition: none;
+          }
         }
       `}</style>
     </div>

@@ -72,10 +72,12 @@ export default function App() {
 
   // Sync explorer open/closed preference from localStorage (default: closed)
   useEffect(() => {
-    const saved = localStorage.getItem('oc-explorer-open');
-    if (saved !== null) {
-      setExplorerOpen(saved === 'true');
-    }
+    // Deferred to a frame callback to avoid a synchronous setState in the effect body
+    const id = requestAnimationFrame(() => {
+      const saved = localStorage.getItem('oc-explorer-open');
+      if (saved !== null) setExplorerOpen(saved === 'true');
+    });
+    return () => cancelAnimationFrame(id);
   }, []);
 
   const toggleExplorer = useCallback(() => {
@@ -431,7 +433,7 @@ export default function App() {
                               type="button"
                               className="panel-slot-close"
                               onClick={() => setEditorOpen(false)}
-                              title="Close Code Editor (Click to untap)"
+                              title="Close code editor"
                               aria-label="Close Code Editor"
                             >
                               ✕
@@ -457,13 +459,13 @@ export default function App() {
                                 <circle cx="12" cy="12" r="10" />
                                 <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
                               </svg>
-                              <span>Live Preview</span>
+                              <span>Live preview</span>
                             </div>
                             <button
                               type="button"
                               className="panel-slot-close"
                               onClick={() => setPreviewOpen(false)}
-                              title="Close Live Preview (Click to untap)"
+                              title="Close live preview"
                               aria-label="Close Live Preview"
                             >
                               ✕
@@ -493,7 +495,7 @@ export default function App() {
                               type="button"
                               className="panel-slot-close"
                               onClick={() => setSettingsOpen(false)}
-                              title="Close Settings (Click to untap)"
+                              title="Close settings"
                               aria-label="Close Settings"
                             >
                               ✕
@@ -544,7 +546,7 @@ export default function App() {
                         inputEl.focus();
                       }
                     }}
-                    title="Focus Chat Input (Cmd+L / Enter)"
+                    title="Focus chat input"
                   >
                     <svg viewBox="0 0 24 24" fill="currentColor" width={9} height={9}>
                       <path d="M8 5v14l11-7z"/>
@@ -563,7 +565,7 @@ export default function App() {
                         });
                       } catch {}
                     }}
-                    title="Stop Agent Turn"
+                    title="Stop agent turn"
                   >
                     <svg viewBox="0 0 24 24" fill="currentColor" width={8} height={8}>
                       <rect x="5" y="5" width="14" height="14" rx="2"/>
@@ -579,7 +581,7 @@ export default function App() {
                       <button
                         className="status-bar-btn status-bar-btn--review"
                         onClick={() => setShowReviewModal(true)}
-                        title="Review Multi-File Diffs and Rollback Checkpoints"
+                        title="Review diffs and checkpoints"
                       >
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={10} height={10}>
                           <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>
@@ -590,7 +592,7 @@ export default function App() {
                       <button
                         className="status-bar-btn"
                         onClick={() => setShowReviewModal(true)}
-                        title="Inspect Git Checkpoints & Rollback History"
+                        title="Checkpoints and rollback history"
                       >
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={10} height={10}>
                           <circle cx="12" cy="12" r="4"/>
@@ -608,7 +610,7 @@ export default function App() {
                     href={`/api/download?projectId=${activeProject.id}`}
                     className="status-bar-btn"
                     download
-                    title="Export Project ZIP"
+                    title="Export project as ZIP"
                   >
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={10} height={10}>
                       <path d="M12 3v13M7 12l5 5 5-5M5 21h14"/>
@@ -619,7 +621,7 @@ export default function App() {
                   <button
                     className="status-bar-btn"
                     onClick={() => setShowToolModal(true)}
-                    title="Configure Tools & MCP"
+                    title="Configure tools and MCP"
                   >
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={10} height={10}>
                       <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/>
@@ -823,8 +825,7 @@ export default function App() {
         .panel-slot-badge {
           font-size: 9.5px;
           font-family: var(--font-mono);
-          color: var(--brand);
-          background: var(--brand-glow);
+          color: var(--text-muted);
           padding: 1px 5px;
           border-radius: 3px;
         }
@@ -841,8 +842,8 @@ export default function App() {
         }
 
         .panel-slot-close:hover {
-          color: var(--error);
-          background: rgba(255, 69, 58, 0.1);
+          color: var(--text-primary);
+          background: var(--bg-hover);
         }
 
         .panel-slot-body {
@@ -915,15 +916,7 @@ export default function App() {
         }
 
         .status-bar-btn--execute {
-          color: var(--brand);
-          background: rgba(249, 115, 22, 0.08);
-          border-color: rgba(249, 115, 22, 0.25);
-        }
-
-        .status-bar-btn--execute:hover {
-          background: rgba(249, 115, 22, 0.18);
-          color: var(--brand);
-          border-color: rgba(249, 115, 22, 0.4);
+          color: var(--text-secondary);
         }
 
         .status-bar-indicator {
@@ -1053,20 +1046,11 @@ function WelcomeScreen({
       <div className="welcome-inner">
         {/* ── Hero card ────────────────────────────────────────────── */}
         <div className="welcome-card">
-          {/* Icon */}
-          <div className="welcome-icon">
-            <svg viewBox="0 0 24 24" fill="none" width={28} height={28}>
-              <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round"/>
-            </svg>
-          </div>
-
-          <h1 className="welcome-title">
-            {mode === 'app' ? 'Start your first project' : 'Open an existing codebase'}
-          </h1>
+          <h1 className="welcome-title font-serif-display">What are we building today?</h1>
           <p className="welcome-desc">
             {mode === 'app'
-              ? 'Point the agent at a repository and it will plan changes, edit files, and create checkpoints — nothing touches your main branch until you approve.'
-              : 'Build Mode points the agent directly at a real folder on disk — any existing codebase, not just app-builder projects. No template, no live preview assumed.'}
+              ? 'Start a new project, or pick up where you left off.'
+              : 'Point the agent at an existing folder on disk.'}
           </p>
 
           {/* Mode toggle */}
@@ -1076,14 +1060,14 @@ function WelcomeScreen({
               className={`mode-tab ${mode === 'app' ? 'mode-tab--active' : ''}`}
               onClick={() => setMode('app')}
             >
-              App Builder
+              New app
             </button>
             <button
               type="button"
               className={`mode-tab ${mode === 'build' ? 'mode-tab--active' : ''}`}
               onClick={() => setMode('build')}
             >
-              Build Mode
+              Existing folder
             </button>
           </div>
 
@@ -1156,7 +1140,7 @@ function WelcomeScreen({
           {/* Existing projects */}
           {!fetching && projects.length > 0 && (
             <div className="welcome-projects">
-              <div className="welcome-projects-label">Or open an existing project</div>
+              <div className="welcome-projects-label">Recent projects</div>
               <div className="welcome-projects-list">
                 {projects.map((p) => (
                   <button
@@ -1170,7 +1154,7 @@ function WelcomeScreen({
                       </svg>
                     </div>
                     <span className="wp-name">{p.title}</span>
-                    {p.kind === 'build' && <span className="wp-build-badge">Build</span>}
+                    {p.kind === 'build' && <span className="wp-build-badge">folder</span>}
                     <span className="wp-date">{formatRelativeDate(p.updatedAt)}</span>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13} className="wp-arrow">
                       <path d="M9 18l6-6-6-6"/>
@@ -1208,61 +1192,27 @@ function WelcomeScreen({
 
         .welcome-card {
           width: 100%;
-          max-width: 460px;
-          border-radius: var(--radius-xl);
-          border: 1px solid var(--border-subtle);
-          background: var(--bg-surface);
-          backdrop-filter: blur(20px);
-          -webkit-backdrop-filter: blur(20px);
-          box-shadow: var(--shadow-md);
-          padding: 32px 28px;
+          max-width: 520px;
+          padding: 56px 0 8px;
           display: flex;
           flex-direction: column;
-          align-items: center;
-          text-align: center;
-          position: relative;
-          overflow: hidden;
-        }
-
-        .welcome-card::before {
-          content: '';
-          position: absolute;
-          inset: 0;
-          background: radial-gradient(400px 200px at 50% 0%, var(--brand-glow), transparent 70%);
-          pointer-events: none;
-        }
-
-        .welcome-icon {
-          width: 52px;
-          height: 52px;
-          border-radius: 14px;
-          background: var(--brand-glow);
-          border: 1px solid var(--accent-border);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: var(--brand);
-          margin-bottom: 16px;
-          position: relative;
+          align-items: stretch;
+          text-align: left;
         }
 
         .welcome-title {
-          font-family: var(--font-brand);
-          font-size: 19px;
-          font-weight: 600;
+          font-size: 34px;
+          font-weight: 400;
+          line-height: 1.2;
           color: var(--text-primary);
           margin-bottom: 8px;
-          letter-spacing: -0.1px;
-          position: relative;
         }
 
         .welcome-desc {
-          font-size: 12.5px;
-          color: var(--text-secondary);
-          line-height: 1.6;
-          max-width: 360px;
-          margin-bottom: 20px;
-          position: relative;
+          font-size: 14px;
+          color: var(--text-muted);
+          line-height: 1.5;
+          margin-bottom: 24px;
         }
 
         .welcome-input {
@@ -1281,8 +1231,8 @@ function WelcomeScreen({
         }
 
         .welcome-input:focus {
-          border-color: var(--brand);
-          box-shadow: 0 0 0 1px var(--brand);
+          border-color: var(--accent);
+          box-shadow: 0 0 0 1px var(--accent);
         }
 
         .welcome-input::placeholder {
@@ -1327,8 +1277,8 @@ function WelcomeScreen({
           font-size: 10.5px;
           line-height: 1.5;
           color: var(--text-muted);
-          background: rgba(255, 159, 10, 0.06);
-          border: 1px solid rgba(255, 159, 10, 0.2);
+          background: var(--bg-elevated);
+          border: 1px solid var(--border-subtle);
           border-radius: var(--radius-sm);
           padding: 8px 10px;
           margin-bottom: 10px;
@@ -1338,21 +1288,14 @@ function WelcomeScreen({
         .build-mode-notice code {
           font-family: var(--font-mono);
           color: var(--text-secondary);
-          background: rgba(255, 255, 255, 0.06);
+          background: var(--bg-hover);
           padding: 1px 4px;
           border-radius: 3px;
         }
 
         .wp-build-badge {
-          font-size: 8.5px;
-          font-weight: 700;
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-          color: var(--warning, #ff9f0a);
-          background: rgba(255, 159, 10, 0.1);
-          border: 1px solid rgba(255, 159, 10, 0.25);
-          border-radius: var(--radius-full);
-          padding: 1px 6px;
+          font-size: 11px;
+          color: var(--text-muted);
           flex-shrink: 0;
         }
 
@@ -1382,18 +1325,18 @@ function WelcomeScreen({
         }
 
         .template-chip--active {
-          background: var(--brand-glow);
-          border-color: var(--accent-border);
-          color: var(--brand);
-          font-weight: 600;
+          background: var(--bg-overlay);
+          border-color: var(--border-strong);
+          color: var(--text-primary);
+          font-weight: 500;
         }
 
         .welcome-btn {
           width: 100%;
-          background: var(--brand);
+          background: var(--accent);
           border: none;
           border-radius: var(--radius-md);
-          color: #fffaf7;
+          color: var(--bg-surface);
           font-weight: 600;
           font-size: 13px;
           padding: 10px 14px;
@@ -1408,11 +1351,15 @@ function WelcomeScreen({
         }
 
         .welcome-btn:hover:not(:disabled) {
-          background: var(--brand-dim);
+          background: var(--accent-dim);
         }
 
-        .welcome-btn:active:not(:disabled) {
-          transform: scale(0.98);
+        .welcome-btn:focus-visible,
+        .mode-tab:focus-visible,
+        .template-chip:focus-visible,
+        .welcome-project-item:focus-visible {
+          outline: 2px solid var(--accent);
+          outline-offset: 2px;
         }
 
         .welcome-btn:disabled {
@@ -1435,19 +1382,17 @@ function WelcomeScreen({
         }
 
         .welcome-projects-label {
-          font-size: 9.5px;
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
+          font-size: 12px;
           color: var(--text-muted);
-          font-weight: 600;
+          font-weight: 500;
           margin-bottom: 8px;
         }
 
         .welcome-projects-list {
           display: flex;
           flex-direction: column;
-          gap: 6px;
-          max-height: 180px;
+          gap: 0;
+          max-height: 240px;
           overflow-y: auto;
         }
 
@@ -1456,12 +1401,13 @@ function WelcomeScreen({
           align-items: center;
           gap: 10px;
           width: 100%;
-          padding: 8px 12px;
-          background: var(--bg-elevated);
-          border: 1px solid var(--border-subtle);
+          height: 32px;
+          padding: 0 8px;
+          background: transparent;
+          border: none;
           border-radius: var(--radius-md);
           color: var(--text-primary);
-          font-size: 12.5px;
+          font-size: 13px;
           text-align: left;
           cursor: pointer;
           transition: all var(--transition-fast);
@@ -1469,18 +1415,15 @@ function WelcomeScreen({
 
         .welcome-project-item:hover {
           background: var(--bg-hover);
-          border-color: var(--border-base);
         }
 
         .wp-icon {
-          width: 24px;
+          width: 16px;
           height: 24px;
-          border-radius: 5px;
-          background: rgba(255, 255, 255, 0.04);
           display: flex;
           align-items: center;
           justify-content: center;
-          color: var(--text-secondary);
+          color: var(--text-muted);
           flex-shrink: 0;
         }
 
@@ -1508,8 +1451,8 @@ function WelcomeScreen({
         .spinner {
           width: 14px;
           height: 14px;
-          border: 2px solid rgba(255,255,255,0.3);
-          border-top-color: white;
+          border: 2px solid var(--border-strong);
+          border-top-color: var(--bg-surface);
           border-radius: 50%;
           animation: spin-slow 0.8s linear infinite;
         }

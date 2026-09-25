@@ -39,8 +39,8 @@ body {
 
 /* ── Selection ──────────────────────────────────────────────────────────────── */
 ::selection {
-  background: rgba(0, 122, 255, 0.3);
-  color:      #ffffff;
+  background: var(--accent-soft);
+  color:      inherit;
 }
 
 /* ── Focus ──────────────────────────────────────────────────────────────────── */
@@ -71,8 +71,8 @@ body {
 }
 
 @keyframes glow-pulse {
-  0%, 100% { box-shadow: 0 0 10px rgba(0, 122, 255, 0.2); }
-  50%       { box-shadow: 0 0 22px rgba(0, 122, 255, 0.45); }
+  0%, 100% { box-shadow: 0 0 10px var(--accent-soft); }
+  50%       { box-shadow: 0 0 22px var(--accent-border); }
 }
 
 @keyframes spin-slow {
@@ -130,3 +130,14 @@ button, input, textarea, select {
   background: var(--bg-elevated) !important;
   border: none !important;
 }
+
+/* ── Reduced motion ─────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.font-serif-display { font-family: var(--font-serif); font-weight: 400; letter-spacing: -0.01em; }

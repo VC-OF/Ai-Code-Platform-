@@ -1,4 +1,5 @@
 import crossSpawn from "cross-spawn";
+import { execFile } from "child_process";
 import { getDecryptedEnv } from "./settingsStore";
 
 /**
@@ -38,7 +39,6 @@ export async function deployToVercel(
     "deploy",
     "--prod",
     "--yes",
-    "--token", token,
     "--name", `open-code-${projectId}`.toLowerCase().slice(0, 52),
   ];
 
@@ -46,10 +46,20 @@ export async function deployToVercel(
     (resolve, reject) => {
       let stdout = "";
       let stderr = "";
-      const proc = crossSpawn("npx", args, { cwd: root, env: process.env });
+      // Token goes via env (the Vercel CLI reads VERCEL_TOKEN) so it never
+      // appears in the process list / argv.
+      const proc = crossSpawn("npx", args, {
+        cwd: root,
+        env: { ...process.env, VERCEL_TOKEN: token },
+      });
 
       const timer = setTimeout(() => {
-        try { proc.kill("SIGTERM"); } catch {}
+        // On Windows npx spawns a tree (cmd -> node -> vercel); kill it all.
+        if (process.platform === "win32" && proc.pid) {
+          execFile("taskkill", ["/pid", String(proc.pid), "/T", "/F"], () => {});
+        } else {
+          try { proc.kill("SIGTERM"); } catch {}
+        }
         reject(new Error("Deploy timed out after 4 minutes"));
       }, DEPLOY_TIMEOUT_MS);
 

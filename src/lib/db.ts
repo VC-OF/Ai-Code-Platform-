@@ -576,7 +576,7 @@ export function dbHealthCheck(): {
     const stat = fs.statSync(DB_PATH);
 
     return { ok: true, tables, size_bytes: stat.size };
-  } catch (err) {
+  } catch {
     return { ok: false, tables: [], size_bytes: 0 };
   }
 }

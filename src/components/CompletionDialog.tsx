@@ -16,10 +16,12 @@ export default function CompletionDialog({
       {/* Header */}
       <div className="cd-header">
         <div className="cd-title-row">
-          <span className="cd-icon">✅</span>
-          <h4 className="cd-title">Task Completed</h4>
+          <svg className="cd-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={14} height={14} aria-hidden="true">
+            <path d="M20 6L9 17l-5-5"/>
+          </svg>
+          <h4 className="cd-title">Task complete</h4>
         </div>
-        <button className="cd-close" onClick={onDismiss} title="Dismiss">✕</button>
+        <button className="cd-close" onClick={onDismiss} title="Dismiss" aria-label="Dismiss">✕</button>
       </div>
 
       <p className="cd-desc">
@@ -35,7 +37,7 @@ export default function CompletionDialog({
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={14} height={14}>
             <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><path d="M15 3h6v6M10 14L21 3"/>
           </svg>
-          Open in Preview
+          Open preview
         </button>
         <a
           href={`/api/download?projectId=${encodeURIComponent(projectId)}`}
@@ -46,13 +48,13 @@ export default function CompletionDialog({
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={14} height={14}>
             <path d="M12 3v13M7 12l5 5 5-5M5 21h14"/>
           </svg>
-          Download Project
+          Download project
         </a>
         <button className="cd-opt" onClick={onDismiss}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={14} height={14}>
             <path d="M19 12H5M12 5l-7 7 7 7"/>
           </svg>
-          Back to Editor
+          Back to editor
         </button>
       </div>
 
@@ -63,9 +65,7 @@ export default function CompletionDialog({
           right: 20px;
           width: 300px;
           z-index: 200;
-          background: rgba(18, 18, 23, 0.92);
-          backdrop-filter: blur(20px);
-          -webkit-backdrop-filter: blur(20px);
+          background: var(--bg-surface);
           border: 1px solid var(--border-base);
           border-radius: var(--radius-lg);
           padding: 16px;
@@ -85,7 +85,7 @@ export default function CompletionDialog({
           gap: 8px;
         }
 
-        .cd-icon { font-size: 14px; }
+        .cd-icon { color: var(--success); flex-shrink: 0; }
 
         .cd-title {
           font-size: 13px;
@@ -102,7 +102,7 @@ export default function CompletionDialog({
           line-height: 1;
           padding: 2px 4px;
           border-radius: var(--radius-sm);
-          transition: all var(--transition-fast);
+          transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
         }
         .cd-close:hover { color: var(--text-primary); background: var(--bg-overlay); }
 
@@ -124,28 +124,34 @@ export default function CompletionDialog({
           align-items: center;
           gap: 8px;
           padding: 9px 12px;
-          background: rgba(255,255,255,0.03);
+          background: var(--bg-surface);
           border: 1px solid var(--border-subtle);
           border-radius: var(--radius-md);
           font-size: 12.5px;
           color: var(--text-primary);
           cursor: pointer;
-          transition: all var(--transition-fast);
+          transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
           text-decoration: none;
           text-align: left;
         }
 
         .cd-opt:hover {
-          background: rgba(255,255,255,0.06);
+          background: var(--bg-hover);
           border-color: var(--border-base);
         }
 
+        .cd-opt:focus-visible, .cd-close:focus-visible {
+          outline: 2px solid var(--accent);
+          outline-offset: 1px;
+        }
         .cd-opt--primary {
-          border-color: var(--success-border, rgba(48,209,88,0.3));
-          color: var(--success);
+          background: var(--accent);
+          border-color: var(--accent);
+          color: #fff;
         }
         .cd-opt--primary:hover {
-          background: var(--success-dim, rgba(48,209,88,0.08));
+          background: var(--accent-dim);
+          border-color: var(--accent-dim);
         }
       `}</style>
     </div>

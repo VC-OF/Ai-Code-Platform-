@@ -1,6 +1,5 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { getProject } from './projects';
 
 export interface ArtifactItem {
   id: string;

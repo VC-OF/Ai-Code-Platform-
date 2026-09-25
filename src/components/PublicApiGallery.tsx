@@ -135,11 +135,10 @@ export default function PublicApiGallery({ onBuildProduct }: PublicApiGalleryPro
     <section className="api-gallery" aria-label="Public API product gallery">
       <div className="api-gallery-head">
         <div>
-          <span className="api-gallery-kicker">LIVE API CATALOG & PRODUCT GENERATOR</span>
-          <h2>Build from the open web</h2>
+                    <h2>Build from the open web</h2>
           <p>
             {data
-              ? `Click any of the ${data.catalogSize.toLocaleString()} public APIs or products below to build it instantly with AI.`
+              ? `Pick one of ${data.catalogSize.toLocaleString()} public APIs or a starter below and the agent builds it.`
               : 'Loading public API ideas and live examples…'}
           </p>
         </div>
@@ -149,14 +148,14 @@ export default function PublicApiGallery({ onBuildProduct }: PublicApiGalleryPro
           rel="noreferrer"
           className="api-catalog-link"
         >
-          View catalog ↗
+          View catalog
         </a>
       </div>
 
       {data && (
         <>
           {/* Category Chips */}
-          <div className="api-category-row">
+          <div className="api-category-row" role="group" aria-label="Filter by category">
             {data.categoryCounts.map((category) => {
               const isActive = activeCategory === category.name;
               return (
@@ -164,9 +163,10 @@ export default function PublicApiGallery({ onBuildProduct }: PublicApiGalleryPro
                   type="button"
                   key={category.name}
                   onClick={() => handleCategoryClick(category.name)}
+                  aria-pressed={isActive}
                   className={`api-category-chip ${isActive ? 'api-category-chip--active' : ''}`}
                 >
-                  {category.name} <b>{category.count}</b>
+                  {category.name} <span className="api-category-count">{category.count}</span>
                 </button>
               );
             })}
@@ -177,12 +177,12 @@ export default function PublicApiGallery({ onBuildProduct }: PublicApiGalleryPro
             <div className="category-drawer">
               <div className="category-drawer-header">
                 <div>
-                  <strong>{activeCategory} APIs</strong>
-                  <span className="category-drawer-count"> ({categoryItems.length} available)</span>
+                  <strong>{activeCategory}</strong>
+                  <span className="category-drawer-count"> {categoryItems.length} APIs</span>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setActiveCategory(null)}
+                  onClick={() => handleCategoryClick(activeCategory)}
                   className="category-drawer-close"
                 >
                   Close
@@ -202,7 +202,7 @@ export default function PublicApiGallery({ onBuildProduct }: PublicApiGalleryPro
                             api.auth && api.auth !== 'No' ? 'cat-api-auth--key' : 'cat-api-auth--free'
                           }`}
                         >
-                          {api.auth && api.auth !== 'No' ? `Key: ${api.auth}` : 'Free'}
+                          {api.auth && api.auth !== 'No' ? api.auth : 'No key'}
                         </span>
                       </div>
                       <p className="cat-api-desc">{api.description}</p>
@@ -211,7 +211,7 @@ export default function PublicApiGallery({ onBuildProduct }: PublicApiGalleryPro
                         onClick={() => openCatalogItem(api)}
                         className="cat-api-build-btn"
                       >
-                        Build with AI →
+                        Build
                       </button>
                     </div>
                   ))}
@@ -238,12 +238,12 @@ export default function PublicApiGallery({ onBuildProduct }: PublicApiGalleryPro
                   )
                 }
                 className="api-image-card"
-                title={`Click to build a product using ${item.source}`}
+                title={`Build a product using ${item.source}`}
               >
                 <img src={item.image} alt={item.title} loading="lazy" />
                 <div className="api-image-info">
                   <strong>{item.title}</strong>
-                  <span>{item.source} • Click to build</span>
+                  <span>{item.source}</span>
                 </div>
               </button>
             ))}
@@ -261,14 +261,14 @@ export default function PublicApiGallery({ onBuildProduct }: PublicApiGalleryPro
                 <div className="recipe-card-top">
                   <span className="api-recipe-category">{recipe.category}</span>
                   <span className={`recipe-auth-pill ${recipe.auth === 'apiKey' ? 'recipe-auth-pill--key' : ''}`}>
-                    {recipe.auth === 'apiKey' ? '🔑 Key needed' : '🟢 Free API'}
+                    {recipe.auth === 'apiKey' ? 'Key needed' : 'No key'}
                   </span>
                 </div>
                 <strong className="api-recipe-title">{recipe.title}</strong>
                 <p className="api-recipe-desc">{recipe.description}</p>
                 <div className="recipe-card-bottom">
                   <span className="api-recipe-api">{recipe.api}</span>
-                  <span className="recipe-build-cta">Build product →</span>
+                  <span className="recipe-build-cta">Build</span>
                 </div>
               </button>
             ))}
@@ -291,8 +291,16 @@ export default function PublicApiGallery({ onBuildProduct }: PublicApiGalleryPro
       )}
 
       <style jsx>{`
+        .api-gallery :global(button:focus-visible),
+        .api-gallery :global(a:focus-visible),
+        .api-gallery :global(input:focus-visible) {
+          outline: 2px solid var(--accent);
+          outline-offset: 2px;
+        }
+
         .api-gallery {
           width: 100%;
+          font-size: 13px;
           display: flex;
           flex-direction: column;
           gap: 16px;
@@ -306,72 +314,60 @@ export default function PublicApiGallery({ onBuildProduct }: PublicApiGalleryPro
           gap: 20px;
         }
 
-        .api-gallery-kicker {
-          color: var(--brand);
-          font: 700 9px/1 var(--font-mono);
-          letter-spacing: 0.12em;
-        }
-
         h2 {
-          margin: 7px 0 4px;
-          font: 600 18px/1.2 var(--font-brand);
+          margin: 0 0 4px;
+          font: 500 20px/1.25 var(--font-serif);
           color: var(--text-primary);
         }
 
         .api-gallery-head p {
           margin: 0;
           color: var(--text-secondary);
-          font-size: 11.5px;
+          font-size: 13px;
         }
 
         .api-catalog-link {
-          color: var(--brand);
-          font: 600 11px var(--font-mono);
+          color: var(--text-secondary);
+          font-size: 12px;
           white-space: nowrap;
           text-decoration: none;
         }
 
         .api-catalog-link:hover {
+          color: var(--text-primary);
           text-decoration: underline;
         }
 
         .api-category-row {
           display: flex;
-          gap: 6px;
-          overflow-x: auto;
-          padding-bottom: 4px;
-          scrollbar-width: thin;
+          flex-wrap: wrap;
+          gap: 2px 4px;
         }
 
         .api-category-chip {
           flex: 0 0 auto;
-          padding: 6px 10px;
-          border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-full);
-          color: var(--text-secondary);
-          background: var(--bg-surface);
-          font-size: 10.5px;
+          padding: 3px 8px;
+          border: none;
+          border-radius: var(--radius-sm);
+          color: var(--text-muted);
+          background: none;
+          font: inherit;
+          font-size: 12.5px;
           cursor: pointer;
-          transition: all var(--transition-fast);
         }
 
         .api-category-chip:hover {
-          border-color: var(--border-base);
-          background: var(--bg-hover);
           color: var(--text-primary);
         }
 
         .api-category-chip--active {
-          background: var(--brand-glow) !important;
-          border-color: var(--accent-border) !important;
-          color: var(--brand) !important;
-          font-weight: 600;
+          background: var(--bg-overlay);
+          color: var(--text-primary);
         }
 
-        .api-category-chip b {
-          color: var(--brand);
-          font-family: var(--font-mono);
-          margin-left: 3px;
+        .api-category-count {
+          color: var(--text-disabled);
+          margin-left: 2px;
         }
 
         /* Category Drawer */
@@ -394,7 +390,7 @@ export default function PublicApiGallery({ onBuildProduct }: PublicApiGalleryPro
 
         .category-drawer-count {
           color: var(--text-muted);
-          font-size: 11px;
+          font-size: 12px;
         }
 
         .category-drawer-close {
@@ -402,7 +398,8 @@ export default function PublicApiGallery({ onBuildProduct }: PublicApiGalleryPro
           border: none;
           color: var(--text-muted);
           cursor: pointer;
-          font-size: 11px;
+          font: inherit;
+          font-size: 12px;
         }
 
         .category-drawer-close:hover {
@@ -413,7 +410,7 @@ export default function PublicApiGallery({ onBuildProduct }: PublicApiGalleryPro
           padding: 16px;
           text-align: center;
           color: var(--text-muted);
-          font-size: 11px;
+          font-size: 12px;
         }
 
         .category-drawer-grid {
@@ -443,32 +440,27 @@ export default function PublicApiGallery({ onBuildProduct }: PublicApiGalleryPro
 
         .cat-api-title {
           font-weight: 600;
-          font-size: 11.5px;
+          font-size: 13px;
           color: var(--text-primary);
         }
 
         .cat-api-auth {
-          font-size: 9px;
-          font-family: var(--font-mono);
-          padding: 2px 5px;
-          border-radius: 4px;
+          font-size: 11.5px;
         }
 
         .cat-api-auth--free {
-          background: rgba(34, 197, 94, 0.12);
-          color: #22c55e;
+          color: var(--text-muted);
         }
 
         .cat-api-auth--key {
-          background: rgba(234, 179, 8, 0.15);
-          color: #eab308;
+          color: var(--warning);
         }
 
         .cat-api-desc {
           margin: 0;
           color: var(--text-muted);
-          font-size: 10px;
-          line-height: 1.4;
+          font-size: 12px;
+          line-height: 1.45;
           display: -webkit-box;
           -webkit-line-clamp: 2;
           -webkit-box-orient: vertical;
@@ -480,9 +472,9 @@ export default function PublicApiGallery({ onBuildProduct }: PublicApiGalleryPro
           background: none;
           border: none;
           padding: 0;
-          color: var(--brand);
-          font-size: 10px;
-          font-weight: 600;
+          color: var(--text-secondary);
+          font: inherit;
+          font-size: 12px;
           cursor: pointer;
         }
 
@@ -514,9 +506,7 @@ export default function PublicApiGallery({ onBuildProduct }: PublicApiGalleryPro
         }
 
         .api-image-card:hover {
-          border-color: var(--accent-border);
-          transform: translateY(-2px);
-          box-shadow: var(--shadow-sm);
+          border-color: var(--border-strong);
         }
 
         .api-image-card img {
@@ -538,13 +528,14 @@ export default function PublicApiGallery({ onBuildProduct }: PublicApiGalleryPro
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
-          font-size: 10.5px;
+          font-size: 12.5px;
+          font-weight: 500;
           color: var(--text-primary);
         }
 
         .api-image-info span {
-          font: 9.5px var(--font-mono);
-          color: var(--brand);
+          font-size: 11.5px;
+          color: var(--text-muted);
         }
 
         /* Recipe Grid */
@@ -569,9 +560,7 @@ export default function PublicApiGallery({ onBuildProduct }: PublicApiGalleryPro
         }
 
         .api-recipe-card:hover {
-          border-color: var(--accent-border);
-          transform: translateY(-2px);
-          box-shadow: var(--shadow-md);
+          border-color: var(--border-strong);
           background: var(--bg-hover);
         }
 
@@ -584,32 +573,24 @@ export default function PublicApiGallery({ onBuildProduct }: PublicApiGalleryPro
 
         .api-recipe-category {
           color: var(--text-muted);
-          font: 600 9.5px var(--font-mono);
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
+          font-size: 12px;
         }
 
         .recipe-auth-pill {
-          font-size: 9px;
-          font-family: var(--font-mono);
-          padding: 2px 6px;
-          border-radius: var(--radius-full);
-          background: rgba(34, 197, 94, 0.1);
-          color: #22c55e;
-          font-weight: 500;
+          font-size: 11.5px;
+          color: var(--text-muted);
         }
 
         .recipe-auth-pill--key {
-          background: rgba(234, 179, 8, 0.12);
-          color: #eab308;
+          color: var(--warning);
         }
 
         .api-recipe-title {
           display: block;
-          font-size: 13px;
+          font-size: 13.5px;
           font-weight: 600;
           color: var(--text-primary);
-          margin-bottom: 6px;
+          margin-bottom: 4px;
         }
 
         .api-recipe-desc {
@@ -617,7 +598,7 @@ export default function PublicApiGallery({ onBuildProduct }: PublicApiGalleryPro
           min-height: 40px;
           margin: 0 0 12px;
           color: var(--text-secondary);
-          font-size: 10.5px;
+          font-size: 12.5px;
           line-height: 1.5;
         }
 
@@ -631,17 +612,16 @@ export default function PublicApiGallery({ onBuildProduct }: PublicApiGalleryPro
 
         .api-recipe-api {
           color: var(--text-muted);
-          font: 9.5px var(--font-mono);
+          font: 11.5px var(--font-mono);
         }
 
         .recipe-build-cta {
-          color: var(--brand);
-          font: 600 10.5px var(--font-sans);
-          transition: transform var(--transition-fast);
+          color: var(--text-secondary);
+          font-size: 12px;
         }
 
         .api-recipe-card:hover .recipe-build-cta {
-          transform: translateX(2px);
+          color: var(--text-primary);
         }
 
         @media (max-width: 900px) {
@@ -684,6 +664,14 @@ function BuildProductModal({
   const [projectName, setProjectName] = useState(product.title);
   const [apiKey, setApiKey] = useState(product.demoKey || '');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -729,7 +717,7 @@ function BuildProductModal({
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-card" role="dialog" aria-modal="true" aria-label={product.title} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <div className="modal-header-left">
             <span className="modal-tag">{product.category}</span>
@@ -738,11 +726,13 @@ function BuildProductModal({
                 product.auth === 'apiKey' ? 'modal-auth-tag--key' : 'modal-auth-tag--free'
               }`}
             >
-              {product.auth === 'apiKey' ? '🔑 Requires API Key' : '🟢 Free Public API'}
+              {product.auth === 'apiKey' ? 'Key needed' : 'No key needed'}
             </span>
           </div>
-          <button type="button" onClick={onClose} className="modal-close">
-            ✕
+          <button type="button" onClick={onClose} className="modal-close" aria-label="Close">
+            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
           </button>
         </div>
 
@@ -752,23 +742,23 @@ function BuildProductModal({
 
           <div className="modal-api-meta">
             <div className="meta-row">
-              <span className="meta-label">Provider:</span>
+              <span className="meta-label">Provider</span>
               <span className="meta-val">{product.api}</span>
             </div>
             <div className="meta-row">
-              <span className="meta-label">Endpoint:</span>
+              <span className="meta-label">Endpoint</span>
               <span className="meta-val font-mono">{product.endpoint}</span>
             </div>
             {product.docsUrl && (
               <div className="meta-row">
-                <span className="meta-label">Documentation:</span>
+                <span className="meta-label">Docs</span>
                 <a
                   href={product.docsUrl}
                   target="_blank"
                   rel="noreferrer"
                   className="meta-link"
                 >
-                  {product.docsUrl} ↗
+                  {product.docsUrl}
                 </a>
               </div>
             )}
@@ -777,12 +767,13 @@ function BuildProductModal({
           <form onSubmit={handleSubmit} className="modal-form">
             {/* Project Name */}
             <div className="field-group">
-              <label className="field-label">Project Name</label>
+              <label className="field-label" htmlFor="build-project-name">Project name</label>
               <input
+                id="build-project-name"
                 type="text"
                 value={projectName}
                 onChange={(e) => setProjectName(e.target.value)}
-                placeholder="My API Application…"
+                placeholder="My API app"
                 className="modal-input"
                 required
               />
@@ -791,8 +782,8 @@ function BuildProductModal({
             {/* API Key configuration */}
             <div className="field-group">
               <div className="field-label-row">
-                <label className="field-label">
-                  {product.auth === 'apiKey' ? 'API Key *' : 'API Key (Optional)'}
+                <label className="field-label" htmlFor="build-api-key">
+                  {product.auth === 'apiKey' ? 'API key' : 'API key (optional)'}
                 </label>
                 {product.demoKey && (
                   <button
@@ -808,32 +799,27 @@ function BuildProductModal({
               {product.auth === 'apiKey' ? (
                 <>
                   <input
+                    id="build-api-key"
                     type="password"
                     value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
-                    placeholder={`Enter ${product.api} API key…`}
+                    placeholder={`${product.api} API key`}
                     className="modal-input"
                     required={!product.demoKey}
                   />
                   <p className="field-hint">
-                    Key will be saved to your encrypted project settings as{' '}
-                    <code>{product.keyEnv || 'VITE_API_KEY'}</code> and provided to the LLM agent.
+                    Saved encrypted in project settings as{' '}
+                    <code>{product.keyEnv || 'VITE_API_KEY'}</code> and made available to the agent.
                   </p>
                 </>
               ) : (
-                <div className="free-api-notice">
-                  <div className="free-icon">✓</div>
-                  <div className="free-text">
-                    <strong>100% Free Public API</strong>
-                    <span>No API key required. The AI agent will connect to the live endpoint immediately.</span>
-                  </div>
-                </div>
+                <p className="field-hint">No key needed. The agent connects to the live endpoint directly.</p>
               )}
             </div>
 
             {/* Features preview */}
             <div className="features-preview">
-              <strong>What the AI agent will build:</strong>
+              <strong>What the agent will build</strong>
               <ul>
                 <li>Complete React + Vite application with responsive layout</li>
                 <li>Live dynamic data fetching from {product.api}</li>
@@ -853,17 +839,7 @@ function BuildProductModal({
                 Cancel
               </button>
               <button type="submit" disabled={loading} className="btn-build">
-                {loading ? (
-                  <>
-                    <span className="spinner" />
-                    <span>Configuring & Launching…</span>
-                  </>
-                ) : (
-                  <>
-                    <span>🚀</span>
-                    <span>Build Product with AI</span>
-                  </>
-                )}
+                {loading ? 'Starting…' : 'Build'}
               </button>
             </div>
           </form>
@@ -874,14 +850,12 @@ function BuildProductModal({
         .modal-backdrop {
           position: fixed;
           inset: 0;
-          background: rgba(0, 0, 0, 0.65);
-          backdrop-filter: blur(4px);
+          background: var(--scrim);
           z-index: 1000;
           display: flex;
           align-items: center;
           justify-content: center;
-          padding: 20px;
-          animation: fade-in 0.15s ease forwards;
+          padding: 16px;
         }
 
         .modal-card {
@@ -889,10 +863,11 @@ function BuildProductModal({
           max-width: 520px;
           background: var(--bg-surface);
           border: 1px solid var(--border-base);
-          border-radius: var(--radius-xl);
+          max-height: 90vh;
+          overflow-y: auto;
+          border-radius: var(--radius-lg);
           box-shadow: var(--shadow-lg);
-          overflow: hidden;
-          animation: scale-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+          font-size: 13px;
         }
 
         .modal-header {
@@ -910,38 +885,29 @@ function BuildProductModal({
         }
 
         .modal-tag {
-          font: 600 10px var(--font-mono);
-          text-transform: uppercase;
-          color: var(--brand);
-          background: var(--brand-glow);
-          border: 1px solid var(--accent-border);
-          padding: 3px 8px;
-          border-radius: var(--radius-full);
+          font-size: 12px;
+          color: var(--text-secondary);
         }
 
         .modal-auth-tag {
-          font: 500 10px var(--font-mono);
-          padding: 3px 8px;
-          border-radius: var(--radius-full);
+          font-size: 12px;
         }
 
         .modal-auth-tag--free {
-          background: rgba(34, 197, 94, 0.12);
-          color: #22c55e;
+          color: var(--text-muted);
         }
 
         .modal-auth-tag--key {
-          background: rgba(234, 179, 8, 0.15);
-          color: #eab308;
+          color: var(--warning);
         }
 
         .modal-close {
           background: none;
           border: none;
-          font-size: 14px;
+          display: inline-flex;
           color: var(--text-muted);
           cursor: pointer;
-          padding: 4px;
+          padding: 6px;
           border-radius: 4px;
         }
 
@@ -956,15 +922,15 @@ function BuildProductModal({
 
         .modal-title {
           margin: 0 0 6px;
-          font: 600 18px var(--font-brand);
+          font: 500 20px/1.3 var(--font-serif);
           color: var(--text-primary);
         }
 
         .modal-desc {
           margin: 0 0 16px;
           color: var(--text-secondary);
-          font-size: 12px;
-          line-height: 1.5;
+          font-size: 13px;
+          line-height: 1.55;
         }
 
         .modal-api-meta {
@@ -981,7 +947,7 @@ function BuildProductModal({
         .meta-row {
           display: flex;
           gap: 8px;
-          font-size: 11px;
+          font-size: 12px;
         }
 
         .meta-label {
@@ -996,7 +962,8 @@ function BuildProductModal({
         }
 
         .meta-link {
-          color: var(--brand);
+          color: var(--text-secondary);
+          word-break: break-all;
           text-decoration: none;
         }
 
@@ -1006,7 +973,7 @@ function BuildProductModal({
 
         .font-mono {
           font-family: var(--font-mono);
-          font-size: 10px;
+          font-size: 11.5px;
         }
 
         .modal-form {
@@ -1028,7 +995,7 @@ function BuildProductModal({
         }
 
         .field-label {
-          font-size: 11.5px;
+          font-size: 12px;
           font-weight: 500;
           color: var(--text-secondary);
         }
@@ -1036,8 +1003,8 @@ function BuildProductModal({
         .demo-key-btn {
           background: var(--bg-elevated);
           border: 1px solid var(--border-base);
-          color: var(--brand);
-          font: 600 10px var(--font-mono);
+          color: var(--text-secondary);
+          font: 11px var(--font-mono);
           padding: 2px 7px;
           border-radius: 4px;
           cursor: pointer;
@@ -1048,24 +1015,17 @@ function BuildProductModal({
         }
 
         .modal-input {
-          background: var(--bg-base);
+          background: var(--bg-elevated);
           border: 1px solid var(--border-base);
-          border-radius: var(--radius-md);
-          padding: 9px 12px;
+          border-radius: var(--radius-sm);
+          padding: 7px 10px;
           color: var(--text-primary);
-          font-size: 12.5px;
-          outline: none;
-          transition: border-color var(--transition-fast);
-        }
-
-        .modal-input:focus {
-          border-color: var(--brand);
-          box-shadow: 0 0 0 1px var(--brand);
+          font: inherit;
         }
 
         .field-hint {
           margin: 2px 0 0;
-          font-size: 10px;
+          font-size: 12px;
           color: var(--text-muted);
         }
 
@@ -1074,46 +1034,6 @@ function BuildProductModal({
           padding: 1px 4px;
           border-radius: 3px;
           font-family: var(--font-mono);
-          color: var(--brand);
-        }
-
-        .free-api-notice {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          padding: 10px 12px;
-          border-radius: var(--radius-md);
-          background: rgba(34, 197, 94, 0.08);
-          border: 1px solid rgba(34, 197, 94, 0.2);
-        }
-
-        .free-icon {
-          width: 20px;
-          height: 20px;
-          border-radius: 50%;
-          background: #22c55e;
-          color: #fff;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 11px;
-          font-weight: bold;
-          flex-shrink: 0;
-        }
-
-        .free-text {
-          display: flex;
-          flex-direction: column;
-          gap: 2px;
-        }
-
-        .free-text strong {
-          font-size: 11px;
-          color: #22c55e;
-        }
-
-        .free-text span {
-          font-size: 10px;
           color: var(--text-secondary);
         }
 
@@ -1122,7 +1042,7 @@ function BuildProductModal({
           border: 1px solid var(--border-subtle);
           border-radius: var(--radius-md);
           padding: 10px 14px;
-          font-size: 11px;
+          font-size: 12px;
           color: var(--text-secondary);
         }
 
@@ -1153,8 +1073,7 @@ function BuildProductModal({
           background: var(--bg-surface);
           color: var(--text-secondary);
           border-radius: var(--radius-md);
-          font-size: 12px;
-          font-weight: 500;
+          font: inherit;
           cursor: pointer;
         }
 
@@ -1168,19 +1087,17 @@ function BuildProductModal({
           align-items: center;
           gap: 8px;
           padding: 9px 20px;
-          background: var(--brand);
-          color: #fffaf7;
-          border: none;
+          background: var(--accent);
+          color: var(--bg-base);
+          border: 1px solid var(--accent);
           border-radius: var(--radius-md);
-          font-size: 12.5px;
-          font-weight: 600;
+          font: inherit;
+          font-weight: 500;
           cursor: pointer;
-          transition: all var(--transition-fast);
         }
 
         .btn-build:hover:not(:disabled) {
-          background: var(--brand-dim);
-          transform: translateY(-1px);
+          opacity: 0.9;
         }
 
         .btn-build:disabled {
@@ -1188,28 +1105,6 @@ function BuildProductModal({
           cursor: not-allowed;
         }
 
-        .spinner {
-          width: 13px;
-          height: 13px;
-          border: 2px solid rgba(255, 255, 255, 0.3);
-          border-top-color: #fff;
-          border-radius: 50%;
-          animation: spin 0.6s linear infinite;
-        }
-
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-
-        @keyframes fade-in {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-
-        @keyframes scale-in {
-          from { opacity: 0; transform: scale(0.96); }
-          to { opacity: 1; transform: scale(1); }
-        }
       `}</style>
     </div>
   );

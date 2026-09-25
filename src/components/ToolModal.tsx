@@ -49,8 +49,8 @@ export default function ToolModal({ onClose }: ToolModalProps) {
       <div className="tm-modal animate-slide-up">
         {/* Header */}
         <div className="tm-head">
-          <h3 className="tm-title">Tool Configuration</h3>
-          <button className="tm-close" onClick={onClose} title="Close">✕</button>
+          <h3 className="tm-title">Tools</h3>
+          <button className="tm-close" onClick={onClose} title="Close" aria-label="Close">✕</button>
         </div>
 
         <div className="tm-body">
@@ -73,10 +73,10 @@ export default function ToolModal({ onClose }: ToolModalProps) {
             <table className="tm-tbl">
               <thead>
                 <tr>
-                  <th>CATEGORY</th>
-                  <th>TOOL</th>
-                  <th>SCOPE</th>
-                  <th>DESCRIPTION</th>
+                  <th>Category</th>
+                  <th>Tool</th>
+                  <th>Scope</th>
+                  <th>Description</th>
                 </tr>
               </thead>
               <tbody>
@@ -96,7 +96,7 @@ export default function ToolModal({ onClose }: ToolModalProps) {
 
           {/* Execution model info */}
           <div className="tm-info">
-            <div className="tm-info-lbl">EXECUTION MODEL</div>
+            <div className="tm-info-lbl">Execution model</div>
             <p className="tm-info-txt">
               Tools run sequentially inside a <strong>path-jailed workspace</strong>.
               File writes are git-checkpointed before and after each turn, and the agent
@@ -112,9 +112,7 @@ export default function ToolModal({ onClose }: ToolModalProps) {
         .tm-backdrop {
           position: fixed;
           inset: 0;
-          background: rgba(0,0,0,0.7);
-          backdrop-filter: blur(4px);
-          -webkit-backdrop-filter: blur(4px);
+          background: rgba(20, 20, 19, 0.4);
           z-index: 300;
         }
 
@@ -127,10 +125,8 @@ export default function ToolModal({ onClose }: ToolModalProps) {
           max-height: 82vh;
           z-index: 301;
           background: var(--bg-surface);
-          backdrop-filter: blur(20px);
-          -webkit-backdrop-filter: blur(20px);
           border: 1px solid var(--border-base);
-          border-radius: var(--radius-md);
+          border-radius: var(--radius-lg);
           display: flex;
           flex-direction: column;
           overflow: hidden;
@@ -143,7 +139,6 @@ export default function ToolModal({ onClose }: ToolModalProps) {
           align-items: center;
           padding: 16px 22px;
           border-bottom: 1px solid var(--border-subtle);
-          background: var(--bg-elevated);
           flex-shrink: 0;
         }
 
@@ -161,7 +156,7 @@ export default function ToolModal({ onClose }: ToolModalProps) {
           font-size: 16px;
           padding: 4px 8px;
           border-radius: var(--radius-sm);
-          transition: all var(--transition-fast);
+          transition: background var(--transition-fast), color var(--transition-fast);
         }
         .tm-close:hover { color: var(--text-primary); background: var(--bg-overlay); }
 
@@ -196,12 +191,13 @@ export default function ToolModal({ onClose }: ToolModalProps) {
           border-right: 1px solid var(--border-subtle);
           background: none;
           cursor: pointer;
-          transition: all var(--transition-fast);
+          transition: background var(--transition-fast), color var(--transition-fast);
         }
         .tm-step:last-child { border-right: none; }
         .tm-step:hover { background: var(--bg-hover); }
 
-        .tm-step--active { background: var(--brand-glow) !important; }
+        .tm-step.tm-step--active { background: var(--bg-overlay); box-shadow: inset 0 0 0 1px var(--border-strong); }
+        .tm-step:focus-visible, .tm-close:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
         .tm-step-n {
           width: 22px;
@@ -216,13 +212,12 @@ export default function ToolModal({ onClose }: ToolModalProps) {
           color: var(--text-muted);
         }
         .tm-step--active .tm-step-n {
-          background: var(--brand-glow);
-          border-color: var(--accent-border);
-          color: var(--brand);
+          border-color: var(--border-strong);
+          color: var(--text-primary);
         }
 
-        .tm-step-lbl { font-size: 10.5px; color: var(--text-muted); }
-        .tm-step--active .tm-step-lbl { color: var(--brand); }
+        .tm-step-lbl { font-size: 12px; color: var(--text-muted); }
+        .tm-step--active .tm-step-lbl { color: var(--text-primary); }
 
         /* Tool table */
         .tm-tbl-wrap {
@@ -242,9 +237,8 @@ export default function ToolModal({ onClose }: ToolModalProps) {
           padding: 8px 12px;
           background: var(--bg-elevated);
           color: var(--text-muted);
-          font-size: 9px;
-          letter-spacing: 0.07em;
-          font-weight: 700;
+          font-size: 11.5px;
+          font-weight: 500;
           border-bottom: 1px solid var(--border-subtle);
         }
 
@@ -258,13 +252,13 @@ export default function ToolModal({ onClose }: ToolModalProps) {
         .tm-tbl tr:last-child td { border-bottom: none; }
         .tm-tbl tr:hover td { background: var(--bg-hover); }
 
-        .tm-cat  { color: var(--brand); font-weight: 500; font-size: 11px; white-space: nowrap; }
+        .tm-cat  { color: var(--text-secondary); font-weight: 500; font-size: 11px; white-space: nowrap; }
 
         .tm-tool-name {
           font-family: var(--font-mono);
           font-size: 11px;
-          color: var(--accent);
-          background: var(--accent-soft);
+          color: var(--text-primary);
+          background: var(--bg-elevated);
           padding: 1px 6px;
           border-radius: 4px;
           white-space: nowrap;
@@ -274,14 +268,14 @@ export default function ToolModal({ onClose }: ToolModalProps) {
           display: inline-block;
           padding: 2px 8px;
           border-radius: var(--radius-full);
-          font-size: 9.5px;
-          font-weight: 600;
-          border: 1px solid;
+          font-size: 11px;
+          font-weight: 500;
+          border: 1px solid var(--border-base);
         }
-        .tm-scope--workspace { background: var(--success-dim); border-color: var(--success-border); color: var(--success); }
-        .tm-scope--sandbox   { background: var(--warning-dim); border-color: var(--accent-border); color: var(--warning); }
-        .tm-scope--network   { background: var(--cyan-soft); border-color: var(--accent-border); color: var(--cyan); }
-        .tm-scope--project   { background: var(--violet-soft); border-color: var(--accent-border); color: var(--violet); }
+        .tm-scope--workspace { background: var(--bg-elevated); color: var(--text-secondary); }
+        .tm-scope--sandbox   { background: var(--warning-dim); color: var(--warning); }
+        .tm-scope--network   { background: var(--info-dim); color: var(--info); }
+        .tm-scope--project   { background: var(--bg-elevated); color: var(--text-muted); }
 
         .tm-desc { font-size: 11px; color: var(--text-muted); }
 
@@ -294,10 +288,9 @@ export default function ToolModal({ onClose }: ToolModalProps) {
           flex-shrink: 0;
         }
         .tm-info-lbl {
-          font-size: 8.5px;
-          letter-spacing: 0.07em;
-          color: var(--text-muted);
-          font-weight: 700;
+          font-size: 12px;
+          color: var(--text-primary);
+          font-weight: 600;
           margin-bottom: 6px;
         }
         .tm-info-txt {

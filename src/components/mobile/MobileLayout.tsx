@@ -82,9 +82,12 @@ export default function MobileLayout({
             <button
               className="chat-fab"
               onClick={() => setChatOpen(true)}
-              aria-label="Open Chat"
+              aria-label="Open chat"
+              title="Open chat"
             >
-              💬
+              <svg viewBox="0 0 24 24" width={20} height={20} fill="none" stroke="currentColor" strokeWidth={1.8}>
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
             </button>
           </div>
         ) : (
@@ -127,7 +130,7 @@ export default function MobileLayout({
       <MobileDrawer
         open={chatOpen}
         onClose={() => setChatOpen(false)}
-        title="Agent Workspace"
+        title="Chat"
         side="bottom"
       >
         <div style={{ height: '70vh' }}>
@@ -179,24 +182,23 @@ export default function MobileLayout({
           position: fixed;
           bottom: calc(var(--tab-bar-height) + 24px);
           right: 20px;
-          width: 52px;
-          height: 52px;
+          width: 48px;
+          height: 48px;
           border-radius: 50%;
-          background: var(--brand);
-          color: white;
+          background: var(--accent);
+          color: var(--bg-surface);
           border: none;
-          box-shadow: var(--shadow-lg);
-          font-size: 22px;
+          box-shadow: var(--shadow-md);
           display: flex;
           align-items: center;
           justify-content: center;
           cursor: pointer;
           z-index: 50;
-          transition: transform var(--transition-fast);
         }
 
-        .chat-fab:active {
-          transform: scale(0.95);
+        .chat-fab:focus-visible {
+          outline: 2px solid var(--accent);
+          outline-offset: 2px;
         }
       `}</style>
     </div>
