@@ -123,11 +123,33 @@ function parseSkill(raw: string, fallbackName: string, source: string): SkillDef
   };
 }
 
+export const LOAD_SKILL_HINT =
+  'When a task matches a skill, call load_skill with its name to get the full instructions before starting.';
+
+/** One listing line for a skill (name + one-line description). This is all the
+ * model sees until it calls load_skill — full instructions load on demand. */
+export function formatSkillListing(skill: SkillDefinition): string {
+  const oneLine = skill.description.replace(/\s+/g, ' ').trim().slice(0, 240);
+  return `- ${skill.name}: ${oneLine}`;
+}
+
 export function formatSkillsForPrompt(skills: SkillDefinition[]): string {
   if (skills.length === 0) return '';
   return [
-    '## Project Skills',
-    'The following skills are available in context. Apply a skill when it matches the task; do not invent requirements from unrelated skills.',
-    ...skills.map((skill) => `\n### ${skill.name}\n${skill.description}\nSource: ${skill.source}\n\n${skill.instructions}`),
+    '## Skills',
+    `${LOAD_SKILL_HINT} Do not apply a skill that does not match the task.`,
+    '',
+    ...skills.map(formatSkillListing),
   ].join('\n');
+}
+
+/** Whether a skill came from the project workspace or a global root. */
+export function skillGroup(skill: SkillDefinition): 'project' | 'global' {
+  return skill.source.startsWith('global:') ? 'global' : 'project';
+}
+
+/** Case-insensitive lookup used by the load_skill tool. */
+export function findSkill(skills: SkillDefinition[], name: string): SkillDefinition | undefined {
+  const needle = name.trim().toLowerCase();
+  return skills.find((s) => s.name.toLowerCase() === needle);
 }

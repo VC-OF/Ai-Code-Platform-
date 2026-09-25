@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { loadSkills } from '@/lib/skills';
+import { loadSkills, skillGroup, formatSkillListing } from '@/lib/skills';
+import { estimateTokens } from '@/lib/contextManager';
 import { projectDb } from '@/lib/db';
 import { getWorkspaceRoot } from '@/lib/workspace';
 
@@ -35,6 +36,9 @@ export async function GET(req: NextRequest) {
         name: s.name,
         description: s.description,
         source: s.source,
+        group: skillGroup(s),
+        listingTokens: estimateTokens(formatSkillListing(s)),
+        instructionTokens: estimateTokens(s.instructions),
         preview: s.instructions.slice(0, 300) + (s.instructions.length > 300 ? '…' : ''),
       })),
     });

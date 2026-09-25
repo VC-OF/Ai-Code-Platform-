@@ -5,6 +5,8 @@ import { StatusIndicator, type AgentStatus } from '../StatusIndicator';
 import { TimelineEvent } from '../TimelineEvent';
 import MessageInput from './MessageInput';
 import Markdown from './Markdown';
+import ContextReport, { type ContextReportData } from './ContextReport';
+import SkillsReport, { type SkillsReportItem } from './SkillsReport';
 import {
   findSlashCommand,
   parseSlashCommand,
@@ -595,6 +597,7 @@ export default function ChatPanel({
     statuslineVisible,
     setStatuslineVisible,
     say,
+    push: (item) => setTimeline((t) => [...t, { ts: Date.now(), ...item } as TimelineItem]),
     getTranscript,
   });
 
@@ -632,33 +635,12 @@ export default function ChatPanel({
         try {
           const res = await fetch(`/api/chat/context?projectId=${encodeURIComponent(projectId)}&model=${encodeURIComponent(selectedModel || '')}`);
           const data = await res.json();
-          const tokensFmt = Number(data.currentTokens || 0).toLocaleString();
-          const windowFmt = Number(data.windowSize || 2_000_000).toLocaleString();
-          const pct = ((data.ratio || 0) * 100).toFixed(2);
-          const thresholdFmt = Number(data.compactThreshold || 1_200_000).toLocaleString();
-
-          const content = `**Context Window Metrics (2M Limit Active)**\n` +
-            `• **Context Window Limit**: \`${windowFmt} tokens\` (2 Million tokens)\n` +
-            `• **Current Context Usage**: \`${tokensFmt} tokens\` (${pct}%)\n` +
-            `• **Message Count**: \`${data.messageCount ?? timeline.length} messages\`\n` +
-            `• **Compaction Threshold**: \`${thresholdFmt} tokens\` (60%)\n` +
-            `• **Status**: ${Number(data.currentTokens) > Number(data.compactThreshold) ? 'Near auto-compaction threshold' : 'Healthy (plenty of room for deep reasoning)'}\n\n` +
-            `*Type \`/compact\` or click the Compact pill to summarize and compress working memory.*`;
-
-          setTimeline((t) => [
-            ...t,
-            { type: 'message', role: 'assistant', content, ts: Date.now() },
-          ]);
-        } catch {
-          setTimeline((t) => [
-            ...t,
-            {
-              type: 'message',
-              role: 'assistant',
-              content: `**Context Window**: 2,000,000 tokens limit. Working messages: ${timeline.length}.`,
-              ts: Date.now(),
-            },
-          ]);
+          if (!res.ok || data.error || !Array.isArray(data.categories)) {
+            throw new Error(data.error || `HTTP ${res.status}`);
+          }
+          setTimeline((t) => [...t, { type: 'context_report', data, ts: Date.now() }]);
+        } catch (err) {
+          say(`Couldn't load context usage: ${err instanceof Error ? err.message : String(err)}`);
         }
         return;
       }
@@ -840,6 +822,12 @@ export default function ChatPanel({
                   </div>
                 </div>
               );
+            }
+            if (item.type === 'context_report') {
+              return <ContextReport key={i} data={item.data as ContextReportData} />;
+            }
+            if (item.type === 'skills_report') {
+              return <SkillsReport key={i} skills={(item.skills as SkillsReportItem[]) ?? []} />;
             }
             return <TimelineEvent key={i} event={item} />;
           })}

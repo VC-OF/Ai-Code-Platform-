@@ -32,6 +32,7 @@ const TOOLS = [
   { category: 'Verification', tool: 'read_preview_logs', scope: 'workspace', desc: 'Read the dev server logs to diagnose runtime errors' },
   { category: 'Verification', tool: 'fetch_preview', scope: 'workspace', desc: 'Fetch the rendered preview page to confirm it works' },
   { category: 'Verification', tool: 'check_preview', scope: 'workspace', desc: 'Load the preview in a real browser — console errors + screenshot' },
+  { category: 'Interaction',  tool: 'load_skill',    scope: 'workspace', desc: 'Load a skill\'s full instructions on demand' },
   { category: 'Interaction',  tool: 'ask_user',      scope: 'workspace', desc: 'Pause and ask you a clarifying question mid-run' },
   { category: 'Interaction',  tool: 'update_plan',   scope: 'workspace', desc: 'Maintain a persistent task plan shown in chat, resumable across turns' },
   { category: 'Deploy',       tool: 'deploy_app',    scope: 'network',   desc: 'Deploy the workspace to Vercel (needs VERCEL_TOKEN)' },

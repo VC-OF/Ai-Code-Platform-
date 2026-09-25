@@ -5,6 +5,10 @@ const toolSchemas = {
     path: z.string().min(1).max(500),
   }),
   
+  load_skill: z.object({
+    name: z.string().min(1).max(200),
+  }),
+
   create_file: z.object({
     path: z.string().min(1).max(500),
     content: z.string().max(500_000), // 500KB limit

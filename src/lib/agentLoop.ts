@@ -824,6 +824,7 @@ function buildInitialMessages(
 function toolStatusFor(toolName: string): AgentStatus {
   const map: Record<string, AgentStatus> = {
     read_file:    'reading',
+    load_skill:   'reading',
     list_files:   'reading',
     glob_files:   'reading',
     grep_files:   'reading',

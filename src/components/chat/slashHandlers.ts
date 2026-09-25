@@ -42,6 +42,8 @@ export interface SlashContext {
   setStatuslineVisible: (visible: boolean) => void;
   /** Append an assistant-style markdown note to the timeline */
   say: (markdown: string) => void;
+  /** Append a structured timeline item (e.g. a skills_report card) */
+  push?: (item: { type: string; [key: string]: unknown }) => void;
   /** User/assistant messages currently in the timeline, oldest first */
   getTranscript: () => ExportableMessage[];
 }
@@ -96,7 +98,14 @@ interface GitStatus { branch?: string; changes?: { code: string; path: string }[
 interface DockerStatus { available?: boolean; version?: string; sandboxModeActive?: boolean; defaultImage?: string; error?: string }
 interface McpServer { server: string; connected: boolean; tools: string[]; error?: string }
 interface McpInfo { configured: number; configPath: string; servers: McpServer[] }
-interface Skill { name: string; description: string; source: string }
+interface Skill {
+  name: string;
+  description: string;
+  source: string;
+  group?: 'project' | 'global';
+  listingTokens?: number;
+  instructionTokens?: number;
+}
 interface WorkspaceInfo {
   workspace: string;
   writable: boolean;
@@ -501,16 +510,22 @@ async function loadSkills(projectId: string): Promise<Skill[]> {
 }
 
 async function handleSkills(ctx: SlashContext) {
+  let skills: Skill[];
   try {
-    const skills = await loadSkills(ctx.projectId);
-    ctx.say(
-      skills.length
-        ? `**Skills** (${skills.length})\n\n${skills.map((s) => `- \`${s.name}\` — ${s.description} _(${s.source})_`).join('\n')}`
-        : 'No skills found. Add them to `.opencode/skills/` or `skills/`.'
-    );
+    skills = await loadSkills(ctx.projectId);
   } catch (err) {
     ctx.say(`Couldn’t load skills: ${errText(err)}`);
+    return;
   }
+  if (ctx.push) {
+    ctx.push({ type: 'skills_report', skills, ts: Date.now() });
+    return;
+  }
+  ctx.say(
+    skills.length
+      ? `**Skills** (${skills.length})\n\n${skills.map((s) => `- \`${s.name}\` — ${s.description} _(${s.source})_`).join('\n')}`
+      : 'No skills yet. Add a SKILL.md under `.agents/skills/<name>/` in this project.'
+  );
 }
 
 async function handleAgents(ctx: SlashContext) {
@@ -530,7 +545,7 @@ async function handleAgents(ctx: SlashContext) {
     '',
     skills.length ? skills.map((s) => `- \`${s.name}\` — ${s.description}`).join('\n') : '- None found.',
     '',
-    'This platform runs a single agent loop; skills are injected into its prompt. Agent definitions are listed for reference.',
+    'This platform runs a single agent loop; skills are listed in its prompt and loaded on demand with load_skill. Agent definitions are listed for reference.',
   ].join('\n'));
 }
 

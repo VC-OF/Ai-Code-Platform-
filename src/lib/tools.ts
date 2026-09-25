@@ -48,6 +48,21 @@ export const TOOL_SCHEMAS = [
   {
     type: "function",
     function: {
+      name: "load_skill",
+      description:
+        "Load the full instructions of a skill listed in the Skills section of the system prompt. Call this before starting a task that matches a skill.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Skill name exactly as listed" },
+        },
+        required: ["name"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "create_file",
       description:
         "Create a new file or completely overwrite an existing file with the given content. Creates parent directories automatically. For files longer than ~300 lines, write the first part here and add the rest with append_file, so no single call is too large.",
@@ -592,6 +607,29 @@ export async function executeTool(
           success: true,
           output: truncate(content, MAX_READ_CHARS),
           summary: `Read ${args.path} (${lines} lines)`,
+        };
+      }
+
+      // ── load_skill ─────────────────────────────────────────────────────
+      case "load_skill": {
+        const { loadSkills, findSkill } = await import("./skills");
+        const requested = String(args.name ?? "");
+        const skills = await loadSkills(workspace, { includeGlobal: true });
+        const skill = findSkill(skills, requested);
+        if (!skill) {
+          const names = skills.map((s) => s.name).join(", ") || "(none)";
+          return {
+            success: false,
+            output: `Unknown skill '${requested}'. Available skills: ${names}`,
+            summary: `Skill not found: ${requested}`,
+            error: `Unknown skill '${requested}'`,
+            suggestion: `Use one of: ${names}`,
+          };
+        }
+        return {
+          success: true,
+          output: `# Skill: ${skill.name}\nSource: ${skill.source}\n\n${skill.instructions}`,
+          summary: `Loaded skill ${skill.name}`,
         };
       }
 

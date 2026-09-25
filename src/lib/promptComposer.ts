@@ -27,7 +27,7 @@ export function formatOutputStyleForPrompt(style?: OutputStyle): string {
   return '';
 }
 
-function formatModeForPrompt(mode?: 'auto' | 'manual' | 'plan'): string {
+export function formatModeForPrompt(mode?: 'auto' | 'manual' | 'plan'): string {
   if (mode === 'manual') {
     return '## Execution Mode: Manual (Supervised)\nYou are running in Manual Supervision Mode. All modifying operations (file creations, edits, deletions, shell commands, and docker runs) will be submitted to the user for interactive approval. Clearly state what you intend to do before executing mutating tools.';
   }

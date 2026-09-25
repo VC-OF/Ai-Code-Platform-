@@ -4,16 +4,9 @@ import { workspaceLocks } from '@/lib/workspaceLock';
 import { EventEmitter, type AgentStatus } from '@/lib/events';
 import { projectDb, messageDb, planDb } from '@/lib/db';
 import { getModel, LLMMessage, type LLMTool } from '@/lib/llmClient';
-import { SYSTEM_PROMPT } from '@/lib/systemPrompt';
-import { createHarness } from '@/lib/harness';
 import { composeSystemPrompt, type OutputStyle } from '@/lib/promptComposer';
-import { loadSkills } from '@/lib/skills';
-import { listKnowledgeItems } from '@/lib/knowledge';
 import { TOOL_SCHEMAS } from '@/lib/tools';
-import { isDockerMode } from '@/lib/safeExec';
-import { getMcpToolSchemas } from '@/lib/mcpClient';
-import { readFileSync } from 'fs';
-import path from 'path';
+import { buildPromptParts } from '@/lib/contextBreakdown';
 
 export interface RunningAgent {
   projectId: string;
@@ -179,13 +172,6 @@ class AgentManager {
         const project = projectDb.getById(projectId);
         if (!project) throw new Error('Project not found');
 
-        // Load AGENTS.md
-        let agentsMemory: string | undefined;
-        const agentsPath = path.join(project.workspace, 'AGENTS.md');
-        try {
-          agentsMemory = readFileSync(agentsPath, 'utf-8');
-        } catch {}
-
         // Get previous messages from DB (most recent history)
         const dbMessages = messageDb.getRecent(projectId, 300);
         const turnIndex = messageDb.getLatestTurnIndex(projectId) + 1;
@@ -267,32 +253,16 @@ class AgentManager {
             agent.pendingInput = { question, resolve: settle };
           });
 
-        // MCP servers contribute extra tools (mcp_<server>_<tool>)
-        const mcpTools = await getMcpToolSchemas().catch(() => []);
-        const skills = await loadSkills(project.workspace, { includeGlobal: true });
-        const knowledgeItems = await listKnowledgeItems(project.workspace).catch(() => []);
+        // Same prompt parts /context reports on (shared helper, no drift)
+        const { parts: promptParts, mcpTools } = await buildPromptParts(project, {
+          mode: executionMode,
+          outputStyle,
+        });
 
         // Persisted plan from earlier turns → resume context
         const currentPlan = planDb.get(projectId);
 
-        const systemPrompt = composeSystemPrompt({
-          basePrompt: SYSTEM_PROMPT +
-          (isDockerMode()
-            ? '\n\nNote: run_command executes in an isolated container — full shell syntax (pipes, &&, redirection) is available. Network access only works for package-manager installs.'
-            : '') +
-          (mcpTools.length > 0
-            ? `\n\nExternal tools: ${mcpTools.length} additional tool(s) are available from connected MCP servers (names starting with mcp_). Use them like any other tool.`
-            : '') +
-          (project.kind === 'build'
-            ? '\n\nNote: this project is Build Mode — an existing, real codebase opened directly from disk, not a fresh scaffold. It may not follow any particular template or framework. Explore the file structure and read key files (README, package.json, lint/format configs) before making assumptions, and follow the project\'s existing conventions rather than introducing new ones.'
-            : ''),
-          agentsMemory,
-          harness: createHarness(project.kind),
-          skills,
-          knowledgeItems,
-          mode: executionMode,
-          outputStyle,
-        });
+        const systemPrompt = composeSystemPrompt(promptParts);
 
         await runAgentLoop({
           projectId,
