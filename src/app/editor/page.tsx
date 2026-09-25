@@ -31,19 +31,31 @@ const MonacoDiffEditor = dynamic(
 );
 
 // ─── File Icon Helper ──────────────────────────────────────────────────────────
+// VS Code (Seti-style) file icons: short glyph + language colour
+const FILE_ICONS: [RegExp, string, string][] = [
+  [/\.tsx$/, '⚛', '#519aba'],
+  [/\.jsx$/, '⚛', '#cbcb41'],
+  [/\.ts$/, 'TS', '#519aba'],
+  [/\.(js|mjs|cjs)$/, 'JS', '#cbcb41'],
+  [/\.json$/, '{}', '#cbcb41'],
+  [/\.(css|scss|less)$/, '#', '#519aba'],
+  [/\.html?$/, '<>', '#e37933'],
+  [/\.mdx?$/, 'M↓', '#519aba'],
+  [/\.py$/, 'py', '#3572a5'],
+  [/\.rs$/, 'rs', '#dea584'],
+  [/\.go$/, 'go', '#519aba'],
+  [/\.(yml|yaml|toml)$/, '≡', '#a074c4'],
+  [/\.(sh|bash|ps1)$/, '$', '#8dc149'],
+  [/\.sql$/, '▦', '#f55385'],
+  [/\.lock$/, '🔒︎', '#6d8086'],
+  [/(^|\/)\.env/, '⚙', '#6d8086'],
+  [/\.(png|jpe?g|gif|svg|ico|webp)$/, '▣', '#a074c4'],
+];
+
 function fileIcon(n: string) {
-  if (n.endsWith('.tsx') || n.endsWith('.jsx')) return '◈';
-  if (n.endsWith('.ts') || n.endsWith('.js')) return '◈';
-  if (n.endsWith('.css') || n.endsWith('.scss')) return '#';
-  if (n.endsWith('.json')) return '{}';
-  if (n.endsWith('.md')) return '¶';
-  if (n.endsWith('.yml') || n.endsWith('.yaml')) return '≡';
-  if (n.endsWith('.sh') || n.endsWith('.bash')) return '$';
-  if (n.includes('.env')) return '•';
-  if (n.endsWith('.html')) return '◇';
-  if (n.endsWith('.py')) return '◆';
-  if (n.endsWith('.sql')) return '▦';
-  return '◌';
+  const hit = FILE_ICONS.find(([re]) => re.test(n));
+  const [glyph, color] = hit ? [hit[1], hit[2]] : ['≣', '#6d8086'];
+  return <span className="vs-ficon" style={{ color }}>{glyph}</span>;
 }
 
 function getReadableLang(lang: string): string {
@@ -58,6 +70,17 @@ function getReadableLang(lang: string): string {
     case 'sql': return 'SQL';
     case 'shell': return 'Shell Script';
     case 'yaml': return 'YAML';
+    case 'rust': return 'Rust';
+    case 'go': return 'Go';
+    case 'java': return 'Java';
+    case 'c': return 'C';
+    case 'cpp': return 'C++';
+    case 'csharp': return 'C#';
+    case 'ruby': return 'Ruby';
+    case 'php': return 'PHP';
+    case 'ini': return 'TOML';
+    case 'powershell': return 'PowerShell';
+    case 'dockerfile': return 'Dockerfile';
     default: return 'Plain Text';
   }
 }
@@ -111,7 +134,6 @@ function SideNode({
             >
               <path d="M10 6l6 6-6 6V6z" />
             </svg>
-            <span className="s-folder-ic">{isExp ? '▾' : '▸'}</span>
             <span className="s-nm">{node.name}</span>
           </button>
           {hov && (
@@ -2687,6 +2709,102 @@ function EditorInner() {
           white-space: pre-wrap;
           font-family: monospace;
         }
+        /* ── VS Code Dark+ / Light+ palette, scoped to the editor page ── */
+        .vs-shell {
+          --bg-base: #1e1e1e;
+          --bg-surface: #252526;
+          --bg-elevated: #3c3c3c;
+          --bg-overlay: #37373d;
+          --bg-hover: #2a2d2e;
+          --border-subtle: #2b2b2b;
+          --border-base: #3c3c3c;
+          --border-strong: #474747;
+          --text-primary: #cccccc;
+          --text-secondary: #bbbbbb;
+          --text-muted: #858585;
+          --text-disabled: #5a5a5a;
+          --accent: #0e639c;
+          --accent-dim: #1177bb;
+          --accent-soft: rgba(14, 99, 156, 0.25);
+          --accent-border: #007fd4;
+          --success: #89d185;
+          --warning: #cca700;
+          --error: #f14c4c;
+          --info: #3794ff;
+          --vsc-activity: #333333;
+          --vsc-activity-fg: #858585;
+          --vsc-activity-active: #ffffff;
+          --vsc-tab-inactive: #2d2d2d;
+          --vsc-tab-active: #1e1e1e;
+          --vsc-selection: #04395e;
+          --vsc-focus: #007fd4;
+          --vsc-status: #007acc;
+          --vsc-titlebar: #3c3c3c;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', system-ui, Ubuntu, sans-serif;
+          font-size: 13px;
+        }
+        html[data-theme='light'] .vs-shell {
+          --bg-base: #ffffff;
+          --bg-surface: #f3f3f3;
+          --bg-elevated: #ffffff;
+          --bg-overlay: #e4e6f1;
+          --bg-hover: #e8e8e8;
+          --border-subtle: #e5e5e5;
+          --border-base: #cecece;
+          --border-strong: #b0b0b0;
+          --text-primary: #333333;
+          --text-secondary: #424242;
+          --text-muted: #717171;
+          --text-disabled: #a0a0a0;
+          --accent: #007acc;
+          --accent-dim: #0062a3;
+          --accent-soft: rgba(0, 122, 204, 0.12);
+          --accent-border: #0090f1;
+          --success: #388a34;
+          --warning: #bf8803;
+          --error: #e51400;
+          --info: #1a85ff;
+          --vsc-activity: #2c2c2c;
+          --vsc-activity-fg: rgba(255, 255, 255, 0.4);
+          --vsc-activity-active: #ffffff;
+          --vsc-tab-inactive: #ececec;
+          --vsc-tab-active: #ffffff;
+          --vsc-selection: #e4e6f1;
+          --vsc-focus: #0090f1;
+          --vsc-status: #007acc;
+          --vsc-titlebar: #dddddd;
+        }
+        .vs-shell .vs-topbar { background: var(--vsc-titlebar); border-bottom: none; height: 35px; }
+        .vs-shell .vs-search-palette-btn { background: var(--bg-base); border-color: var(--border-base); border-radius: 6px; }
+        .vs-shell .vs-activitybar { background: var(--vsc-activity); border-right: none; }
+        .vs-shell .vs-act-btn { color: var(--vsc-activity-fg); border-radius: 0; background: none; border-left: 2px solid transparent; }
+        .vs-shell .vs-act-btn:hover { color: var(--vsc-activity-active); background: none; }
+        .vs-shell .vs-act-btn.act { color: var(--vsc-activity-active); background: none; border-left-color: var(--vsc-activity-active); }
+        .vs-shell .vs-sidebar { background: var(--bg-surface); border-right: none; }
+        .vs-shell .vs-side-title { font-size: 11px; font-weight: 400; letter-spacing: 0.02em; text-transform: uppercase; color: var(--text-secondary); }
+        .vs-shell .s-row { border-radius: 0; height: 22px; }
+        .vs-shell .s-row:hover { background: var(--bg-hover); }
+        .vs-shell .s-row.act { background: var(--vsc-selection); outline: 1px solid var(--vsc-focus); outline-offset: -1px; }
+        .vs-shell .s-row.act .s-row-btn { color: var(--text-primary); }
+        .vs-shell .vs-tabbar { background: var(--bg-surface); border-bottom: none; }
+        .vs-shell .vs-tab { background: var(--vsc-tab-inactive); color: var(--text-muted); border-right: 1px solid var(--bg-surface); border-top: 1px solid transparent; border-bottom: none; border-radius: 0; height: 35px; }
+        .vs-shell .vs-tab:hover { background: var(--vsc-tab-inactive); }
+        .vs-shell .vs-tab.cur { background: var(--vsc-tab-active); color: var(--text-primary); border-top-color: var(--vsc-focus); box-shadow: none; }
+        .vs-shell .vs-tab.cur::after { display: none; }
+        .vs-shell .vs-breadcrumbs { background: var(--bg-base); border-bottom: none; }
+        .vs-shell .vs-editor-region, .vs-shell .vs-welcome-view { background: var(--bg-base); }
+        .vs-shell .vs-statusbar { background: var(--vsc-status); color: #ffffff; border-top: none; height: 22px; }
+        .vs-shell .vs-statusbar .vs-status-item, .vs-shell .vs-statusbar * { color: #ffffff; }
+        .vs-shell .vs-status-item:hover { background: rgba(255, 255, 255, 0.12); }
+        .vs-shell .vs-action-pill, .vs-shell .vs-save-btn, .vs-shell .vs-welcome-btn, .vs-shell .vs-back-btn { border-radius: 2px; }
+        .vs-shell .vs-action-pill { background: transparent; color: var(--text-secondary); border: 1px solid transparent; }
+        .vs-shell .vs-action-pill:hover:not(:disabled) { background: var(--bg-hover); }
+        .vs-shell .vs-action-pill.active { background: var(--accent-soft); border-color: var(--accent-border); color: var(--text-primary); }
+        .vs-shell .vs-save-btn, .vs-shell .vs-welcome-btn { background: var(--accent); color: #ffffff; }
+        .vs-shell .vs-save-btn:hover, .vs-shell .vs-welcome-btn:hover { background: var(--accent-dim); }
+        .vs-shell .vs-search-input:focus, .vs-shell .vs-quickopen-input:focus { outline: 1px solid var(--vsc-focus); border-color: var(--vsc-focus); }
+        .vs-shell .vs-quickopen-modal { border-radius: 6px; box-shadow: 0 0 8px 2px rgba(0, 0, 0, 0.36); }
+        .vs-ficon { display: inline-flex; width: 16px; justify-content: center; font-size: 10px; font-weight: 700; font-family: var(--font-mono); line-height: 1; flex-shrink: 0; }
       `}</style>
     </div>
   );
