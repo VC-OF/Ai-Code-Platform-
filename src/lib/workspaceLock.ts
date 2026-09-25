@@ -89,19 +89,22 @@ class WorkspaceMutex {
       this.release();
     }, this.MAX_LOCK_MS);
 
-    this.lockInfo = {
+    const info: LockInfo = {
       projectId: this.projectId,
       acquiredAt: Date.now(),
       holder,
       timeoutHandle,
     };
+    this.lockInfo = info;
 
-    // Return release function
+    // Return release function. If the lock was force-released as stale and
+    // handed to the next waiter, a late release from the old holder must not
+    // release the new holder's lock.
     let released = false;
     return () => {
       if (!released) {
         released = true;
-        this.release();
+        if (this.lockInfo === info) this.release();
       }
     };
   }

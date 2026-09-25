@@ -26,6 +26,7 @@ export default function Sidebar({
     fetch('/api/projects')
       .then((r) => r.json())
       .then((data) => setProjects(data.projects || []))
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
@@ -41,8 +42,10 @@ export default function Sidebar({
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ title: newName.trim(), template: 'react-vite' }),
       });
+      if (!res.ok) return;
       const data = await res.json();
       const project = data.project;
+      if (!project) return;
       setProjects((p) => [project, ...p]);
       onProjectSelect(project);
       setNewName('');
@@ -53,7 +56,8 @@ export default function Sidebar({
   const deleteProject = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm('Delete this project?')) return;
-    await fetch(`/api/projects?id=${id}`, { method: 'DELETE' });
+    const res = await fetch(`/api/projects?id=${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => null);
+    if (!res?.ok) return;
     setProjects((p) => p.filter((x) => x.id !== id));
     if (activeProject?.id === id) onProjectSelect(null);
   };

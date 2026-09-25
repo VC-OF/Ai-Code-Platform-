@@ -38,6 +38,37 @@ export default function PreviewTab({
   // the user click an element to reference it in the chat
   const [inspecting, setInspecting] = useState(false);
 
+  // Autonomous Browser Verification state
+  const [auditing, setAuditing] = useState(false);
+  const [auditResult, setAuditResult] = useState<{
+    status: 'clean' | 'issues_detected' | 'error' | 'offline';
+    totalProblems: number;
+    title?: string;
+    consoleErrors?: string[];
+    pageErrors?: string[];
+    visibleTextPreview?: string;
+    error?: string;
+  } | null>(null);
+
+  const runBrowserAudit = async () => {
+    if (status !== 'running' || auditing) return;
+    setAuditing(true);
+    setAuditResult(null);
+    try {
+      const res = await fetch(`/api/preview/inspect?projectId=${encodeURIComponent(projectId)}`);
+      const data = await res.json();
+      setAuditResult(data);
+    } catch (err: unknown) {
+      setAuditResult({
+        status: 'error',
+        totalProblems: 1,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setAuditing(false);
+    }
+  };
+
   useEffect(() => {
     if (!inspecting) return;
     const onMessage = (e: MessageEvent) => {
@@ -67,6 +98,7 @@ export default function PreviewTab({
       const res = await fetch(
         `/api/preview?projectId=${encodeURIComponent(projectId)}`
       );
+      if (!res.ok) return;
       const data = await res.json();
       // Reload the iframe once the server transitions into "running"
       if (statusRef.current !== "running" && data.status === "running") {
@@ -248,6 +280,22 @@ export default function PreviewTab({
         </button>
 
         <button
+          className={`toolbar-icon ${auditing ? "toolbar-icon--active" : ""}`}
+          onClick={runBrowserAudit}
+          title="Autonomous Verify: Run Playwright DOM & console health audit"
+          disabled={status !== "running" || auditing}
+        >
+          {auditing ? (
+            <span className="audit-spin">⟳</span>
+          ) : (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={14} height={14}>
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              <path d="m9 12 2 2 4-4" />
+            </svg>
+          )}
+        </button>
+
+        <button
           className="toolbar-icon"
           onClick={() => url && window.open(url, "_blank")}
           title="Open in new tab"
@@ -317,6 +365,34 @@ export default function PreviewTab({
               {inspecting && (
                 <div className="inspect-banner">
                   Click any element to reference it in chat — Esc to cancel
+                </div>
+              )}
+              {auditResult && (
+                <div className={`preview-audit-toast preview-audit-toast--${auditResult.status}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold text-xs flex items-center gap-1.5">
+                      {auditResult.status === 'clean' ? '✓ Playwright Verified Clean' : '⚠️ Verification Issues Detected'}
+                    </span>
+                    <button
+                      type="button"
+                      className="text-[11px] opacity-70 hover:opacity-100 cursor-pointer"
+                      onClick={() => setAuditResult(null)}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div className="text-[11px] mt-1 text-slate-300">
+                    {auditResult.status === 'clean' ? (
+                      <span>Page: <strong>{auditResult.title || 'OK'}</strong> · 0 uncaught errors · DOM verified.</span>
+                    ) : (
+                      <span>
+                        Found {auditResult.totalProblems} problem(s):{' '}
+                        {auditResult.pageErrors?.slice(0, 1).join(' ') ||
+                          auditResult.consoleErrors?.slice(0, 1).join(' ') ||
+                          auditResult.error}
+                      </span>
+                    )}
+                  </div>
                 </div>
               )}
               <iframe
@@ -1127,6 +1203,50 @@ export default function PreviewTab({
           border: 1px solid var(--border-subtle);
           border-radius: var(--radius-md);
           font-style: italic;
+        }
+
+        /* ── Autonomous Browser Verification Toast ── */
+        .preview-audit-toast {
+          position: absolute;
+          top: 12px;
+          left: 50%;
+          transform: translateX(-50%);
+          z-index: 100;
+          min-width: 320px;
+          max-width: 520px;
+          padding: 10px 14px;
+          border-radius: 10px;
+          backdrop-filter: blur(12px);
+          box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5), 0 0 15px rgba(99, 102, 241, 0.2);
+          animation: auditSlideDown 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        @keyframes auditSlideDown {
+          from { opacity: 0; transform: translate(-50%, -10px); }
+          to { opacity: 1; transform: translate(-50%, 0); }
+        }
+        .preview-audit-toast--clean {
+          background: rgba(16, 40, 28, 0.95);
+          border: 1px solid rgba(52, 211, 153, 0.5);
+          color: #a7f3d0;
+        }
+        .preview-audit-toast--issues_detected {
+          background: rgba(45, 20, 20, 0.95);
+          border: 1px solid rgba(248, 113, 113, 0.5);
+          color: #fecaca;
+        }
+        .preview-audit-toast--error,
+        .preview-audit-toast--offline {
+          background: rgba(35, 25, 15, 0.95);
+          border: 1px solid rgba(251, 191, 36, 0.5);
+          color: #fde68a;
+        }
+        .audit-spin {
+          display: inline-block;
+          animation: spinAudit 1s linear infinite;
+        }
+        @keyframes spinAudit {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
         }
       `}</style>
 

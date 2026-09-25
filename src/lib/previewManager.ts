@@ -1,4 +1,4 @@
-import { spawn, exec, execSync, ChildProcessWithoutNullStreams } from "child_process";
+import { spawn, exec, execSync, execFileSync, ChildProcessWithoutNullStreams } from "child_process";
 import { promisify } from "util";
 import fs from "fs";
 import path from "path";
@@ -132,7 +132,19 @@ export function getPreviewStatus(projectId: string) {
   };
 }
 
-export async function startPreview(projectId: string) {
+// Concurrent starts for the same project must share one boot, otherwise both
+// pass the "existing" check during the awaits below and spawn two servers
+const pendingStarts = new Map<string, Promise<ReturnType<typeof getPreviewStatus>>>();
+
+export function startPreview(projectId: string) {
+  const pending = pendingStarts.get(projectId);
+  if (pending) return pending;
+  const p = startPreviewInner(projectId).finally(() => pendingStarts.delete(projectId));
+  pendingStarts.set(projectId, p);
+  return p;
+}
+
+async function startPreviewInner(projectId: string) {
   const existing = instances.get(projectId);
   if (existing) {
     if (existing.status === "running" || existing.status === "starting") {
@@ -150,7 +162,7 @@ export async function startPreview(projectId: string) {
   if (dockerMode) {
     // Remove any leftover container with this name (crashed earlier run)
     try {
-      execSync(`docker rm -f ${previewContainerName(projectId)}`, {
+      execFileSync("docker", ["rm", "-f", previewContainerName(projectId)], {
         stdio: "pipe",
       });
     } catch {}
@@ -227,10 +239,12 @@ export async function startPreview(projectId: string) {
       };
       const rootDir = process.cwd();
       http.createServer((req, res) => {
-        let reqPath = decodeURIComponent(req.url.split('?')[0]);
+        let reqPath;
+        try { reqPath = decodeURIComponent(req.url.split('?')[0]); }
+        catch { res.writeHead(400); return res.end('Bad Request'); }
         if (reqPath === '/' || reqPath === '') reqPath = '/index.html';
         let safePath = path.normalize(path.join(rootDir, reqPath));
-        if (!safePath.startsWith(rootDir)) {
+        if (safePath !== rootDir && !safePath.startsWith(rootDir + path.sep)) {
           res.writeHead(403);
           return res.end('Forbidden');
         }
@@ -252,10 +266,10 @@ export async function startPreview(projectId: string) {
         console.log('ready: static server running on http://localhost:${port}');
       });
     `;
+    // No shell: the multi-line script must reach node as a single argv entry
     child = spawn(process.execPath, ["-e", staticScript], {
       cwd: root,
       env: { ...process.env, ...secretEnv, PORT: String(port) },
-      shell: true,
       detached: process.platform !== "win32",
     }) as ChildProcessWithoutNullStreams;
   }
@@ -281,7 +295,15 @@ export async function startPreview(projectId: string) {
 
   instance.child.on("exit", (code) => {
     pushLog(instance, `\n[process exited with code ${code}]`);
-    instance.status = code === 0 ? "stopped" : "error";
+    if (instance.status !== "stopped") {
+      instance.status = code === 0 ? "stopped" : "error";
+    }
+  });
+
+  // Without an 'error' listener a failed spawn (e.g. binary missing) crashes the server
+  instance.child.on("error", (err) => {
+    pushLog(instance, `\n[failed to start: ${err.message}]`);
+    instance.status = "error";
   });
 
   // Give it a moment to boot before returning
@@ -296,7 +318,7 @@ export function stopPreview(projectId: string) {
     if (isDockerMode()) {
       // The docker CLI child is just an attachment — kill the container
       try {
-        execSync(`docker kill ${previewContainerName(projectId)}`, {
+        execFileSync("docker", ["kill", previewContainerName(projectId)], {
           stdio: "pipe",
         });
       } catch {}

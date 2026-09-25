@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useCommandPaletteStore } from '@/hooks/useCommandPalette';
 import ApiKeyModal from '@/components/ApiKeyModal';
+import ArtifactsDrawer from '@/components/artifacts/ArtifactsDrawer';
+import KnowledgeModal from '@/components/knowledge/KnowledgeModal';
 import type { Project } from '@/types';
 import type { AgentStatus } from '@/components/StatusIndicator';
 import type { ActiveTab } from '@/app/page';
@@ -59,6 +61,8 @@ export default function TopBar({
   const [dockerAvailable, setDockerAvailable] = useState<boolean | null>(null);
   const [execMode, setExecMode] = useState<string>('auto');
   const [showKeyModal, setShowKeyModal] = useState(false);
+  const [showArtifacts, setShowArtifacts] = useState(false);
+  const [showKnowledge, setShowKnowledge] = useState(false);
   const openPalette = useCommandPaletteStore((s) => s.setOpen);
 
   // Sync execution mode from localStorage
@@ -174,6 +178,26 @@ export default function TopBar({
               <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
             </svg>
             <span className="hidden sm:inline">Keys</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowArtifacts(true)}
+            className="topbar-key-btn text-[11px] px-2 py-1 rounded border border-white/10 hover:border-purple-500/40 bg-white/5 hover:bg-purple-500/10 text-slate-300 hover:text-purple-300 transition-colors flex items-center gap-1 cursor-pointer shrink-0"
+            title="Antigravity Project Artifacts & Architecture Docs"
+          >
+            <span className="text-purple-400 font-bold">✦</span>
+            <span className="hidden sm:inline">Artifacts</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowKnowledge(true)}
+            className="topbar-key-btn text-[11px] px-2 py-1 rounded border border-white/10 hover:border-blue-500/40 bg-white/5 hover:bg-blue-500/10 text-slate-300 hover:text-blue-300 transition-colors flex items-center gap-1 cursor-pointer shrink-0"
+            title="Antigravity Knowledge Items (KI) Memory Store"
+          >
+            <span>🧠</span>
+            <span className="hidden sm:inline">KI</span>
           </button>
 
           <span
@@ -733,6 +757,24 @@ export default function TopBar({
       {/* Model Hub API Key Configuration Modal */}
       {showKeyModal && (
         <ApiKeyModal onClose={() => setShowKeyModal(false)} />
+      )}
+
+      {/* Antigravity Artifacts Drawer */}
+      {showArtifacts && project?.id && (
+        <ArtifactsDrawer
+          projectId={project.id}
+          isOpen={showArtifacts}
+          onClose={() => setShowArtifacts(false)}
+        />
+      )}
+
+      {/* Antigravity Knowledge Items (KI) Modal */}
+      {showKnowledge && project?.id && (
+        <KnowledgeModal
+          projectId={project.id}
+          isOpen={showKnowledge}
+          onClose={() => setShowKnowledge(false)}
+        />
       )}
     </header>
   );

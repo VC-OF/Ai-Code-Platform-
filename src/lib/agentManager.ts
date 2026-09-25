@@ -8,6 +8,7 @@ import { SYSTEM_PROMPT } from '@/lib/systemPrompt';
 import { createHarness } from '@/lib/harness';
 import { composeSystemPrompt } from '@/lib/promptComposer';
 import { loadSkills } from '@/lib/skills';
+import { listKnowledgeItems } from '@/lib/knowledge';
 import { TOOL_SCHEMAS } from '@/lib/tools';
 import { isDockerMode } from '@/lib/safeExec';
 import { getMcpToolSchemas } from '@/lib/mcpClient';
@@ -169,8 +170,11 @@ class AgentManager {
 
     // 4. Start agent loop in background
     agent.promise = (async () => {
-      const releaseLock = await workspaceLocks.get(projectId).acquire('agent-chat-route');
+      // Acquire inside the try so a lock failure still runs the cleanup below
+      // (otherwise activeAgents keeps a dead entry and blocks every later turn)
+      let releaseLock: (() => void) | undefined;
       try {
+        releaseLock = await workspaceLocks.get(projectId).acquire('agent-chat-route');
         const project = projectDb.getById(projectId);
         if (!project) throw new Error('Project not found');
 
@@ -265,6 +269,7 @@ class AgentManager {
         // MCP servers contribute extra tools (mcp_<server>_<tool>)
         const mcpTools = await getMcpToolSchemas().catch(() => []);
         const skills = await loadSkills(project.workspace, { includeGlobal: true });
+        const knowledgeItems = await listKnowledgeItems(project.workspace).catch(() => []);
 
         // Persisted plan from earlier turns → resume context
         const currentPlan = planDb.get(projectId);
@@ -283,6 +288,7 @@ class AgentManager {
           agentsMemory,
           harness: createHarness(project.kind),
           skills,
+          knowledgeItems,
           mode: executionMode,
         });
 
@@ -315,7 +321,7 @@ class AgentManager {
         const errMsg = err instanceof Error ? err.message : String(err);
         emitter.error(0, errMsg, false);
       } finally {
-        releaseLock();
+        releaseLock?.();
         streamRegistry.cleanup(projectId);
         // Close all subscriber controllers
         for (const controller of agent.controllers) {

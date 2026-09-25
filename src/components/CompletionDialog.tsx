@@ -38,7 +38,7 @@ export default function CompletionDialog({
           Open in Preview
         </button>
         <a
-          href={`/api/download?projectId=${projectId}`}
+          href={`/api/download?projectId=${encodeURIComponent(projectId)}`}
           className="cd-opt"
           download
           onClick={onDismiss}

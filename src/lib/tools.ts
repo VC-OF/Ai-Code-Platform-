@@ -7,7 +7,7 @@ import { webSearch, fetchUrl, htmlToText } from "./webTools";
 import { generateImage } from "./imageGen";
 import { getPreviewLogs, getPreviewStatus } from "./previewManager";
 import { callMcpTool, demangleName } from "./mcpClient";
-import { planDb, type PlanTask } from "./db";
+import { planDb, projectDb, type PlanTask } from "./db";
 import { getDockerStatus, execInDocker } from "./dockerService";
 
 // ─── Tool Schemas ──────────────────────────────────────────────────────────────
@@ -281,6 +281,37 @@ export const TOOL_SCHEMAS = [
   {
     type: "function",
     function: {
+      name: "create_artifact",
+      description:
+        "Create or update a persistent project artifact (architecture spec, report, design guidelines, diagram, walkthrough, or verification summary). Artifacts are presented in the Antigravity Artifacts drawer and persisted across sessions. Supports GitHub alerts ([!NOTE], [!TIP], [!IMPORTANT], [!WARNING], [!CAUTION]).",
+      parameters: {
+        type: "object",
+        properties: {
+          title: {
+            type: "string",
+            description: "Concise title of the artifact, e.g. 'Authentication Architecture' or 'Database Schema'",
+          },
+          content: {
+            type: "string",
+            description: "Full markdown or structured text content of the artifact",
+          },
+          type: {
+            type: "string",
+            enum: ["markdown", "plan", "diagram", "diff", "report", "code"],
+            description: "Artifact category",
+          },
+          description: {
+            type: "string",
+            description: "Short 1-sentence summary",
+          },
+        },
+        required: ["title", "content"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "deploy_app",
       description:
         "Deploy the workspace to Vercel and return the live URL. Only call when the user explicitly asks to deploy/publish/ship the app. Requires VERCEL_TOKEN in Settings — if missing, tell the user how to add it instead of retrying.",
@@ -497,6 +528,8 @@ export interface VerificationOutcome {
 export type StructuredOutcome = Partial<VerificationOutcome> & {
   tasks?: PlanTask[];
   url?: string | null;
+  artifactId?: string;
+  title?: string;
 };
 
 export interface ToolResult {
@@ -587,7 +620,8 @@ export async function executeTool(
         // Exact match — must be unique
         const occurrences = content.split(oldText).length - 1;
         if (occurrences === 1) {
-          const updated = content.replace(oldText, newText);
+          // Function replacer: newText must be inserted literally ($&, $1 … are not patterns)
+          const updated = content.replace(oldText, () => newText);
           await fs.writeFile(filePath, updated, "utf-8");
           ctx.filesEdited.add(relPath);
 
@@ -633,7 +667,7 @@ export async function executeTool(
           }
 
           if (fuzzyMatches === 1) {
-            const updated = content.replace(new RegExp(escapedPattern), newText);
+            const updated = content.replace(new RegExp(escapedPattern), () => newText);
             await fs.writeFile(filePath, updated, "utf-8");
             ctx.filesEdited.add(relPath);
             return {
@@ -694,6 +728,20 @@ export async function executeTool(
         const lines = content.split("\n");
         const startLine = args.start_line as number;
         const endLine = args.end_line as number;
+
+        if (
+          !Number.isInteger(startLine) ||
+          !Number.isInteger(endLine) ||
+          startLine < 1 ||
+          endLine < startLine
+        ) {
+          return {
+            success: false,
+            output: `Error: invalid line range ${startLine}-${endLine} (must be integers, 1 <= start_line <= end_line).`,
+            summary: `Replace lines failed — invalid range`,
+            error: `invalid line range`,
+          };
+        }
 
         if (startLine > lines.length) {
           return {
@@ -757,6 +805,7 @@ export async function executeTool(
 
       // ── glob_files ─────────────────────────────────────────────────────
       case "glob_files": {
+        assertSafeGlob(String(args.pattern));
         const files = await fg(args.pattern as string, {
           cwd: workspace,
           ignore: ["**/node_modules/**", "**/.next/**", "**/.git/**"],
@@ -866,9 +915,32 @@ export async function executeTool(
         };
       }
 
+      // ── create_artifact ─────────────────────────────────────────────────
+      case "create_artifact": {
+        const { saveArtifact } = await import("./artifacts");
+        const title = String(args.title || "Untitled Artifact");
+        const content = String(args.content || "");
+        const type = (args.type as "markdown" | "plan" | "diagram" | "diff" | "report" | "code") || "markdown";
+        const description = args.description ? String(args.description) : undefined;
+
+        const artifact = await saveArtifact(workspace, {
+          title,
+          content,
+          type,
+          description,
+        });
+
+        return {
+          success: true,
+          output: `Artifact created successfully:\nTitle: ${artifact.title}\nID: ${artifact.id}\nType: ${artifact.type}\nCharacters: ${artifact.content.length}\n\nVisible in the Antigravity Artifacts drawer.`,
+          summary: `Created artifact → ${artifact.title} (${artifact.type})`,
+          structured: { artifactId: artifact.id, title: artifact.title },
+        };
+      }
+
       // ── deploy_app ─────────────────────────────────────────────────────
       case "deploy_app": {
-        const projectId = path.basename(workspace);
+        const projectId = projectIdForWorkspace(workspace);
         const { deployToVercel } = await import("./deploy");
         const result = await deployToVercel(projectId, workspace);
         return {
@@ -944,7 +1016,7 @@ export async function executeTool(
 
       // ── update_plan ────────────────────────────────────────────────────
       case "update_plan": {
-        const projectId = path.basename(workspace);
+        const projectId = projectIdForWorkspace(workspace);
         const tasks = (args.tasks as PlanTask[]).map((t) => ({
           id: String(t.id),
           title: String(t.title),
@@ -968,7 +1040,7 @@ export async function executeTool(
       case "read_preview_logs": {
         // Workspace roots are workspaces/<projectId>, so the basename is
         // the preview-manager key
-        const projectId = path.basename(workspace);
+        const projectId = projectIdForWorkspace(workspace);
         const info = getPreviewLogs(
           projectId,
           args.lines ? Number(args.lines) : 100
@@ -993,7 +1065,7 @@ export async function executeTool(
 
       // ── fetch_preview ──────────────────────────────────────────────────
       case "fetch_preview": {
-        const projectId = path.basename(workspace);
+        const projectId = projectIdForWorkspace(workspace);
         const preview = getPreviewStatus(projectId);
         if (preview.status !== "running" || !preview.url) {
           return {
@@ -1038,7 +1110,7 @@ export async function executeTool(
 
       // ── check_preview ──────────────────────────────────────────────────
       case "check_preview": {
-        const projectId = path.basename(workspace);
+        const projectId = projectIdForWorkspace(workspace);
         const preview = getPreviewStatus(projectId);
         if (preview.status !== "running" || !preview.url) {
           return {
@@ -1238,6 +1310,16 @@ export async function executeTool(
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
+// Build Mode workspaces are arbitrary host folders, so the folder name is not
+// the project id — look it up; app-mode workspaces/<id> fall back to basename
+function projectIdForWorkspace(workspace: string): string {
+  try {
+    const row = projectDb.getAll().find((p) => p.workspace === workspace);
+    if (row) return row.id;
+  } catch {}
+  return path.basename(workspace);
+}
+
 async function fileExists(p: string): Promise<boolean> {
   return fs.access(p).then(() => true).catch(() => false);
 }
@@ -1258,12 +1340,22 @@ async function readPackageJson(workspace: string): Promise<PackageJson | null> {
   }
 }
 
+// Glob patterns are resolved by fast-glob relative to cwd, but "../" segments
+// and absolute patterns would escape the workspace
+function assertSafeGlob(pattern: string): void {
+  const p = pattern.replace(/\\/g, "/");
+  if (path.isAbsolute(p) || /^[a-zA-Z]:/.test(p) || p.split("/").includes("..")) {
+    throw new Error(`Glob pattern '${pattern}' must be relative and stay inside the workspace`);
+  }
+}
+
 // Pure-Node grep — portable (no external grep/find binaries needed)
 async function nodeGrep(
   searchRoot: string,
   pattern: RegExp,
   globFilter: string | undefined
 ): Promise<{ file: string; line: number; text: string }[]> {
+  if (globFilter) assertSafeGlob(globFilter);
   const files = await fg(globFilter || "**/*", {
     cwd: searchRoot,
     ignore: ["**/node_modules/**", "**/.next/**", "**/.git/**"],

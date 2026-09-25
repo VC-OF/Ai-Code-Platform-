@@ -100,6 +100,116 @@ export default function CodeTab({
     window.dispatchEvent(new CustomEvent("oc-inject-prompt", { detail: { prompt } }));
   }, [activePath, selectedCodeRange]);
 
+  // Antigravity-style Inline Edit (Ctrl+I) state
+  const [showInlineEdit, setShowInlineEdit] = useState(false);
+  const [inlinePrompt, setInlinePrompt] = useState('');
+  const [inlineLoading, setInlineLoading] = useState(false);
+  const [inlineProposed, setInlineProposed] = useState<string | null>(null);
+  const inlineRangeRef = useRef<{ startLine: number; startCol: number; endLine: number; endCol: number } | null>(null);
+  const inlineOriginalTextRef = useRef<string>('');
+  const inlinePathRef = useRef<string | null>(null);
+
+  const handleOpenInlineEdit = useCallback(() => {
+    if (!editorRef.current || !activePath) return;
+    const editor = editorRef.current;
+    const sel = editor.getSelection();
+    let text = '';
+    if (sel && !sel.isEmpty()) {
+      text = editor.getModel()?.getValueInRange(sel) || '';
+      inlineRangeRef.current = {
+        startLine: sel.startLineNumber,
+        startCol: sel.startColumn,
+        endLine: sel.endLineNumber,
+        endCol: sel.endColumn,
+      };
+    } else {
+      const pos = editor.getPosition();
+      if (pos) {
+        const lineContent = editor.getModel()?.getLineContent(pos.lineNumber) || '';
+        text = lineContent;
+        inlineRangeRef.current = {
+          startLine: pos.lineNumber,
+          startCol: 1,
+          endLine: pos.lineNumber,
+          endCol: lineContent.length + 1,
+        };
+      }
+    }
+    inlineOriginalTextRef.current = text;
+    inlinePathRef.current = activePath;
+    setInlineProposed(null);
+    setShowInlineEdit(true);
+  }, [activePath]);
+  // Monaco commands are registered once on mount; route through a ref so they see the current activePath
+  const openInlineEditRef = useRef(handleOpenInlineEdit);
+  openInlineEditRef.current = handleOpenInlineEdit;
+
+  const handleRunInlineEdit = useCallback(async (customInstruction?: string) => {
+    const instruction = customInstruction || inlinePrompt;
+    if (!instruction.trim() || !activePath) return;
+    setInlineLoading(true);
+    try {
+      const res = await fetch('/api/ai/inline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instruction,
+          code: inlineOriginalTextRef.current,
+          language: languageFor(activePath),
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.replacement !== undefined) {
+        setInlineProposed(data.replacement);
+      } else {
+        alert(data.error || 'Inline edit generation failed');
+      }
+    } catch (err) {
+      alert(`Error: ${String(err)}`);
+    } finally {
+      setInlineLoading(false);
+    }
+  }, [inlinePrompt, activePath]);
+
+  const handleAcceptInlineEdit = useCallback(() => {
+    if (!editorRef.current || inlineProposed === null || !inlineRangeRef.current) return;
+    if (inlinePathRef.current !== activePath) return;
+    const editor = editorRef.current;
+    const model = editor.getModel();
+    if (!model) return;
+    const range = {
+      startLineNumber: inlineRangeRef.current.startLine,
+      startColumn: inlineRangeRef.current.startCol,
+      endLineNumber: inlineRangeRef.current.endLine,
+      endColumn: inlineRangeRef.current.endCol,
+    };
+    editor.executeEdits('inline-ai', [{
+      range,
+      text: inlineProposed,
+      forceMoveMarkers: true,
+    }]);
+    setShowInlineEdit(false);
+    setInlineProposed(null);
+    setInlinePrompt('');
+  }, [inlineProposed, activePath]);
+
+  const handleRejectInlineEdit = useCallback(() => {
+    setShowInlineEdit(false);
+    setInlineProposed(null);
+    setInlinePrompt('');
+  }, []);
+
+  // Close the inline edit if the active file changes; its captured range belongs to the old file
+  useEffect(() => {
+    if (inlinePathRef.current && inlinePathRef.current !== activePath) {
+      inlinePathRef.current = null;
+      inlineRangeRef.current = null;
+      setShowInlineEdit(false);
+      setInlineProposed(null);
+      setInlinePrompt('');
+    }
+  }, [activePath]);
+
   // Theme observer
   useEffect(() => {
     const updateTheme = () => {
@@ -540,6 +650,18 @@ export default function CodeTab({
           </div>
 
           <div className="editor-actions">
+            {/* Inline Edit (Ctrl+I) button */}
+            <button
+              onClick={handleOpenInlineEdit}
+              className="tool-action-btn"
+              title="Inline AI Edit (Ctrl+I) - transform or generate code directly in editor"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13} className="text-violet-400">
+                <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+              </svg>
+              <span>Inline (Ctrl+I)</span>
+            </button>
+
             {/* Ask AI Bridge button */}
             <button
               onClick={handleAskAIAboutSelection}
@@ -710,6 +832,11 @@ export default function CodeTab({
                   handleAskAIAboutSelection();
                 });
 
+                // Register Ctrl+I / Cmd+I Antigravity-style Inline Edit command
+                editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyI, () => {
+                  openInlineEditRef.current();
+                });
+
                 // Track cursor position for the status bar
                 editor.onDidChangeCursorPosition((e: { position: { lineNumber: number; column: number } }) => {
                   setCursorPos({ line: e.position.lineNumber, col: e.position.column });
@@ -764,17 +891,133 @@ export default function CodeTab({
               }}
             />
 
+            {/* Antigravity-style Inline Edit Bar (Ctrl+I) */}
+            {showInlineEdit && (
+              <div className="inline-edit-overlay">
+                <div className="inline-edit-box">
+                  <div className="inline-edit-header">
+                    <span className="inline-edit-title">
+                      <span className="inline-ai-sparkle">✨</span> Inline Edit (Ctrl+I)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleRejectInlineEdit}
+                      className="inline-edit-close"
+                      title="Cancel (Esc)"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <div className="inline-edit-body">
+                    <input
+                      type="text"
+                      autoFocus
+                      placeholder="Instruct AI (e.g. 'Add error handling', 'Convert to async/await', 'Add types')..."
+                      value={inlinePrompt}
+                      onChange={(e) => {
+                        setInlinePrompt(e.target.value);
+                        // Editing the prompt invalidates a previously generated proposal
+                        if (inlineProposed !== null) setInlineProposed(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          if (inlineProposed !== null) {
+                            handleAcceptInlineEdit();
+                          } else {
+                            handleRunInlineEdit();
+                          }
+                        } else if (e.key === 'Escape') {
+                          handleRejectInlineEdit();
+                        }
+                      }}
+                      className="inline-edit-input"
+                    />
+
+                    {/* Quick suggestion pills */}
+                    <div className="inline-edit-chips">
+                      {['+ Error handling', '+ TypeScript types', '+ Docstrings', 'Refactor clean', 'Optimize'].map((chip) => (
+                        <button
+                          key={chip}
+                          type="button"
+                          onClick={() => {
+                            setInlinePrompt(chip);
+                            handleRunInlineEdit(chip);
+                          }}
+                          className="inline-chip"
+                        >
+                          {chip}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Proposed diff review */}
+                    {inlineProposed !== null && (
+                      <div className="inline-proposed-preview">
+                        <div className="inline-preview-header">Proposed Code Replacement:</div>
+                        <pre className="inline-preview-code">{inlineProposed}</pre>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="inline-edit-footer">
+                    <span className="inline-hint">
+                      {inlineProposed !== null ? 'Press Enter to Accept or Esc to Reject' : 'Press Enter to Generate'}
+                    </span>
+                    <div className="inline-footer-actions">
+                      <button
+                        type="button"
+                        onClick={handleRejectInlineEdit}
+                        className="inline-btn inline-btn--ghost"
+                      >
+                        Cancel (Esc)
+                      </button>
+                      {inlineProposed === null ? (
+                        <button
+                          type="button"
+                          onClick={() => handleRunInlineEdit()}
+                          disabled={inlineLoading || !inlinePrompt.trim()}
+                          className="inline-btn inline-btn--primary"
+                        >
+                          {inlineLoading ? 'Generating…' : 'Generate (↵)'}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleAcceptInlineEdit}
+                          className="inline-btn inline-btn--accept"
+                        >
+                          ✓ Accept (↵)
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Floating Selection Quick Action */}
             {selectedCodeRange && (
               <div className="floating-selection-bar">
+                <button
+                  type="button"
+                  onClick={handleOpenInlineEdit}
+                  className="floating-ai-btn floating-ai-btn--inline"
+                  title="Inline Edit (Ctrl+I)"
+                >
+                  <span className="ai-sparkle">✨</span>
+                  <span>Inline Edit</span>
+                  <kbd className="ai-kbd">Ctrl+I</kbd>
+                </button>
                 <button
                   type="button"
                   onClick={handleAskAIAboutSelection}
                   className="floating-ai-btn"
                   title="Ask AI about this selection (Ctrl+K)"
                 >
-                  <span className="ai-sparkle">✨</span>
-                  <span>Ask AI about selection (L{selectedCodeRange.startLine}-L{selectedCodeRange.endLine})</span>
+                  <span className="ai-sparkle">💬</span>
+                  <span>Ask Chat ({selectedCodeRange.endLine - selectedCodeRange.startLine + 1}L)</span>
                   <kbd className="ai-kbd">Ctrl+K</kbd>
                 </button>
               </div>
@@ -1643,6 +1886,204 @@ export default function CodeTab({
           border: 1px solid rgba(255, 255, 255, 0.15);
           border-radius: 4px;
           color: #c7d2fe;
+        }
+
+        .floating-ai-btn--inline {
+          background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%) !important;
+          border-color: rgba(167, 139, 250, 0.6) !important;
+        }
+
+        /* ── Antigravity-style Inline Edit Overlay ── */
+        .inline-edit-overlay {
+          position: absolute;
+          top: 50px;
+          left: 50%;
+          transform: translateX(-50%);
+          z-index: 50;
+          width: 90%;
+          max-width: 640px;
+          animation: float-slide-up 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .inline-edit-box {
+          background: #14161f;
+          border: 1px solid rgba(99, 102, 241, 0.4);
+          border-radius: 12px;
+          box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(99, 102, 241, 0.25);
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+        }
+
+        .inline-edit-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 10px 14px;
+          background: #1a1c28;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .inline-edit-title {
+          font-size: 12px;
+          font-weight: 600;
+          color: #e2e8f0;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+
+        .inline-ai-sparkle {
+          color: #a78bfa;
+        }
+
+        .inline-edit-close {
+          background: transparent;
+          border: none;
+          color: #94a3b8;
+          cursor: pointer;
+          font-size: 13px;
+          padding: 2px 6px;
+          border-radius: 4px;
+        }
+
+        .inline-edit-close:hover {
+          color: #ffffff;
+          background: rgba(255, 255, 255, 0.1);
+        }
+
+        .inline-edit-body {
+          padding: 12px 14px;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .inline-edit-input {
+          width: 100%;
+          background: rgba(0, 0, 0, 0.4);
+          border: 1px solid rgba(99, 102, 241, 0.4);
+          border-radius: 6px;
+          padding: 8px 12px;
+          font-size: 13px;
+          color: #ffffff;
+          outline: none;
+          font-family: inherit;
+        }
+
+        .inline-edit-input:focus {
+          border-color: #818cf8;
+          box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.2);
+        }
+
+        .inline-edit-chips {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+        }
+
+        .inline-chip {
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          color: #94a3b8;
+          font-size: 11px;
+          padding: 3px 8px;
+          border-radius: 4px;
+          cursor: pointer;
+          transition: all 0.15s ease;
+        }
+
+        .inline-chip:hover {
+          background: rgba(99, 102, 241, 0.15);
+          border-color: rgba(99, 102, 241, 0.35);
+          color: #c7d2fe;
+        }
+
+        .inline-proposed-preview {
+          max-height: 200px;
+          overflow-y: auto;
+          background: rgba(0, 0, 0, 0.5);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 6px;
+          padding: 8px 12px;
+        }
+
+        .inline-preview-header {
+          font-size: 11px;
+          font-weight: 600;
+          color: #10b981;
+          margin-bottom: 6px;
+        }
+
+        .inline-preview-code {
+          margin: 0;
+          font-family: var(--font-mono, monospace);
+          font-size: 12px;
+          color: #e2e8f0;
+          white-space: pre-wrap;
+        }
+
+        .inline-edit-footer {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 10px 14px;
+          background: #1a1c28;
+          border-top: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .inline-hint {
+          font-size: 11px;
+          color: #94a3b8;
+        }
+
+        .inline-footer-actions {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .inline-btn {
+          padding: 6px 12px;
+          font-size: 12px;
+          font-weight: 500;
+          border-radius: 5px;
+          cursor: pointer;
+          border: none;
+          transition: all 0.15s ease;
+        }
+
+        .inline-btn--ghost {
+          background: transparent;
+          color: #94a3b8;
+        }
+
+        .inline-btn--ghost:hover {
+          color: #ffffff;
+          background: rgba(255, 255, 255, 0.08);
+        }
+
+        .inline-btn--primary {
+          background: #6366f1;
+          color: #ffffff;
+        }
+
+        .inline-btn--primary:hover:not(:disabled) {
+          background: #4f46e5;
+        }
+
+        .inline-btn--primary:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        .inline-btn--accept {
+          background: #10b981;
+          color: #ffffff;
+        }
+
+        .inline-btn--accept:hover {
+          background: #059669;
         }
       `}</style>
     </div>

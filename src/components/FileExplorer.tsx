@@ -342,7 +342,7 @@ export default function FileExplorer({
         <div className="qa-footer-label">QUICK ACTIONS</div>
         <div className="qa-footer-row">
           <a
-            href={`/editor?projectId=${projectId}`}
+            href={`/editor?projectId=${encodeURIComponent(projectId)}`}
             className="qa-footer-btn qa-footer-btn--primary"
             id="btn-open-code-editor"
             title="Open full code editor"

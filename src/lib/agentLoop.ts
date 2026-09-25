@@ -744,6 +744,11 @@ export async function runAgentLoop(
     return buildResult(reason, stepIndex, filesChanged, totalTokens, startTime, finalMessage);
 
   } catch (err) {
+    // Cancellation during planning/compaction lands here, not in the step catch
+    if (err instanceof CancelledError) {
+      emitter.status(stepIndex, 'done');
+      return buildResult('user_cancelled', stepIndex, filesChanged, totalTokens, startTime);
+    }
     const msg = err instanceof Error ? err.message : String(err);
     emitter.error(stepIndex, msg, true);
     emitter.status(stepIndex, 'error');
@@ -785,6 +790,7 @@ function toolStatusFor(toolName: string): AgentStatus {
     delete_file:  'writing',
     replace_lines: 'writing',
     generate_image: 'writing',
+    create_artifact: 'writing',
     run_lint:     'linting',
     run_tests:    'testing',
     run_command:  'running',
@@ -855,8 +861,13 @@ async function callWithTimeout<T>(
   promise: Promise<T>,
   ms: number
 ): Promise<T> {
-  const timeout = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error(`Call timed out after ${ms}ms`)), ms)
-  );
-  return Promise.race([promise, timeout]);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Call timed out after ${ms}ms`)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
 }

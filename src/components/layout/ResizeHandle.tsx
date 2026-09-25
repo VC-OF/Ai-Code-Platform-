@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface ResizeHandleProps {
   onResizeWidth: (width: number) => void;
@@ -27,6 +27,10 @@ export default function ResizeHandle({
   const dragging = useRef(false);
   const startX = useRef(0);
   const hasMoved = useRef(false);
+  const cleanupRef = useRef<(() => void) | null>(null);
+
+  // Remove window listeners if unmounted mid-drag
+  useEffect(() => () => cleanupRef.current?.(), []);
 
   const onResizeWidthRef = useRef(onResizeWidth);
   onResizeWidthRef.current = onResizeWidth;
@@ -85,6 +89,7 @@ export default function ResizeHandle({
         document.body.style.userSelect = '';
         window.removeEventListener('mousemove', onMouseMove);
         window.removeEventListener('mouseup', onMouseUp);
+        cleanupRef.current = null;
         onDragEnd?.();
 
         if (!hasMoved.current) {
@@ -101,6 +106,13 @@ export default function ResizeHandle({
 
       window.addEventListener('mousemove', onMouseMove);
       window.addEventListener('mouseup', onMouseUp);
+      cleanupRef.current = () => {
+        dragging.current = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('mouseup', onMouseUp);
+      };
     },
     [containerRef, onDragStart, onDragEnd]
   );

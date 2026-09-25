@@ -88,6 +88,16 @@ const PROMPT_TEMPLATES: { label: string; hint: string; prompt: string }[] = [
     prompt: '/skills',
   },
   {
+    label: 'Artifacts',
+    hint: 'Review or generate project architecture artifacts',
+    prompt: 'List or create persistent architecture artifacts for this project using create_artifact.',
+  },
+  {
+    label: 'Knowledge',
+    hint: 'Inspect or record repository Knowledge Items',
+    prompt: 'Check active Knowledge Items and verify against our established repository patterns.',
+  },
+  {
     label: 'Docker',
     hint: 'Inspect Docker engine and sandbox status',
     prompt: '/docker',
@@ -929,44 +939,6 @@ export default function ChatPanel({
             </div>
           )}
 
-          {/* Inline answer card for a pending ask_user question */}
-          {pendingQuestion && (
-            <div className="answer-card">
-              <div className="answer-question">{pendingQuestion.question}</div>
-              {pendingQuestion.options && pendingQuestion.options.length > 0 && (
-                <div className="answer-options">
-                  {pendingQuestion.options.map((opt) => (
-                    <button
-                      key={opt}
-                      className="answer-option"
-                      onClick={() => answerQuestion(opt)}
-                    >
-                      {opt}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <div className="answer-input-row">
-                <input
-                  type="text"
-                  className="answer-input"
-                  placeholder="Type your answer…"
-                  value={answerText}
-                  onChange={(e) => setAnswerText(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && answerQuestion(answerText)}
-                  autoFocus
-                />
-                <button
-                  className="answer-send"
-                  disabled={!answerText.trim()}
-                  onClick={() => answerQuestion(answerText)}
-                >
-                  Answer
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* Live agent status while a turn is running */}
           {loading && (
             <div className="agent-status-row">
@@ -1156,6 +1128,74 @@ export default function ChatPanel({
               >
                 Continue
               </button>
+            </div>
+          )}
+
+          {/* ── Antigravity Interactive ask_question Decision Card ── */}
+          {pendingQuestion && (
+            <div className="ask-question-card" role="region" aria-label="Agent Question">
+              <div className="ask-question-header">
+                <div className="ask-question-title-wrap">
+                  <span className="ask-question-pulse" />
+                  <span className="ask-question-icon">⚡</span>
+                  <span className="ask-question-title">Clarification / Decision Required</span>
+                </div>
+                <span className="ask-question-badge">Awaiting Input</span>
+              </div>
+
+              <div className="ask-question-body">
+                <p className="ask-question-prompt">{pendingQuestion.question}</p>
+
+                {pendingQuestion.options && pendingQuestion.options.length > 0 && (
+                  <div className="ask-question-options-grid">
+                    {pendingQuestion.options.map((option, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        className={`ask-question-option-btn ${answerText === option ? 'ask-question-option-btn--selected' : ''}`}
+                        onClick={() => setAnswerText(option)}
+                        onDoubleClick={() => answerQuestion(option)}
+                        title={`Option ${idx + 1}: Click to choose, double-click to submit`}
+                      >
+                        <span className="ask-question-option-num">{idx + 1}</span>
+                        <span className="ask-question-option-text">{option}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="ask-question-input-row">
+                  <input
+                    type="text"
+                    className="ask-question-input"
+                    placeholder={
+                      pendingQuestion.options?.length
+                        ? "Select an option above or type custom instructions..."
+                        : "Type your answer or decision..."
+                    }
+                    value={answerText}
+                    onChange={(e) => setAnswerText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        if (answerText.trim()) answerQuestion(answerText);
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    className="ask-question-submit-btn"
+                    disabled={!answerText.trim()}
+                    onClick={() => answerQuestion(answerText)}
+                  >
+                    Submit Decision ↵
+                  </button>
+                </div>
+                <div className="ask-question-footer-hints">
+                  <span>💡 Tip: Click option to select, double-click to submit immediately, or press Enter</span>
+                </div>
+              </div>
             </div>
           )}
 
@@ -2336,6 +2376,181 @@ export default function ChatPanel({
           background: rgba(255, 255, 255, 0.07);
           border-color: var(--border-base);
           color: var(--text-primary);
+        }
+
+        /* ── Antigravity Interactive ask_question Decision Card Styles ── */
+        .ask-question-card {
+          margin: 12px 14px 16px;
+          border-radius: 12px;
+          background: linear-gradient(145deg, rgba(23, 23, 35, 0.95), rgba(15, 15, 24, 0.98));
+          border: 1px solid rgba(99, 102, 241, 0.4);
+          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 20px rgba(99, 102, 241, 0.15);
+          overflow: hidden;
+          animation: askFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        @keyframes askFadeIn {
+          from { opacity: 0; transform: translateY(6px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .ask-question-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 10px 14px;
+          background: rgba(99, 102, 241, 0.08);
+          border-bottom: 1px solid rgba(99, 102, 241, 0.2);
+        }
+        .ask-question-title-wrap {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .ask-question-pulse {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: #818cf8;
+          box-shadow: 0 0 10px #818cf8;
+          animation: pulseAsk 1.5s infinite;
+        }
+        @keyframes pulseAsk {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.4; transform: scale(0.85); }
+        }
+        .ask-question-icon {
+          font-size: 13px;
+        }
+        .ask-question-title {
+          font-size: 12px;
+          font-weight: 600;
+          color: #c7d2fe;
+          letter-spacing: 0.01em;
+        }
+        .ask-question-badge {
+          font-size: 10px;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          padding: 2px 7px;
+          border-radius: 9999px;
+          background: rgba(99, 102, 241, 0.25);
+          color: #a5b4fc;
+          border: 1px solid rgba(99, 102, 241, 0.35);
+        }
+        .ask-question-body {
+          padding: 14px;
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+        .ask-question-prompt {
+          margin: 0;
+          font-size: 13px;
+          line-height: 1.55;
+          color: #f1f5f9;
+          font-weight: 500;
+        }
+        .ask-question-options-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+          gap: 8px;
+        }
+        .ask-question-option-btn {
+          display: flex;
+          align-items: center;
+          gap: 9px;
+          padding: 8px 12px;
+          border-radius: 8px;
+          background: rgba(255, 255, 255, 0.04);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          color: #e2e8f0;
+          font-size: 12px;
+          cursor: pointer;
+          text-align: left;
+          transition: all 0.15s ease;
+        }
+        .ask-question-option-btn:hover {
+          background: rgba(99, 102, 241, 0.15);
+          border-color: rgba(99, 102, 241, 0.4);
+          color: #ffffff;
+          transform: translateY(-1px);
+        }
+        .ask-question-option-btn--selected {
+          background: rgba(99, 102, 241, 0.25) !important;
+          border-color: #818cf8 !important;
+          color: #ffffff !important;
+          box-shadow: 0 0 12px rgba(99, 102, 241, 0.3);
+        }
+        .ask-question-option-num {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 18px;
+          height: 18px;
+          border-radius: 4px;
+          background: rgba(255, 255, 255, 0.08);
+          font-size: 10px;
+          font-family: var(--font-mono);
+          font-weight: 700;
+          color: #a5b4fc;
+          flex-shrink: 0;
+        }
+        .ask-question-option-btn--selected .ask-question-option-num {
+          background: #6366f1;
+          color: #ffffff;
+        }
+        .ask-question-option-text {
+          flex: 1;
+          line-height: 1.3;
+        }
+        .ask-question-input-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .ask-question-input {
+          flex: 1;
+          background: rgba(0, 0, 0, 0.35);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 8px;
+          padding: 8px 12px;
+          font-size: 12px;
+          color: #f8fafc;
+          outline: none;
+          transition: border-color 0.15s;
+        }
+        .ask-question-input:focus {
+          border-color: #818cf8;
+          box-shadow: 0 0 0 1px #818cf8;
+        }
+        .ask-question-input::placeholder {
+          color: rgba(148, 163, 184, 0.6);
+        }
+        .ask-question-submit-btn {
+          padding: 8px 14px;
+          border-radius: 8px;
+          background: #4f46e5;
+          border: 1px solid #6366f1;
+          color: #ffffff;
+          font-size: 12px;
+          font-weight: 600;
+          cursor: pointer;
+          white-space: nowrap;
+          transition: all 0.15s;
+        }
+        .ask-question-submit-btn:hover:not(:disabled) {
+          background: #4338ca;
+          box-shadow: 0 0 12px rgba(99, 102, 241, 0.5);
+        }
+        .ask-question-submit-btn:disabled {
+          opacity: 0.4;
+          cursor: not-allowed;
+        }
+        .ask-question-footer-hints {
+          font-size: 10.5px;
+          color: #94a3b8;
+          display: flex;
+          justify-content: flex-end;
         }
       `}</style>
 

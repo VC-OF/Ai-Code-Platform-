@@ -204,6 +204,10 @@ export async function execInDocker(
       exitCode: 0,
     };
   } catch (err: any) {
+    // On timeout execFile only kills the docker CLI; the container keeps running
+    if (err?.killed) {
+      execFile('docker', ['kill', containerName], () => {});
+    }
     return {
       stdout: err.stdout || '',
       stderr: err.stderr || err.message || '',

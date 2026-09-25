@@ -975,6 +975,7 @@ function WelcomeScreen({
     fetch('/api/projects')
       .then((r) => r.json())
       .then((data) => setProjects(data.projects || []))
+      .catch(() => {})
       .finally(() => setFetching(false));
   }, []);
 

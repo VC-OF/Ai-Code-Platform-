@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { key, value, projectId } = await req.json();
+  const { key, value, projectId } = await req.json().catch(() => ({}));
   if (!key || typeof value !== "string") {
     return NextResponse.json(
       { error: "key and value are required" },
@@ -40,7 +40,17 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const { key, projectId } = await req.json();
-  await deleteEnvVar(key, projectId || undefined);
-  return NextResponse.json({ success: true });
+  const { key, projectId } = await req.json().catch(() => ({}));
+  if (!key || typeof key !== "string") {
+    return NextResponse.json({ error: "key is required" }, { status: 400 });
+  }
+  try {
+    await deleteEnvVar(key, projectId || undefined);
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : String(err) },
+      { status: 500 }
+    );
+  }
 }

@@ -9,7 +9,9 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const projectId = searchParams.get('projectId');
-    let workspaceRoot = searchParams.get('workspace') || '';
+    // Only resolve via projectId — an arbitrary client-supplied path would
+    // let callers read SKILL files from anywhere on disk
+    let workspaceRoot = '';
 
     if (!workspaceRoot && projectId) {
       const project = projectDb.getById(projectId);

@@ -100,6 +100,10 @@ class StdioMcpClient {
     });
     this.proc = proc;
 
+    // Writing to a server that already died emits EPIPE on stdin; without a
+    // listener that is an uncaught 'error' event that crashes the process
+    proc.stdin?.on("error", () => {});
+
     proc.stdout?.on("data", (chunk: Buffer) => {
       this.buffer += chunk.toString();
       let idx: number;
@@ -202,7 +206,13 @@ class StdioMcpClient {
         inputSchema: t.inputSchema,
       }));
     })();
-    this.initialized.catch(() => { this.initialized = null; });
+    this.initialized.catch(() => {
+      this.initialized = null;
+      // A server that failed the handshake (e.g. timed out) may still be
+      // running; kill it so the next attempt doesn't leak another process
+      try { this.proc?.kill(); } catch {}
+      this.proc = null;
+    });
     return this.initialized;
   }
 

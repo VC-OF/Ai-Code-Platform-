@@ -865,6 +865,13 @@ function EditorInner() {
     [activeFile, fileContents, projectId]
   );
 
+  // Monaco commands are bound once at mount; route them through a ref so
+  // Ctrl+S always saves the latest content instead of the mount-time snapshot
+  const saveFileRef = useRef(saveFile);
+  useEffect(() => {
+    saveFileRef.current = saveFile;
+  }, [saveFile]);
+
   // Close tab
   const closeTab = useCallback(
     (fp: string) => {
@@ -975,7 +982,7 @@ function EditorInner() {
 
       // Bind Ctrl+S inside Monaco
       editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-        saveFile();
+        saveFileRef.current();
       });
 
       // Bind Ctrl+P inside Monaco
@@ -988,7 +995,7 @@ function EditorInner() {
         setSidebarOpen((p) => !p);
       });
     },
-    [saveFile]
+    []
   );
 
   // Flatten tree for searching

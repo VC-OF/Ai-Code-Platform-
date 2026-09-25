@@ -27,7 +27,8 @@ export async function GET(req: NextRequest) {
       .split("\n")
       .filter(Boolean)
       .map((line) => {
-        const [sha, timestamp, message] = line.split("|");
+        const [sha, timestamp, ...rest] = line.split("|");
+        const message = rest.join("|");
         return {
           sha,
           timestamp: parseInt(timestamp, 10) * 1000,

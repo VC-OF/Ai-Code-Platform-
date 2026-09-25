@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const { projectId } = await req.json();
+  const { projectId } = await req.json().catch(() => ({}));
   if (!projectId) {
     return NextResponse.json({ error: "Missing projectId" }, { status: 400 });
   }

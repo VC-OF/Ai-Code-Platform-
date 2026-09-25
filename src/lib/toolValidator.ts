@@ -100,6 +100,13 @@ const toolSchemas = {
     height: z.number().int().min(64).max(2048).optional(),
     seed: z.number().int().optional(),
   }),
+
+  create_artifact: z.object({
+    title: z.string().min(1).max(200),
+    content: z.string().min(1),
+    type: z.enum(['markdown', 'plan', 'diagram', 'diff', 'report', 'code']).optional(),
+    description: z.string().max(500).optional(),
+  }),
   
   run_lint: z.object({}).optional(),
   run_tests: z.object({

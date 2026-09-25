@@ -329,7 +329,7 @@ export async function safeExec(
       try { proc.kill('SIGTERM'); } catch {}
       if (dockerMode) {
         // Killing the docker CLI doesn't reliably stop the container
-        try { spawn('docker', ['kill', containerName]); } catch {}
+        try { spawn('docker', ['kill', containerName]).on('error', () => {}); } catch {}
       }
       setTimeout(() => {
         try { proc.kill('SIGKILL'); } catch {}
@@ -339,10 +339,11 @@ export async function safeExec(
     const onAbort = () => {
       try { proc.kill('SIGTERM'); } catch {}
       if (dockerMode) {
-        try { spawn('docker', ['kill', containerName]); } catch {}
+        try { spawn('docker', ['kill', containerName]).on('error', () => {}); } catch {}
       }
     };
-    opts.signal?.addEventListener('abort', onAbort, { once: true });
+    if (opts.signal?.aborted) onAbort();
+    else opts.signal?.addEventListener('abort', onAbort, { once: true });
 
     const cleanup = () => {
       clearTimeout(killTimer);

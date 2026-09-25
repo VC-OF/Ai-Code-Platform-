@@ -37,12 +37,12 @@ async function walk(
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const projectId = searchParams.get("projectId") || "default";
-  await ensureWorkspace(projectId);
 
   const filePath = searchParams.get("path");
   const version = searchParams.get("version");
 
   try {
+    await ensureWorkspace(projectId);
     if (filePath) {
       const full = safeResolve(filePath, projectId);
       const stat = await fs.stat(full);

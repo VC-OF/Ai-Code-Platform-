@@ -168,11 +168,25 @@ export function TimelineEvent({ event }: TimelineEventProps) {
           <div className="flex-shrink-0 w-5 h-5 rounded-full bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 flex items-center justify-center text-[10px] font-bold">
             ?
           </div>
-          <div className="flex-1 flex justify-between items-center">
-            <div className="text-xs text-slate-700 dark:text-slate-300">
-              Agent asked: <span className="font-medium">{event.question}</span>
+          <div className="flex-1 flex flex-col gap-1.5">
+            <div className="flex justify-between items-center">
+              <div className="text-xs text-slate-700 dark:text-slate-300">
+                Agent asked: <span className="font-medium text-slate-900 dark:text-slate-100">{event.question}</span>
+              </div>
+              <span className="text-[10px] text-slate-400 font-mono">{timeStr}</span>
             </div>
-            <span className="text-[10px] text-slate-400 font-mono">{timeStr}</span>
+            {Array.isArray((event as { options?: unknown }).options) && ((event as { options?: string[] }).options ?? []).length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-0.5">
+                {((event as { options?: string[] }).options ?? []).map((opt: string, i: number) => (
+                  <span
+                    key={i}
+                    className="text-[10.5px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700/60"
+                  >
+                    {opt}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       );

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export interface BuildProductSpec {
   title: string;
@@ -60,6 +60,7 @@ export default function PublicApiGallery({ onBuildProduct }: PublicApiGalleryPro
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [categoryItems, setCategoryItems] = useState<CatalogApiItem[]>([]);
   const [loadingCategory, setLoadingCategory] = useState(false);
+  const latestCategoryRef = useRef<string | null>(null);
 
   useEffect(() => {
     fetch('/api/public-apis')
@@ -70,19 +71,24 @@ export default function PublicApiGallery({ onBuildProduct }: PublicApiGalleryPro
 
   const handleCategoryClick = (categoryName: string) => {
     if (activeCategory === categoryName) {
+      latestCategoryRef.current = null;
       setActiveCategory(null);
       setCategoryItems([]);
       return;
     }
+    latestCategoryRef.current = categoryName;
     setActiveCategory(categoryName);
     setLoadingCategory(true);
     fetch(`/api/public-apis?category=${encodeURIComponent(categoryName)}`)
-      .then((r) => r.json())
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((d) => {
+        if (latestCategoryRef.current !== categoryName) return;
         setCategoryItems(d.entries || []);
         setLoadingCategory(false);
       })
-      .catch(() => setLoadingCategory(false));
+      .catch(() => {
+        if (latestCategoryRef.current === categoryName) setLoadingCategory(false);
+      });
   };
 
   const openRecipe = (recipe: ProductRecipe) => {
