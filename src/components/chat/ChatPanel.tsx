@@ -4,11 +4,18 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { StatusIndicator, type AgentStatus } from '../StatusIndicator';
 import { TimelineEvent } from '../TimelineEvent';
 import MessageInput from './MessageInput';
+import Markdown from './Markdown';
 import {
   findSlashCommand,
-  formatSlashHelp,
   parseSlashCommand,
+  type ExportableMessage,
 } from '@/lib/slashCommands';
+import {
+  getOutputStyle,
+  runSlashCommand,
+  STATUSLINE_STORAGE_KEY,
+  type SlashContext,
+} from './slashHandlers';
 
 type Role = 'user' | 'assistant';
 
@@ -115,6 +122,9 @@ interface ChatPanelProps {
   onFilesChanged:  (files: string[]) => void;
   onFileSelect:    (path: string) => void;
   selectedModel?:  string;
+  /** Lets /model switch the model; omitted where the picker isn't available */
+  onModelChange?:  (model: string) => void;
+  projectName?:    string;
   onStatusChange?: (status: AgentStatus) => void;
   /** Fired when a turn completes; filesChanged comes from the agent's done event */
   onAgentDone?:    (info: { reason: string; filesChanged: string[] }) => void;
@@ -129,6 +139,8 @@ export default function ChatPanel({
   onFilesChanged,
   onFileSelect,
   selectedModel,
+  onModelChange,
+  projectName,
   onStatusChange,
   onAgentDone,
   initialPrompt,
@@ -159,6 +171,17 @@ export default function ChatPanel({
     }
     return 'auto';
   });
+
+  // /statusline toggles the mode/context row under the timeline
+  const [statuslineVisible, setStatuslineVisible] = useState(true);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      try {
+        setStatuslineVisible(localStorage.getItem(STATUSLINE_STORAGE_KEY) !== 'true');
+      } catch {}
+    });
+    return () => cancelAnimationFrame(id);
+  }, []);
 
   const handleModeChange = (mode: 'auto' | 'manual' | 'plan') => {
     setExecutionMode(mode);
@@ -444,6 +467,7 @@ export default function ChatPanel({
         activeFilePath,
         model: selectedModel,
         mode: executionMode,
+        outputStyle: getOutputStyle(projectId),
       }),
     });
 
@@ -543,8 +567,40 @@ export default function ChatPanel({
     } catch {}
   };
 
-  const send = async (attachments: MessageAttachment[] = []) => {
-    let text = input.trim();
+  const say = (content: string) => {
+    setTimeline((t) => [...t, { type: 'message', role: 'assistant', content, ts: Date.now() }]);
+  };
+
+  const getTranscript = (): ExportableMessage[] =>
+    timeline
+      .filter((item) => item.type === 'message' && (item.role === 'user' || item.role === 'assistant'))
+      .map((item) => {
+        let text = item.content ?? '';
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed && typeof parsed === 'object' && typeof parsed.text === 'string') text = parsed.text;
+        } catch {}
+        return { role: item.role as string, text, ts: item.ts };
+      });
+
+  const slashContext = (): SlashContext => ({
+    projectId,
+    projectName,
+    selectedModel,
+    onModelChange,
+    executionMode,
+    setExecutionMode: handleModeChange,
+    agentStatus,
+    loading,
+    statuslineVisible,
+    setStatuslineVisible,
+    say,
+    getTranscript,
+  });
+
+  /** `override` lets chips and badges run a command without touching the composer */
+  const send = async (attachments: MessageAttachment[] = [], override?: string) => {
+    let text = (override ?? input).trim();
     if (!text && attachments.length === 0) return;
 
     const slash = parseSlashCommand(text);
@@ -565,29 +621,10 @@ export default function ChatPanel({
         return;
       }
 
-      if (command.name === 'help') {
-        setTimeline((t) => [
-          ...t,
-          { type: 'message', role: 'assistant', content: formatSlashHelp(), ts: Date.now() },
-        ]);
-        return;
-      }
-
       if (command.name === 'clear') {
         setTimeline([]);
         setHistory([]);
         window.dispatchEvent(new CustomEvent('oc-clear-chat'));
-        return;
-      }
-
-      if (command.name === 'status' || command.name === 'model') {
-        const content = command.name === 'status'
-          ? `Agent status: ${agentStatus}${loading ? ' (running)' : ''}`
-          : `Selected model: ${selectedModel || 'default'}`;
-        setTimeline((t) => [
-          ...t,
-          { type: 'message', role: 'assistant', content, ts: Date.now() },
-        ]);
         return;
       }
 
@@ -635,7 +672,7 @@ export default function ChatPanel({
           const res = await fetch('/api/chat/compact', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ projectId, model: selectedModel }),
+            body: JSON.stringify({ projectId, model: selectedModel, instructions: slash.args }),
           });
           const data = await res.json();
           if (data.compacted) {
@@ -683,143 +720,18 @@ export default function ChatPanel({
         return;
       }
 
-      if (command.name === 'skills') {
-        try {
-          const res = await fetch(`/api/skills?projectId=${encodeURIComponent(projectId)}`);
-          const data = await res.json();
-          if (data.skills && data.skills.length > 0) {
-            const list = data.skills
-              .map(
-                (s: { name: string; description: string; source: string }) =>
-                  `• **\`${s.name}\`**: ${s.description}\n  *(Source: \`${s.source}\`)*`
-              )
-              .join('\n\n');
-            setTimeline((t) => [
-              ...t,
-              {
-                type: 'message',
-                role: 'assistant',
-                content: `**Active Skills (${data.count} available in context):**\n\n${list}\n\n*These skills are automatically injected into the agent loop and applied when matching your coding tasks.*`,
-                ts: Date.now(),
-              },
-            ]);
-          } else {
-            setTimeline((t) => [
-              ...t,
-              {
-                type: 'message',
-                role: 'assistant',
-                content: 'No skills currently discovered. Add skills to `.opencode/skills/` or root `skills/`.',
-                ts: Date.now(),
-              },
-            ]);
-          }
-        } catch (err) {
-          setTimeline((t) => [
-            ...t,
-            {
-              type: 'message',
-              role: 'assistant',
-              content: `Failed to load skills: ${err instanceof Error ? err.message : String(err)}`,
-              ts: Date.now(),
-            },
-          ]);
+      const result = await runSlashCommand(command, slash.args, slashContext());
+      if (result.type === 'handled') return;
+      if (result.type === 'prompt') {
+        text = result.text;
+        if (!text.trim()) return;
+      } else {
+        text = command.prompt?.(slash.args) ?? slash.args;
+        if (!text.trim()) {
+          say(`Usage: \`/${command.name}${command.args ? ` ${command.args}` : ''}\``);
+          return;
         }
-        return;
       }
-
-      if (command.name === 'docker') {
-        try {
-          const res = await fetch('/api/docker/status?containers=true&refresh=true');
-          const data = await res.json();
-          if (data.available) {
-            const containerList =
-              data.containers && data.containers.length > 0
-                ? '\n\n**Active Containers:**\n' +
-                  data.containers
-                    .slice(0, 5)
-                    .map((c: { names?: string; id: string; image: string; status: string }) => `• \`${c.names || c.id.slice(0, 10)}\` (${c.image}) - *${c.status}*`)
-                    .join('\n')
-                : '\n\n*No running project containers.*';
-
-            setTimeline((t) => [
-              ...t,
-              {
-                type: 'message',
-                role: 'assistant',
-                content: `**Docker Engine Integrated & Active!**\n\n• **Engine Version**: \`${data.version || 'Online'}\` (${data.osType || 'Linux'})\n• **Sandbox Mode**: \`${data.sandboxModeActive ? 'Active (Isolated Containers)' : 'Available'}\`\n• **Default Sandbox Image**: \`${data.defaultImage}\`\n• **Engine Resources**: \`${data.cpus || 12} CPUs, ${data.memoryGiB || 6.4} GiB RAM allocated\`\n• **Containers**: \`${data.containersRunning} running / ${data.containersTotal} total\` (Images: \`${data.imagesCount}\`)${containerList}\n\n*All agent build, test, and shell executions are safely containerized in throwaway Linux sandboxes.*`,
-                ts: Date.now(),
-              },
-            ]);
-          } else {
-            setTimeline((t) => [
-              ...t,
-              {
-                type: 'message',
-                role: 'assistant',
-                content: `**Docker Daemon Offline:** ${data.error || 'Please ensure Docker Desktop is running.'}\n\n*Agent will use host execution until Docker Desktop is started.*`,
-                ts: Date.now(),
-              },
-            ]);
-          }
-        } catch (err) {
-          setTimeline((t) => [
-            ...t,
-            {
-              type: 'message',
-              role: 'assistant',
-              content: `Failed to inspect Docker: ${err instanceof Error ? err.message : String(err)}`,
-              ts: Date.now(),
-            },
-          ]);
-        }
-        return;
-      }
-
-      if (command.name === 'mode') {
-        const arg = (slash.args || '').toLowerCase().trim();
-        let newMode: 'auto' | 'manual' | 'plan' = executionMode;
-        if (arg.includes('manual') || arg === 'm') {
-          newMode = 'manual';
-        } else if (arg.includes('plan') || arg === 'p') {
-          newMode = 'plan';
-        } else if (arg.includes('auto') || arg === 'a') {
-          newMode = 'auto';
-        }
-
-        if (arg && newMode !== executionMode) {
-          handleModeChange(newMode);
-          setTimeline((t) => [
-            ...t,
-            {
-              type: 'message',
-              role: 'assistant',
-              content: `**Execution Mode switched to \`${newMode.toUpperCase()}\`**\n\n${
-                newMode === 'manual'
-                  ? '**Manual (Supervised)**: Agent will request your explicit approval before modifying files, running shell commands, or executing docker containers.'
-                  : newMode === 'plan'
-                  ? '**Plan-First (Architect)**: Agent will analyze the codebase and construct a structured plan before making file changes.'
-                  : '**Auto (Autonomous)**: Agent will autonomously read, plan, edit, and verify tasks to completion without interruptions.'
-              }`,
-              ts: Date.now(),
-            },
-          ]);
-        } else {
-          setTimeline((t) => [
-            ...t,
-            {
-              type: 'message',
-              role: 'assistant',
-              content: `**Current Execution Mode**: \`${executionMode.toUpperCase()}\`\n\n• \`/mode auto\` — **Autonomous**: Full-speed agent loop without interactive pauses.\n• \`/mode manual\` — **Supervised**: Prompts for approval on every file edit and command execution.\n• \`/mode plan\` — **Architect**: Formulates structured multi-step plan before making edits.\n\n*You can also switch modes anytime using the Mode toggle above the prompt box.*`,
-              ts: Date.now(),
-            },
-          ]);
-        }
-        return;
-      }
-
-      text = command.prompt?.(slash.args) ?? slash.args;
-      if (!text.trim()) return;
     }
 
     // Agent already running → steer it: queue the message for its next step
@@ -868,6 +780,7 @@ export default function ChatPanel({
         activeFilePath,
         model: selectedModel,
         mode: executionMode,
+        outputStyle: getOutputStyle(projectId),
       }),
     });
 
@@ -919,7 +832,11 @@ export default function ChatPanel({
                         ))}
                       </div>
                     )}
-                    <span className="msg-text">{textContent}</span>
+                    {isUser ? (
+                      <span className="msg-text">{textContent}</span>
+                    ) : (
+                      <Markdown text={textContent ?? ''} />
+                    )}
                   </div>
                 </div>
               );
@@ -1165,6 +1082,7 @@ export default function ChatPanel({
 
       {/* Bottom dock: controls and composer */}
       <div className="chat-bottom-dock">
+        {statuslineVisible && (
         <div className="chat-utility-bar">
           <div className="mode-toggle-group" role="group" aria-label="Execution mode">
             <button
@@ -1200,11 +1118,12 @@ export default function ChatPanel({
             type="button"
             className="context-badge-pill"
             title={`Context usage: ${contextInfo.tokens.toLocaleString()} / 2,000,000 tokens (${((contextInfo.tokens / (contextInfo.limit || 2_000_000)) * 100).toFixed(2)}%)`}
-            onClick={() => executePrompt('/context', history)}
+            onClick={() => send([], '/context')}
           >
             {contextInfo.tokens >= 1000 ? `${(contextInfo.tokens / 1000).toFixed(1)}k` : contextInfo.tokens} / 2.0M tokens
           </button>
         </div>
+        )}
 
         <div className="prompt-chips-track">
           {PROMPT_TEMPLATES.map((tpl) => (
@@ -1215,7 +1134,7 @@ export default function ChatPanel({
               title={tpl.hint}
               onClick={() => {
                 if (tpl.prompt.startsWith('/')) {
-                  executePrompt(tpl.prompt, history);
+                  send([], tpl.prompt);
                 } else {
                   setInput(tpl.prompt);
                   (document.querySelector('.input-textarea') as HTMLTextAreaElement)?.focus();

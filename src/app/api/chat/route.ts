@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { isOutputStyle } from '@/lib/outputStyle';
 import { agentManager } from '@/lib/agentManager';
 import { projectDb } from '@/lib/db';
 import { workspaceLocks } from '@/lib/workspaceLock';
@@ -17,6 +18,7 @@ export async function POST(req: NextRequest) {
     const activeFilePath: string | undefined = body.activeFilePath;
     const model: string | undefined = body.model;
     const mode = (body.mode as 'auto' | 'manual' | 'plan') || 'auto';
+    const outputStyle = isOutputStyle(body.outputStyle) ? body.outputStyle : undefined;
 
     if (!projectId) {
       return Response.json({ error: 'projectId is required' }, { status: 400 });
@@ -63,7 +65,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Start background agent loop and return subscription stream
-    const stream = agentManager.startAgent(projectId, messages || [], activeFilePath, model, mode);
+    const stream = agentManager.startAgent(projectId, messages || [], activeFilePath, model, mode, outputStyle);
 
     return new Response(stream, {
       headers: {

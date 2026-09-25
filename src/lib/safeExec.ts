@@ -2,24 +2,10 @@ import crossSpawn from 'cross-spawn';
 import { spawn } from 'child_process';
 import crypto from 'crypto';
 import path from 'path';
+import { HOST_ALLOWED_BINS, HOST_ALLOWED_GIT_SUBCOMMANDS } from './permissions';
 
 // ─── Whitelist ───────────────────────────────────────────────────────────────
-const ALLOWED_BINS = new Set([
-  // Node
-  'node', 'npm', 'pnpm', 'yarn', 'bun',
-  // TypeScript / Lint
-  'tsc', 'eslint', 'prettier',
-  // Test runners
-  'jest', 'vitest', 'mocha', 'jasmine',
-  // Build tools
-  'vite', 'webpack', 'rollup', 'esbuild', 'turbo',
-  // Git (limited)
-  'git',
-  // Safe UNIX utils
-  'ls', 'cat', 'find', 'grep', 'head',
-  'tail', 'wc', 'echo', 'pwd', 'which',
-  'mkdir', 'touch', 'cp', 'mv',
-]);
+const ALLOWED_BINS = new Set<string>(HOST_ALLOWED_BINS);
 
 // ─── Blocked argument patterns (defense-in-depth for the "safe" utils) ───────
 // NOTE: for 'node', the argument surface is instead validated by a strict
@@ -56,11 +42,7 @@ const BLOCKED_ARG_PATTERNS = [
 ];
 
 // ─── Git-specific allowed subcommands ───────────────────────────────────────
-const ALLOWED_GIT_SUBCMDS = new Set([
-  'status', 'log', 'diff', 'show',
-  'add', 'commit', 'checkout', 'reset',
-  'init', 'rev-parse', 'stash',
-]);
+const ALLOWED_GIT_SUBCMDS = new Set<string>(HOST_ALLOWED_GIT_SUBCOMMANDS);
 
 
 // ─── git: block file-writing / config-override arguments ─────────────────────

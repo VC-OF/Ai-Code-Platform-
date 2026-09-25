@@ -130,6 +130,21 @@ export default function App() {
     }
   }, [hasOpenPanels]);
 
+  // Slash commands (/config, /memory, /terminal-setup) ask to open a surface
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      const target = (e as CustomEvent<{ target?: string }>).detail?.target;
+      if (target === 'settings') {
+        setActiveTab('settings');
+        setSettingsOpen(true);
+      } else if (target === 'terminal') {
+        setTerminalOpen(true);
+      }
+    };
+    window.addEventListener('oc-open', onOpen);
+    return () => window.removeEventListener('oc-open', onOpen);
+  }, []);
+
   // Listen for external terminal toggle events
   useEffect(() => {
     const handleToggle = () => setTerminalOpen((p) => !p);
@@ -390,6 +405,8 @@ export default function App() {
                     onFilesChanged={handleFilesChanged}
                     onFileSelect={handleFileSelect}
                     selectedModel={selectedModel}
+                    onModelChange={setSelectedModel}
+                    projectName={activeProject.title}
                     onStatusChange={setAgentStatus}
                     onAgentDone={handleAgentDone}
                     initialPrompt={pendingPrompt}

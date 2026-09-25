@@ -1,3 +1,4 @@
+import { APPROVAL_REQUIRED_TOOLS } from './permissions';
 import { execSync } from 'child_process';
 import {
   callLLM,
@@ -538,15 +539,7 @@ export async function runAgentLoop(
           }
 
           // Manual execution mode: require approval before running mutating actions
-          const MUTATING_TOOLS = new Set([
-            'edit_file',
-            'create_file',
-            'replace_lines',
-            'delete_file',
-            'run_command',
-            'docker_run',
-            'deploy_app',
-          ]);
+          const MUTATING_TOOLS = new Set<string>(APPROVAL_REQUIRED_TOOLS);
 
           if (opts.executionMode === 'manual' && MUTATING_TOOLS.has(toolName) && opts.waitForUserInput) {
             let targetSummary = '';

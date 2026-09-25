@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { groupModelOptions } from '@/lib/modelOptions';
 import { useCommandPaletteStore } from '@/hooks/useCommandPalette';
 import ApiKeyModal from '@/components/ApiKeyModal';
 import ArtifactsDrawer from '@/components/artifacts/ArtifactsDrawer';
@@ -103,13 +104,32 @@ export default function TopBar({
     };
   }, []);
 
-  const toggleTheme = () => {
-    const next = !isDark;
-    setIsDark(next);
-    const val = next ? 'dark' : 'light';
+  const applyTheme = (dark: boolean) => {
+    setIsDark(dark);
+    const val = dark ? 'dark' : 'light';
     document.documentElement.setAttribute('data-theme', val);
     localStorage.setItem('oc-theme', val);
   };
+  const toggleTheme = () => applyTheme(!isDark);
+
+  // Slash commands: /theme sets the theme, /login and /logout open the keys modal
+  useEffect(() => {
+    const onTheme = (e: Event) => {
+      const theme = (e as CustomEvent<{ theme?: string }>).detail?.theme;
+      if (theme === 'dark' || theme === 'light') {
+        setIsDark(theme === 'dark');
+      }
+    };
+    const onOpen = (e: Event) => {
+      if ((e as CustomEvent<{ target?: string }>).detail?.target === 'keys') setShowKeyModal(true);
+    };
+    window.addEventListener('oc-theme-change', onTheme);
+    window.addEventListener('oc-open', onOpen);
+    return () => {
+      window.removeEventListener('oc-theme-change', onTheme);
+      window.removeEventListener('oc-open', onOpen);
+    };
+  }, []);
   const agentActive = !!agentStatus && agentStatus !== 'done' && agentStatus !== 'error';
   const agentLabel =
     agentStatus === 'planning' ? 'Planning…'
@@ -146,30 +166,13 @@ export default function TopBar({
           title={`Model: ${selectedModel}`}
           aria-label="Model"
         >
-          <optgroup label="Ollama Cloud">
-            <option value="nemotron-3-ultra:cloud">nemotron-3-ultra:cloud (default)</option>
-            <option value="nemotron-3-super:cloud">nemotron-3-super:cloud</option>
-          </optgroup>
-          <optgroup label="Anthropic">
-            <option value="openrouter:anthropic/claude-3.7-sonnet">Claude 3.7 Sonnet</option>
-            <option value="openrouter:anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
-            <option value="claude-3-5-sonnet">claude-3-5-sonnet (direct)</option>
-          </optgroup>
-          <optgroup label="DeepSeek">
-            <option value="openrouter:deepseek/deepseek-r1">DeepSeek R1</option>
-            <option value="openrouter:deepseek/deepseek-chat">DeepSeek V3</option>
-            <option value="deepseek-r1">deepseek-r1 (direct)</option>
-          </optgroup>
-          <optgroup label="OpenAI">
-            <option value="gpt-4o">gpt-4o</option>
-            <option value="gpt-4o-mini">gpt-4o-mini</option>
-            <option value="openrouter:openai/o3-mini">o3-mini</option>
-          </optgroup>
-          <optgroup label="Groq">
-            <option value="llama-3.3-70b-versatile">llama-3.3-70b</option>
-            <option value="openai/gpt-oss-120b">gpt-oss-120b</option>
-            <option value="qwen/qwen3.8-27b">qwen-3.8-27b</option>
-          </optgroup>
+          {groupModelOptions().map(([group, options]) => (
+            <optgroup key={group} label={group}>
+              {options.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </optgroup>
+          ))}
         </select>
 
         <button type="button" onClick={() => setShowKeyModal(true)} className="ghost-btn" title="API keys">

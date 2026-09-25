@@ -6,7 +6,7 @@ import { projectDb, messageDb, planDb } from '@/lib/db';
 import { getModel, LLMMessage, type LLMTool } from '@/lib/llmClient';
 import { SYSTEM_PROMPT } from '@/lib/systemPrompt';
 import { createHarness } from '@/lib/harness';
-import { composeSystemPrompt } from '@/lib/promptComposer';
+import { composeSystemPrompt, type OutputStyle } from '@/lib/promptComposer';
 import { loadSkills } from '@/lib/skills';
 import { listKnowledgeItems } from '@/lib/knowledge';
 import { TOOL_SCHEMAS } from '@/lib/tools';
@@ -102,7 +102,8 @@ class AgentManager {
     messages: { role: 'system' | 'user' | 'assistant'; content: string }[],
     activeFilePath?: string,
     requestedModel?: string,
-    executionMode: 'auto' | 'manual' | 'plan' = 'auto'
+    executionMode: 'auto' | 'manual' | 'plan' = 'auto',
+    outputStyle?: OutputStyle
   ): ReadableStream<Uint8Array> {
     // Atomic guard: if an agent is already running for this project,
     // subscribe to it instead of starting a second one
@@ -290,6 +291,7 @@ class AgentManager {
           skills,
           knowledgeItems,
           mode: executionMode,
+          outputStyle,
         });
 
         await runAgentLoop({

@@ -19,6 +19,9 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const projectId = body.projectId as string;
     const model = (body.model as string) || config.DEFAULT_MODEL;
+    // Optional user guidance (`/compact focus on the auth changes`)
+    const instructions =
+      typeof body.instructions === 'string' ? body.instructions.trim().slice(0, 2000) : '';
 
     if (!projectId) {
       return NextResponse.json({ error: 'projectId is required' }, { status: 400 });
@@ -86,7 +89,15 @@ export async function POST(req: NextRequest) {
       const summaryResp = await callLLM(
         { model },
         [
-          { role: 'system', content: SUMMARIZE_SYSTEM_PROMPT },
+          {
+            role: 'system',
+            content: instructions
+              ? `${SUMMARIZE_SYSTEM_PROMPT}
+
+Additional instructions from the user for this summary:
+${instructions}`
+              : SUMMARIZE_SYSTEM_PROMPT,
+          },
           { role: 'user', content: serializeForSummary(split.evicted) },
         ],
         undefined,
