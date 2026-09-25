@@ -137,3 +137,30 @@ export async function DELETE(req: NextRequest) {
     );
   }
 }
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const projectId = body.projectId || "default";
+    await ensureWorkspace(projectId);
+
+    const { oldPath, newPath } = body;
+    if (!oldPath || !newPath) {
+      return NextResponse.json(
+        { error: "Missing oldPath or newPath parameter" },
+        { status: 400 }
+      );
+    }
+
+    const oldFull = safeResolve(oldPath, projectId);
+    const newFull = safeResolve(newPath, projectId);
+    await fs.mkdir(path.dirname(newFull), { recursive: true });
+    await fs.rename(oldFull, newFull);
+    return NextResponse.json({ success: true, oldPath, newPath });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : String(err) },
+      { status: 500 }
+    );
+  }
+}

@@ -30,9 +30,15 @@ const MODELS: Record<string, Partial<ModelInfo>> = {
   'gpt-4o':                    { contextWindow: 128_000, costPer1kIn: 0.0025,  costPer1kOut: 0.01   },
   'gpt-4o-mini':               { contextWindow: 128_000, costPer1kIn: 0.00015, costPer1kOut: 0.0006 },
   'gpt-4-turbo':               { contextWindow: 128_000, costPer1kIn: 0.01,    costPer1kOut: 0.03   },
-  // Anthropic (via OpenAI-compatible gateways)
+  'o3-mini':                   { contextWindow: 200_000, costPer1kIn: 0.0011,  costPer1kOut: 0.0044 },
+  'o1':                        { contextWindow: 200_000, costPer1kIn: 0.015,   costPer1kOut: 0.06   },
+  // Anthropic
+  'claude-3-7-sonnet':         { contextWindow: 200_000, costPer1kIn: 0.003,   costPer1kOut: 0.015  },
   'claude-3-5-sonnet':         { contextWindow: 200_000, costPer1kIn: 0.003,   costPer1kOut: 0.015  },
   'claude-3-haiku':            { contextWindow: 200_000, costPer1kIn: 0.00025, costPer1kOut: 0.00125},
+  // DeepSeek
+  'deepseek-r1':               { contextWindow: 128_000, costPer1kIn: 0.00055, costPer1kOut: 0.00219},
+  'deepseek-chat':             { contextWindow: 128_000, costPer1kIn: 0.00014, costPer1kOut: 0.00028},
   // Groq-hosted
   'llama-3.3-70b-versatile':   { contextWindow: 128_000 },
   'llama-3.1-8b-instant':      { contextWindow: 128_000 },
@@ -133,6 +139,7 @@ export interface ProviderInfo {
 export const PROVIDERS: ProviderInfo[] = [
   { id: 'groq',       label: 'Groq',        kind: 'cloud', baseURL: 'https://api.groq.com/openai/v1',      keyEnv: 'GROQ_API_KEY',        prefix: null },
   { id: 'openrouter', label: 'OpenRouter',  kind: 'cloud', baseURL: 'https://openrouter.ai/api/v1',        keyEnv: 'OPENROUTER_API_KEY',  prefix: 'openrouter' },
+  { id: 'deepseek',   label: 'DeepSeek',    kind: 'cloud', baseURL: 'https://api.deepseek.com/v1',          keyEnv: 'DEEPSEEK_API_KEY',    prefix: 'deepseek' },
   { id: 'together',   label: 'Together AI', kind: 'cloud', baseURL: 'https://api.together.xyz/v1',         keyEnv: 'TOGETHER_API_KEY',    prefix: 'together' },
   { id: 'ollama',     label: 'Ollama',      kind: 'local', baseURL: 'http://localhost:11434/v1',           keyEnv: null,                  prefix: null },
   { id: 'lmstudio',   label: 'LM Studio',   kind: 'local', baseURL: 'http://localhost:1234/v1',            keyEnv: null,                  prefix: 'lmstudio' },

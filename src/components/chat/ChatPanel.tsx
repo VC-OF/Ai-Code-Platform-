@@ -110,6 +110,7 @@ interface ChatPanelProps {
   onAgentDone?:    (info: { reason: string; filesChanged: string[] }) => void;
   initialPrompt?:  string | null;
   onClearInitialPrompt?: () => void;
+  isFullWidth?:    boolean;
 }
 
 export default function ChatPanel({
@@ -122,6 +123,7 @@ export default function ChatPanel({
   onAgentDone,
   initialPrompt,
   onClearInitialPrompt,
+  isFullWidth = false,
 }: ChatPanelProps) {
   const [history,       setHistory]       = useState<Message[]>([]);
   const [timeline,      setTimeline]      = useState<TimelineItem[]>([]);
@@ -217,6 +219,25 @@ export default function ChatPanel({
     };
     window.addEventListener('oc-history-rewound', onRewound);
     return () => window.removeEventListener('oc-history-rewound', onRewound);
+  }, []);
+
+  // Listen for editor code selection bridge injection
+  useEffect(() => {
+    const handleInjectPrompt = (e: Event) => {
+      const customEvent = e as CustomEvent<{ prompt?: string }>;
+      if (customEvent.detail?.prompt) {
+        setInput((prev) => (prev ? `${prev.trim()}\n\n${customEvent.detail?.prompt}` : (customEvent.detail?.prompt || '')));
+        setTimeout(() => {
+          const textarea = document.querySelector('.input-textarea') as HTMLTextAreaElement;
+          if (textarea) {
+            textarea.focus();
+            textarea.scrollTop = textarea.scrollHeight;
+          }
+        }, 50);
+      }
+    };
+    window.addEventListener('oc-inject-prompt', handleInjectPrompt);
+    return () => window.removeEventListener('oc-inject-prompt', handleInjectPrompt);
   }, []);
 
   const endRef = useRef<HTMLDivElement>(null);
@@ -842,7 +863,7 @@ export default function ChatPanel({
   };
 
   return (
-    <div className="chat-panel">
+    <div className={`chat-panel ${isFullWidth ? 'chat-panel--full' : ''}`}>
 
 
 
@@ -952,269 +973,272 @@ export default function ChatPanel({
               <StatusIndicator status={agentStatus} elapsedSeconds={elapsedSeconds} />
             </div>
           )}
+          {/* ── Prominent Live Agent Activity Card (Visible whenever agent is running) ── */}
+          {loading && (
+            <div className="agent-live-card">
+              <div className="agent-live-glow-beam" />
+              <div className="agent-live-content">
+                <div className="agent-live-logo-box">
+                  <span className="agent-live-radar-ring" />
+                  <svg viewBox="0 0 24 24" fill="none" width={16} height={16} className="agent-live-bolt">
+                    <path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z" fill="currentColor" />
+                  </svg>
+                </div>
+                <div className="agent-live-info">
+                  <div className="agent-live-row-top">
+                    <span className="agent-live-badge">AGENT ACTIVE</span>
+                    <span className="agent-live-timer">
+                      ⏱ {Math.floor(elapsedSeconds / 60)}:{(elapsedSeconds % 60).toString().padStart(2, '0')}
+                    </span>
+                    <span className="agent-live-status-pill">{agentStatus}</span>
+                  </div>
+                  <div className="agent-live-desc">
+                    {currentToolInfo ? (
+                      <span>
+                        Executing <strong>{currentToolInfo.name}</strong>
+                        {currentToolInfo.detail && <span className="agent-live-detail"> · {currentToolInfo.detail}</span>}
+                      </span>
+                    ) : (
+                      <span>
+                        {agentStatus === 'planning' ? 'Analyzing requirements and planning next action…'
+                          : agentStatus === 'writing' ? 'Writing code modifications to workspace…'
+                          : agentStatus === 'reading' ? 'Reading project workspace files…'
+                          : agentStatus === 'linting' ? 'Verifying code syntax & running linter…'
+                          : agentStatus === 'testing' ? 'Executing automated tests…'
+                          : agentStatus === 'compacting' ? 'Compacting conversation context…'
+                          : agentStatus === 'waiting' ? 'Waiting for your response…'
+                          : 'Synthesizing response and executing steps…'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="agent-live-stop-btn"
+                  onClick={cancelRun}
+                  title="Stop agent turn (Esc)"
+                >
+                  <svg viewBox="0 0 24 24" fill="currentColor" width={10} height={10}>
+                    <rect x="5" y="5" width="14" height="14" rx="2" />
+                  </svg>
+                  Stop
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── Agent plan (persists across turns, scrolls with the feed) ── */}
+          {plan.length > 0 && (
+            <div className="plan-card">
+              <button
+                className="plan-header"
+                onClick={() => setPlanCollapsed((c) => !c)}
+              >
+                <span className="plan-title">
+                  Plan · {plan.filter((t) => t.status === 'completed').length}/{plan.length} done
+                </span>
+                <span className="plan-toggle">{planCollapsed ? '▸' : '▾'}</span>
+              </button>
+              {!planCollapsed && (
+                <div className="plan-tasks">
+                  {plan.map((t) => (
+                    <div key={t.id} className={`plan-task plan-task--${t.status}`}>
+                      <span className="plan-task-mark">
+                        {t.status === 'completed' ? (
+                          <span className="plan-check">✓</span>
+                        ) : t.status === 'in_progress' ? (
+                          loading ? (
+                            <svg className="plan-spinner" viewBox="0 0 16 16" fill="none" width={12} height={12}>
+                              <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2.5" strokeOpacity="0.25" />
+                              <path d="M14 8a6 6 0 00-6-6" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+                            </svg>
+                          ) : (
+                            <span className="plan-paused-dot">●</span>
+                          )
+                        ) : (
+                          <span className="plan-pending-circle">○</span>
+                        )}
+                      </span>
+                      <span className="plan-task-title">{t.title}</span>
+                      {t.status === 'in_progress' && (
+                        <span className={`plan-task-tag ${loading ? 'plan-task-tag--running' : 'plan-task-tag--paused'}`}>
+                          {loading ? 'RUNNING' : 'PAUSED'}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Plan Continuation Card (When paused/stopped with uncompleted tasks) ── */}
+          {!loading && plan.length > 0 && plan.some((t) => t.status !== 'completed') && (
+            <div className="plan-continue-card">
+              <div className="plan-continue-top">
+                <div className="plan-continue-badge-wrap">
+                  <span className="plan-continue-paused-dot" />
+                  <span className="plan-continue-badge-text">
+                    {lastDoneReason === 'max_steps' || lastDoneReason === 'timeout'
+                      ? 'TURN LIMIT REACHED'
+                      : 'PAUSED · READY FOR NEXT STEP'}
+                  </span>
+                </div>
+                <span className="plan-continue-count">
+                  {plan.filter((t) => t.status === 'completed').length}/{plan.length} TASKS DONE
+                </span>
+              </div>
+
+              {(() => {
+                const nextTask = plan.find((t) => t.status === 'in_progress') || plan.find((t) => t.status === 'pending');
+                return nextTask ? (
+                  <div className="plan-continue-next-row">
+                    <span className="plan-continue-next-label">Next Task:</span>
+                    <span className="plan-continue-next-title">{nextTask.title}</span>
+                  </div>
+                ) : null;
+              })()}
+
+              <div className="plan-continue-btn-row">
+                <button
+                  type="button"
+                  className="plan-continue-btn plan-continue-btn--primary"
+                  onClick={() => {
+                    setLastDoneReason(null);
+                    const nextTask = plan.find((t) => t.status === 'in_progress') || plan.find((t) => t.status === 'pending');
+                    const nextInstruction = nextTask
+                      ? `Continue executing the plan. Next task is: "${nextTask.title}". Please proceed with implementing and verifying.`
+                      : 'Continue working through the remaining tasks in the plan until complete.';
+                    executePrompt(nextInstruction, history);
+                  }}
+                >
+                  <svg viewBox="0 0 24 24" fill="currentColor" width={12} height={12}>
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                  Continue Next Task
+                </button>
+                <button
+                  type="button"
+                  className="plan-continue-btn plan-continue-btn--ghost"
+                  onClick={() => {
+                    const nextTask = plan.find((t) => t.status === 'in_progress') || plan.find((t) => t.status === 'pending');
+                    setInput(nextTask ? `Regarding task "${nextTask.title}": ` : 'Continue: ');
+                    (document.querySelector('.input-textarea') as HTMLTextAreaElement)?.focus();
+                  }}
+                >
+                  Custom Instructions…
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── Plan Completed Celebration Banner ── */}
+          {!loading && plan.length > 0 && plan.every((t) => t.status === 'completed') && (
+            <div className="plan-completed-banner">
+              <span className="plan-completed-check">✓</span>
+              <span className="plan-completed-text">All {plan.length} plan tasks completed successfully!</span>
+            </div>
+          )}
+
+          {/* ── Continue banner after an interrupted turn (fallback when no plan) ── */}
+          {!loading && plan.length === 0 && (lastDoneReason === 'max_steps' || lastDoneReason === 'timeout') && (
+            <div className="continue-banner">
+              <span>
+                The turn hit its {lastDoneReason === 'timeout' ? 'time' : 'step'} limit.
+              </span>
+              <button
+                className="continue-btn"
+                onClick={() => {
+                  setLastDoneReason(null);
+                  setInput('Continue from where you left off.');
+                  (document.querySelector('.input-textarea') as HTMLTextAreaElement)?.focus();
+                }}
+              >
+                Continue
+              </button>
+            </div>
+          )}
+
           <div ref={endRef} />
       </div>
 
-      {/* ── Agent plan (persists across turns) ───────────────────────────── */}
-      {plan.length > 0 && (
-        <div className="plan-card">
-          <button
-            className="plan-header"
-            onClick={() => setPlanCollapsed((c) => !c)}
-          >
-            <span className="plan-title">
-              Plan · {plan.filter((t) => t.status === 'completed').length}/{plan.length} done
-            </span>
-            <span className="plan-toggle">{planCollapsed ? '▸' : '▾'}</span>
-          </button>
-          {!planCollapsed && (
-            <div className="plan-tasks">
-              {plan.map((t) => (
-                <div key={t.id} className={`plan-task plan-task--${t.status}`}>
-                  <span className="plan-task-mark">
-                    {t.status === 'completed' ? (
-                      <span className="plan-check">✓</span>
-                    ) : t.status === 'in_progress' ? (
-                      loading ? (
-                        <svg className="plan-spinner" viewBox="0 0 16 16" fill="none" width={12} height={12}>
-                          <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2.5" strokeOpacity="0.25" />
-                          <path d="M14 8a6 6 0 00-6-6" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-                        </svg>
-                      ) : (
-                        <span className="plan-paused-dot">●</span>
-                      )
-                    ) : (
-                      <span className="plan-pending-circle">○</span>
-                    )}
-                  </span>
-                  <span className="plan-task-title">{t.title}</span>
-                  {t.status === 'in_progress' && (
-                    <span className={`plan-task-tag ${loading ? 'plan-task-tag--running' : 'plan-task-tag--paused'}`}>
-                      {loading ? 'RUNNING' : 'PAUSED'}
-                    </span>
-                  )}
-                </div>
-              ))}
+      {/* ── Allocated Bottom Place for controls & prompt input ── */}
+      <div className="chat-bottom-dock">
+        {/* Tier 1 & 2: Mode Toggle, Context Pill, and Horizontal Quick Chips */}
+        <div className="chat-controls-container">
+          {/* Tier 1: Execution Mode & Context Counter */}
+          <div className="chat-utility-bar">
+            <div className="mode-toggle-group">
+              <button
+                type="button"
+                className={`mode-toggle-btn ${executionMode === 'auto' ? 'mode-toggle-btn--active' : ''}`}
+                title="Auto Mode: Autonomous execution without pauses"
+                onClick={() => handleModeChange('auto')}
+              >
+                ⚡ Auto
+              </button>
+              <button
+                type="button"
+                className={`mode-toggle-btn ${executionMode === 'manual' ? 'mode-toggle-btn--active' : ''}`}
+                title="Manual Mode: Requires human approval before running file edits and shell/docker commands"
+                onClick={() => handleModeChange('manual')}
+              >
+                🛡️ Manual
+              </button>
+              <button
+                type="button"
+                className={`mode-toggle-btn ${executionMode === 'plan' ? 'mode-toggle-btn--active' : ''}`}
+                title="Plan First Mode: Agent formulates architectural plan before editing"
+                onClick={() => handleModeChange('plan')}
+              >
+                📋 Plan
+              </button>
             </div>
-          )}
-        </div>
-      )}
 
-      {/* ── Prominent Live Agent Activity Card (Visible whenever agent is running) ── */}
-      {loading && (
-        <div className="agent-live-card">
-          <div className="agent-live-glow-beam" />
-          <div className="agent-live-content">
-            <div className="agent-live-logo-box">
-              <span className="agent-live-radar-ring" />
-              <svg viewBox="0 0 24 24" fill="none" width={16} height={16} className="agent-live-bolt">
-                <path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z" fill="currentColor" />
-              </svg>
-            </div>
-            <div className="agent-live-info">
-              <div className="agent-live-row-top">
-                <span className="agent-live-badge">AGENT ACTIVE</span>
-                <span className="agent-live-timer">
-                  ⏱ {Math.floor(elapsedSeconds / 60)}:{(elapsedSeconds % 60).toString().padStart(2, '0')}
-                </span>
-                <span className="agent-live-status-pill">{agentStatus}</span>
-              </div>
-              <div className="agent-live-desc">
-                {currentToolInfo ? (
-                  <span>
-                    Executing <strong>{currentToolInfo.name}</strong>
-                    {currentToolInfo.detail && <span className="agent-live-detail"> · {currentToolInfo.detail}</span>}
-                  </span>
-                ) : (
-                  <span>
-                    {agentStatus === 'planning' ? 'Analyzing requirements and planning next action…'
-                      : agentStatus === 'writing' ? 'Writing code modifications to workspace…'
-                      : agentStatus === 'reading' ? 'Reading project workspace files…'
-                      : agentStatus === 'linting' ? 'Verifying code syntax & running linter…'
-                      : agentStatus === 'testing' ? 'Executing automated tests…'
-                      : agentStatus === 'compacting' ? 'Compacting conversation context…'
-                      : agentStatus === 'waiting' ? 'Waiting for your response…'
-                      : 'Synthesizing response and executing steps…'}
-                  </span>
-                )}
-              </div>
-            </div>
-            <button
-              type="button"
-              className="agent-live-stop-btn"
-              onClick={cancelRun}
-              title="Stop agent turn (Esc)"
+            <div
+              className="context-badge-pill"
+              title={`Context Usage: ${contextInfo.tokens.toLocaleString()} / 2,000,000 tokens (${((contextInfo.tokens / (contextInfo.limit || 2_000_000)) * 100).toFixed(2)}%). 2M token limit active.`}
+              onClick={() => executePrompt('/context', history)}
             >
-              <svg viewBox="0 0 24 24" fill="currentColor" width={10} height={10}>
-                <rect x="5" y="5" width="14" height="14" rx="2" />
-              </svg>
-              Stop
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── Plan Continuation Card (When paused/stopped with uncompleted tasks) ── */}
-      {!loading && plan.length > 0 && plan.some((t) => t.status !== 'completed') && (
-        <div className="plan-continue-card">
-          <div className="plan-continue-top">
-            <div className="plan-continue-badge-wrap">
-              <span className="plan-continue-paused-dot" />
-              <span className="plan-continue-badge-text">
-                {lastDoneReason === 'max_steps' || lastDoneReason === 'timeout'
-                  ? 'TURN LIMIT REACHED'
-                  : 'PAUSED · READY FOR NEXT STEP'}
+              <span className="context-indicator-dot" />
+              <span className="context-badge-text">
+                {contextInfo.tokens >= 1000 ? `${(contextInfo.tokens / 1000).toFixed(1)}k` : contextInfo.tokens} / 2.0M tokens
               </span>
             </div>
-            <span className="plan-continue-count">
-              {plan.filter((t) => t.status === 'completed').length}/{plan.length} TASKS DONE
-            </span>
           </div>
 
-          {(() => {
-            const nextTask = plan.find((t) => t.status === 'in_progress') || plan.find((t) => t.status === 'pending');
-            return nextTask ? (
-              <div className="plan-continue-next-row">
-                <span className="plan-continue-next-label">Next Task:</span>
-                <span className="plan-continue-next-title">{nextTask.title}</span>
-              </div>
-            ) : null;
-          })()}
-
-          <div className="plan-continue-btn-row">
-            <button
-              type="button"
-              className="plan-continue-btn plan-continue-btn--primary"
-              onClick={() => {
-                setLastDoneReason(null);
-                const nextTask = plan.find((t) => t.status === 'in_progress') || plan.find((t) => t.status === 'pending');
-                const nextInstruction = nextTask
-                  ? `Continue executing the plan. Next task is: "${nextTask.title}". Please proceed with implementing and verifying.`
-                  : 'Continue working through the remaining tasks in the plan until complete.';
-                executePrompt(nextInstruction, history);
-              }}
-            >
-              <svg viewBox="0 0 24 24" fill="currentColor" width={12} height={12}>
-                <path d="M8 5v14l11-7z" />
-              </svg>
-              Continue Next Task
-            </button>
-            <button
-              type="button"
-              className="plan-continue-btn plan-continue-btn--ghost"
-              onClick={() => {
-                const nextTask = plan.find((t) => t.status === 'in_progress') || plan.find((t) => t.status === 'pending');
-                setInput(nextTask ? `Regarding task "${nextTask.title}": ` : 'Continue: ');
-                (document.querySelector('.input-textarea') as HTMLTextAreaElement)?.focus();
-              }}
-            >
-              Custom Instructions…
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── Plan Completed Celebration Banner ── */}
-      {!loading && plan.length > 0 && plan.every((t) => t.status === 'completed') && (
-        <div className="plan-completed-banner">
-          <span className="plan-completed-check">✓</span>
-          <span className="plan-completed-text">All {plan.length} plan tasks completed successfully!</span>
-        </div>
-      )}
-
-      {/* ── Continue banner after an interrupted turn (fallback when no plan) ── */}
-      {!loading && plan.length === 0 && (lastDoneReason === 'max_steps' || lastDoneReason === 'timeout') && (
-        <div className="continue-banner">
-          <span>
-            The turn hit its {lastDoneReason === 'timeout' ? 'time' : 'step'} limit.
-          </span>
-          <button
-            className="continue-btn"
-            onClick={() => {
-              setLastDoneReason(null);
-              setInput('Continue from where you left off.');
-              (document.querySelector('.input-textarea') as HTMLTextAreaElement)?.focus();
-            }}
-          >
-            Continue
-          </button>
-        </div>
-      )}
-
-      {/* ── Chat Controls: Tier 1 Utility Bar (Mode & 2M Context) + Tier 2 Horizontal Chips ─ */}
-      <div className="chat-controls-container">
-        {/* Tier 1: Execution Mode & Context Counter */}
-        <div className="chat-utility-bar">
-          <div className="mode-toggle-group">
-            <button
-              type="button"
-              className={`mode-toggle-btn ${executionMode === 'auto' ? 'mode-toggle-btn--active' : ''}`}
-              title="Auto Mode: Autonomous execution without pauses"
-              onClick={() => handleModeChange('auto')}
-            >
-              ⚡ Auto
-            </button>
-            <button
-              type="button"
-              className={`mode-toggle-btn ${executionMode === 'manual' ? 'mode-toggle-btn--active' : ''}`}
-              title="Manual Mode: Requires human approval before running file edits and shell/docker commands"
-              onClick={() => handleModeChange('manual')}
-            >
-              🛡️ Manual
-            </button>
-            <button
-              type="button"
-              className={`mode-toggle-btn ${executionMode === 'plan' ? 'mode-toggle-btn--active' : ''}`}
-              title="Plan First Mode: Agent formulates architectural plan before editing"
-              onClick={() => handleModeChange('plan')}
-            >
-              📋 Plan
-            </button>
-          </div>
-
-          <div
-            className="context-badge-pill"
-            title={`Context Usage: ${contextInfo.tokens.toLocaleString()} / 2,000,000 tokens (${((contextInfo.tokens / (contextInfo.limit || 2_000_000)) * 100).toFixed(2)}%). 2M token limit active.`}
-            onClick={() => executePrompt('/context', history)}
-          >
-            <span className="context-indicator-dot" />
-            <span className="context-badge-text">
-              {contextInfo.tokens >= 1000 ? `${(contextInfo.tokens / 1000).toFixed(1)}k` : contextInfo.tokens} / 2.0M tokens
-            </span>
+          {/* Tier 2: Single-Row Horizontal Action Chips */}
+          <div className="prompt-chips-track">
+            {PROMPT_TEMPLATES.map((tpl) => (
+              <button
+                key={tpl.label}
+                className="prompt-chip-btn"
+                title={tpl.hint}
+                onClick={() => {
+                  if (tpl.prompt.startsWith('/')) {
+                    executePrompt(tpl.prompt, history);
+                  } else {
+                    setInput(tpl.prompt);
+                    (document.querySelector('.input-textarea') as HTMLTextAreaElement)?.focus();
+                  }
+                }}
+              >
+                {tpl.label}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Tier 2: Single-Row Horizontal Action Chips */}
-        <div className="prompt-chips-track">
-          {PROMPT_TEMPLATES.map((tpl) => (
-            <button
-              key={tpl.label}
-              className="prompt-chip-btn"
-              title={tpl.hint}
-              onClick={() => {
-                if (tpl.prompt.startsWith('/')) {
-                  executePrompt(tpl.prompt, history);
-                } else {
-                  setInput(tpl.prompt);
-                  (document.querySelector('.input-textarea') as HTMLTextAreaElement)?.focus();
-                }
-              }}
-            >
-              {tpl.label}
-            </button>
-          ))}
-        </div>
+        {/* ── Message Input (Bottom prompt widget) ────────────────────────── */}
+        <MessageInput
+          value={input}
+          onChange={setInput}
+          onSend={(attachments) => send(attachments)}
+          onCancel={cancelRun}
+          isStreaming={loading}
+          activeFile={activeFilePath}
+        />
       </div>
-
-      {/* ── Message Input (Bottom prompt widget) ────────────────────────── */}
-      <MessageInput
-        value={input}
-        onChange={setInput}
-        onSend={(attachments) => send(attachments)}
-        onCancel={cancelRun}
-        isStreaming={loading}
-        activeFile={activeFilePath}
-      />
 
       <style jsx>{`
         .chat-panel {
@@ -1222,8 +1246,35 @@ export default function ChatPanel({
           flex-direction: column;
           height: 100%;
           min-height: 0;
-          gap: 8px;
+          gap: 0;
           overflow: hidden;
+          position: relative;
+        }
+
+        .chat-panel--full {
+          max-width: 920px;
+          margin: 0 auto;
+          width: 100%;
+        }
+
+        /* ── Only allocate bottom place for controls & input ── */
+        .chat-bottom-dock {
+          flex-shrink: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          padding: 8px 4px 2px;
+          background: var(--bg-base);
+          border-top: 1px solid var(--border-subtle);
+          z-index: 20;
+        }
+
+        .chat-panel--full .plan-continue-btn-row {
+          max-width: 560px;
+        }
+
+        .chat-panel--full .plan-card {
+          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
         }
 
         /* ── View toggle bar ── */
@@ -1450,15 +1501,31 @@ export default function ChatPanel({
           font-size: 10px;
         }
 
-        /* Scrollable Timeline area */
+        /* Complete scrollable timeline area from top to bottom */
         .chat-timeline {
-          flex: 1;
-          min-height: 120px;
+          flex: 1 1 0px;
+          min-height: 0;
           overflow-y: auto;
+          overflow-x: hidden;
           display: flex;
           flex-direction: column;
-          gap: 10px;
-          padding-right: 4px;
+          gap: 12px;
+          padding: 8px 10px 16px 4px;
+          scroll-behavior: smooth;
+        }
+
+        .chat-timeline::-webkit-scrollbar {
+          width: 6px;
+        }
+        .chat-timeline::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .chat-timeline::-webkit-scrollbar-thumb {
+          background: var(--border-subtle);
+          border-radius: 4px;
+        }
+        .chat-timeline::-webkit-scrollbar-thumb:hover {
+          background: var(--border-strong);
         }
 
         .timeline-msg {

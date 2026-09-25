@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 type Status = "stopped" | "starting" | "running" | "error";
-type Device = "desktop" | "mobile";
+type Device = "desktop" | "tablet" | "mobile";
 
 export default function PreviewTab({
   autoStartToken,
@@ -263,20 +263,30 @@ export default function PreviewTab({
           <button
             className={`di ${device === "desktop" ? "active" : ""}`}
             onClick={() => setDevice("desktop")}
-            title="Desktop view"
+            title="Desktop view (100%)"
           >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={14} height={14}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13}>
               <rect x="2" y="4" width="20" height="14" rx="2"/>
               <path d="M8 21h8M12 18v3"/>
             </svg>
           </button>
           <button
+            className={`di ${device === "tablet" ? "active" : ""}`}
+            onClick={() => setDevice("tablet")}
+            title="Tablet view (768px)"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13}>
+              <rect x="4" y="2" width="16" height="20" rx="2"/>
+              <path d="M12 18h.01"/>
+            </svg>
+          </button>
+          <button
             className={`di ${device === "mobile" ? "active" : ""}`}
             onClick={() => setDevice("mobile")}
-            title="Mobile view"
+            title="Mobile view (375px)"
           >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={14} height={14}>
-              <rect x="5" y="2" width="14" height="20" rx="2"/>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13}>
+              <rect x="6" y="2" width="12" height="20" rx="2"/>
               <path d="M12 18h.01"/>
             </svg>
           </button>
@@ -736,6 +746,14 @@ export default function PreviewTab({
           height: 100%;
           position: relative;
           transition: max-width 0.3s ease;
+        }
+
+        .preview-frame-wrapper.tablet {
+          max-width: 768px;
+          height: 96%;
+          border: 8px solid var(--border-strong);
+          border-radius: 10px;
+          box-shadow: var(--shadow-md);
         }
 
         .preview-frame-wrapper.mobile {

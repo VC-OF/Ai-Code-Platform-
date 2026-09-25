@@ -17,6 +17,7 @@ function TreeEntry({
   depth,
   activePath,
   onSelect,
+  onRename,
   onDelete,
   expandedFolders,
   toggleFolder,
@@ -25,6 +26,7 @@ function TreeEntry({
   depth: number;
   activePath: string | null;
   onSelect: (path: string) => void;
+  onRename: (path: string, e: React.MouseEvent) => void;
   onDelete: (path: string, e: React.MouseEvent) => void;
   expandedFolders: Set<string>;
   toggleFolder: (path: string) => void;
@@ -62,6 +64,7 @@ function TreeEntry({
                 depth={depth + 1}
                 activePath={activePath}
                 onSelect={onSelect}
+                onRename={onRename}
                 onDelete={onDelete}
                 expandedFolders={expandedFolders}
                 toggleFolder={toggleFolder}
@@ -77,7 +80,7 @@ function TreeEntry({
     <div className="group relative">
       <button
         onClick={() => onSelect(node.fullPath)}
-        className={`w-full text-left flex items-center gap-1.5 py-1.5 pr-8 text-xs font-mono transition-all cursor-pointer rounded-md ${
+        className={`w-full text-left flex items-center gap-1.5 py-1.5 pr-14 text-xs font-mono transition-all cursor-pointer rounded-md ${
           isActive
             ? 'bg-[var(--accent-soft)] text-[var(--brand)] font-semibold border-l-2 border-[var(--brand)]'
             : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
@@ -88,15 +91,28 @@ function TreeEntry({
         <FileIcon name={node.name} />
         <span className="truncate">{node.name}</span>
       </button>
-      <button
-        onClick={(e) => onDelete(node.fullPath, e)}
-        className="absolute right-1.5 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[var(--bg-hover)] rounded text-[var(--error)] transition-opacity cursor-pointer"
-        title="Delete File"
-      >
-        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-        </svg>
-      </button>
+      <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 flex items-center gap-0.5">
+        <button
+          type="button"
+          onClick={(e) => onRename(node.fullPath, e)}
+          className="p-1 hover:bg-[var(--bg-hover)] rounded text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all cursor-pointer"
+          title="Rename"
+        >
+          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          onClick={(e) => onDelete(node.fullPath, e)}
+          className="p-1 hover:bg-[var(--bg-hover)] rounded text-[var(--error)] transition-opacity cursor-pointer"
+          title="Delete File"
+        >
+          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
+      </div>
     </div>
   );
 }
@@ -185,6 +201,34 @@ export default function FileExplorer({
       }
     } catch (e) {
       alert(`Error creating folder: ${String(e)}`);
+    }
+  }
+
+  async function handleRename(filePath: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    const newName = prompt(`Rename "${filePath}" to:`, filePath);
+    if (!newName?.trim() || newName.trim() === filePath) return;
+    try {
+      const res = await fetch('/api/files', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          oldPath: filePath,
+          newPath: newName.trim().replace(/\\/g, '/'),
+          projectId,
+        }),
+      });
+      if (res.ok) {
+        await loadFiles();
+        if (activeFile === filePath) {
+          onFileSelect(newName.trim().replace(/\\/g, '/'));
+        }
+      } else {
+        const err = await res.json();
+        alert(`Failed to rename: ${err.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      alert(`Error renaming: ${String(err)}`);
     }
   }
 
@@ -284,6 +328,7 @@ export default function FileExplorer({
               depth={0}
               activePath={activeFile}
               onSelect={onFileSelect}
+              onRename={handleRename}
               onDelete={handleDelete}
               expandedFolders={expandedFolders}
               toggleFolder={toggleFolder}

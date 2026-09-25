@@ -66,12 +66,39 @@ export default function CodeTab({
 
   // VS Code status bar info
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
+  const [selectedCodeRange, setSelectedCodeRange] = useState<{
+    startLine: number;
+    endLine: number;
+    text: string;
+  } | null>(null);
 
   // Monaco editor instance refs
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const editorRef = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const splitEditorRef = useRef<any>(null);
+
+  const handleAskAIAboutSelection = useCallback(() => {
+    if (!activePath) return;
+    const editor = editorRef.current;
+    let text = "";
+    let rangeStr = "";
+    if (editor) {
+      const sel = editor.getSelection();
+      if (sel && (sel.startLineNumber !== sel.endLineNumber || sel.startColumn !== sel.endColumn)) {
+        text = editor.getModel()?.getValueInRange(sel) || "";
+        rangeStr = ` (lines ${sel.startLineNumber}-${sel.endLineNumber})`;
+      }
+    }
+    if (!text && selectedCodeRange) {
+      text = selectedCodeRange.text;
+      rangeStr = ` (lines ${selectedCodeRange.startLine}-${selectedCodeRange.endLine})`;
+    }
+    const prompt = text
+      ? `Regarding \`${activePath}\`${rangeStr}:\n\`\`\`${languageFor(activePath)}\n${text}\n\`\`\`\nCan you review or modify this code: `
+      : `Regarding \`${activePath}\`:\nCan you explain or update this file: `;
+    window.dispatchEvent(new CustomEvent("oc-inject-prompt", { detail: { prompt } }));
+  }, [activePath, selectedCodeRange]);
 
   // Theme observer
   useEffect(() => {
@@ -513,6 +540,22 @@ export default function CodeTab({
           </div>
 
           <div className="editor-actions">
+            {/* Ask AI Bridge button */}
+            <button
+              onClick={handleAskAIAboutSelection}
+              className={`tool-action-btn ${selectedCodeRange ? 'tool-action-btn--ai-active' : ''}`}
+              title={
+                selectedCodeRange
+                  ? `Ask AI about selected lines ${selectedCodeRange.startLine}-${selectedCodeRange.endLine} (Ctrl+K)`
+                  : `Ask AI about ${activePath} (Ctrl+K)`
+              }
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13} className="text-indigo-400">
+                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+              </svg>
+              <span>{selectedCodeRange ? `Ask AI (${selectedCodeRange.endLine - selectedCodeRange.startLine + 1}L)` : 'Ask AI'}</span>
+            </button>
+
             {/* Quick action buttons */}
             <button
               onClick={triggerFind}
@@ -662,9 +705,31 @@ export default function CodeTab({
                   saveFile();
                 });
 
+                // Register Ctrl+K / Cmd+K Ask AI command inside Monaco
+                editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, () => {
+                  handleAskAIAboutSelection();
+                });
+
                 // Track cursor position for the status bar
                 editor.onDidChangeCursorPosition((e: { position: { lineNumber: number; column: number } }) => {
                   setCursorPos({ line: e.position.lineNumber, col: e.position.column });
+                });
+
+                // Track selection for "Ask AI" context action
+                editor.onDidChangeCursorSelection((e: any) => {
+                  const sel = e.selection;
+                  if (sel && (sel.startLineNumber !== sel.endLineNumber || sel.startColumn !== sel.endColumn)) {
+                    const txt = editor.getModel()?.getValueInRange(sel) || "";
+                    if (txt.trim().length > 0) {
+                      setSelectedCodeRange({
+                        startLine: sel.startLineNumber,
+                        endLine: sel.endLineNumber,
+                        text: txt,
+                      });
+                      return;
+                    }
+                  }
+                  setSelectedCodeRange(null);
                 });
               }}
               options={{
@@ -698,6 +763,22 @@ export default function CodeTab({
                 padding: { top: 10, bottom: 12 },
               }}
             />
+
+            {/* Floating Selection Quick Action */}
+            {selectedCodeRange && (
+              <div className="floating-selection-bar">
+                <button
+                  type="button"
+                  onClick={handleAskAIAboutSelection}
+                  className="floating-ai-btn"
+                  title="Ask AI about this selection (Ctrl+K)"
+                >
+                  <span className="ai-sparkle">✨</span>
+                  <span>Ask AI about selection (L{selectedCodeRange.startLine}-L{selectedCodeRange.endLine})</span>
+                  <kbd className="ai-kbd">Ctrl+K</kbd>
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -1504,6 +1585,64 @@ export default function CodeTab({
           padding: 7px 14px;
           border-radius: 4px;
           cursor: pointer;
+        }
+
+        .tool-action-btn--ai-active {
+          background: rgba(99, 102, 241, 0.15) !important;
+          border-color: rgba(99, 102, 241, 0.4) !important;
+          color: #a5b4fc !important;
+          font-weight: 600;
+        }
+
+        .floating-selection-bar {
+          position: absolute;
+          bottom: 24px;
+          left: 50%;
+          transform: translateX(-50%);
+          z-index: 40;
+          animation: float-slide-up 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        @keyframes float-slide-up {
+          from { opacity: 0; transform: translate(-50%, 8px); }
+          to { opacity: 1; transform: translate(-50%, 0); }
+        }
+
+        .floating-ai-btn {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          padding: 6px 14px;
+          background: #1e1e2e;
+          color: #ffffff;
+          border: 1px solid rgba(99, 102, 241, 0.4);
+          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(99, 102, 241, 0.2);
+          border-radius: 20px;
+          font-size: 12px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.15s ease;
+        }
+
+        .floating-ai-btn:hover {
+          background: #2a2a3e;
+          border-color: rgba(99, 102, 241, 0.8);
+          transform: translateY(-1px);
+          box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+        }
+
+        .ai-sparkle {
+          font-size: 13px;
+        }
+
+        .ai-kbd {
+          font-size: 10px;
+          font-family: var(--font-mono, monospace);
+          padding: 1px 5px;
+          background: rgba(255, 255, 255, 0.1);
+          border: 1px solid rgba(255, 255, 255, 0.15);
+          border-radius: 4px;
+          color: #c7d2fe;
         }
       `}</style>
     </div>

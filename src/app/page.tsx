@@ -1,19 +1,20 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import Sidebar          from '@/components/layout/Sidebar';
 import TopBar           from '@/components/layout/TopBar';
 import ChatPanel        from '@/components/chat/ChatPanel';
 import EditorPanel      from '@/components/editor/EditorPanel';
 import PreviewPanel     from '@/components/preview/PreviewPanel';
 import SettingsPanel    from '@/components/settings/SettingsPanel';
-import TabBar           from '@/components/layout/TabBar';
+import TerminalPanel    from '@/components/terminal/TerminalPanel';
 import ResizeHandle     from '@/components/layout/ResizeHandle';
 import CommandPalette   from '@/components/command/CommandPalette';
 import MobileLayout     from '@/components/mobile/MobileLayout';
 import FileExplorer     from '@/components/FileExplorer';
 import CompletionDialog from '@/components/CompletionDialog';
 import ToolModal        from '@/components/ToolModal';
+import ChangesReviewModal from '@/components/editor/ChangesReviewModal';
 import PublicApiGallery, { type BuildProductSpec } from '@/components/PublicApiGallery';
 import { useIsMobile }  from '@/hooks/useMobile';
 import { useGlobalKeyboard, useShortcuts } from '@/hooks/useKeyboard';
@@ -41,19 +42,35 @@ export default function App() {
   const [activeTab,      setActiveTab]      = useState<ActiveTab>('editor');
   const [activeFile,     setActiveFile]     = useState<string | null>(null);
   const [sidebarOpen,    setSidebarOpen]    = useState(true);
-  const [chatWidth,      setChatWidth]      = useState(360);
+  const [chatWidth,      setChatWidth]      = useState(460);
   const [filesChanged,   setFilesChanged]   = useState<string[]>([]);
   const [refreshExplorerKey, setRefreshExplorerKey] = useState(0);
   const [showCompletion, setShowCompletion] = useState(false);
   const [showToolModal,  setShowToolModal]  = useState(false);
+  const [showReviewModal, setShowReviewModal] = useState(false);
   const [selectedModel, setSelectedModel] = useState('nemotron-3-ultra:cloud');
   const [agentStatus,   setAgentStatus]   = useState<AgentStatus>('done');
   const [previewToken,  setPreviewToken]  = useState(0);
   const [projects,      setProjects]      = useState<Project[]>([]);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
-  const [explorerOpen,  setExplorerOpen]  = useState(true);
+  const [explorerOpen,  setExplorerOpen]  = useState(false);
+  const [editorOpen,    setEditorOpen]    = useState(true);
+  const [previewOpen,   setPreviewOpen]   = useState(false);
+  const [settingsOpen,  setSettingsOpen]  = useState(false);
+  const [terminalOpen,  setTerminalOpen]  = useState(false);
+  const [isResizing,    setIsResizing]    = useState(false);
+  const workspaceColumnsRef = useRef<HTMLDivElement | null>(null);
 
-  // Sync explorer open/closed preference from localStorage
+  // Listen for open review modal events from timeline or shortcuts
+  useEffect(() => {
+    const handleOpenReview = () => setShowReviewModal(true);
+    window.addEventListener('oc-open-review-modal', handleOpenReview);
+    return () => window.removeEventListener('oc-open-review-modal', handleOpenReview);
+  }, []);
+
+  const hasOpenPanels = editorOpen || previewOpen || settingsOpen || terminalOpen;
+
+  // Sync explorer open/closed preference from localStorage (default: closed)
   useEffect(() => {
     const saved = localStorage.getItem('oc-explorer-open');
     if (saved !== null) {
@@ -67,6 +84,55 @@ export default function App() {
       localStorage.setItem('oc-explorer-open', String(next));
       return next;
     });
+  }, []);
+
+  const toggleEditor = useCallback(() => {
+    setEditorOpen((p) => !p);
+  }, []);
+
+  const togglePreview = useCallback(() => {
+    setPreviewOpen((p) => !p);
+  }, []);
+
+  const toggleSettings = useCallback(() => {
+    setSettingsOpen((p) => !p);
+  }, []);
+
+  const toggleTerminal = useCallback(() => {
+    setTerminalOpen((p) => !p);
+  }, []);
+
+  const handleResizeWidth = useCallback((targetWidth: number) => {
+    const screenW = typeof window !== 'undefined' ? window.innerWidth : 1200;
+    const minW = 280;
+    const maxW = Math.max(minW, screenW - 280);
+    setChatWidth(Math.max(minW, Math.min(maxW, targetWidth)));
+  }, []);
+
+  const handleTogglePanels = useCallback(() => {
+    if (hasOpenPanels) {
+      setEditorOpen(false);
+      setPreviewOpen(false);
+      setSettingsOpen(false);
+      setTerminalOpen(false);
+    } else {
+      setEditorOpen(true);
+      const screenW = typeof window !== 'undefined' ? window.innerWidth : 1200;
+      setChatWidth(Math.max(340, Math.min(640, Math.round(screenW * 0.46))));
+    }
+  }, [hasOpenPanels]);
+
+  const handleEnsureOpen = useCallback(() => {
+    if (!hasOpenPanels) {
+      setEditorOpen(true);
+    }
+  }, [hasOpenPanels]);
+
+  // Listen for external terminal toggle events
+  useEffect(() => {
+    const handleToggle = () => setTerminalOpen((p) => !p);
+    window.addEventListener('oc-toggle-terminal', handleToggle);
+    return () => window.removeEventListener('oc-toggle-terminal', handleToggle);
   }, []);
 
   // Media query mobile detector
@@ -112,6 +178,13 @@ export default function App() {
     }, 120);
   }, []);
 
+  const handleTabChange = useCallback((t: ActiveTab) => {
+    setActiveTab(t);
+    if (t === 'editor') setEditorOpen(true);
+    if (t === 'preview') setPreviewOpen(true);
+    if (t === 'settings') setSettingsOpen(true);
+  }, []);
+
   // Populate the command palette (was defined but never wired up)
   useAppCommands({
     projects,
@@ -119,7 +192,7 @@ export default function App() {
     activeTab,
     activeFile,
     isStreaming,
-    onTabChange:     setActiveTab,
+    onTabChange:     handleTabChange,
     onProjectSelect: setActiveProject,
     onSidebarToggle: () => setSidebarOpen((p) => !p),
     onNewProject:    () => {
@@ -147,17 +220,17 @@ export default function App() {
     ...crossPlatform({
       id: 'nav.editor', key: '1', label: 'Go to Editor',
       description: 'Open the code editor', group: 'navigation',
-      action: () => setActiveTab('editor'),
+      action: () => { setActiveTab('editor'); setEditorOpen(true); },
     }),
     ...crossPlatform({
       id: 'nav.preview', key: '2', label: 'Go to Preview',
       description: 'Open the live preview', group: 'navigation',
-      action: () => setActiveTab('preview'),
+      action: () => { setActiveTab('preview'); setPreviewOpen(true); },
     }),
     ...crossPlatform({
       id: 'nav.settings', key: '3', label: 'Go to Settings',
       description: 'Open the settings panel', group: 'navigation',
-      action: () => setActiveTab('settings'),
+      action: () => { setActiveTab('settings'); setSettingsOpen(true); },
     }),
     ...crossPlatform({
       id: 'nav.sidebar', key: 'b', label: 'Toggle Sidebar',
@@ -199,6 +272,7 @@ export default function App() {
   const handleFileSelect = useCallback((path: string) => {
     setActiveFile(path);
     setActiveTab('editor');
+    setEditorOpen(true);
   }, []);
 
   // Auto-load project from URL search parameters on mount
@@ -226,8 +300,9 @@ export default function App() {
   const [prevProjectKind, setPrevProjectKind] = useState(activeProject?.kind);
   if (activeProject?.kind !== prevProjectKind) {
     setPrevProjectKind(activeProject?.kind);
-    if (activeProject?.kind === 'build' && activeTab === 'preview') {
-      setActiveTab('editor');
+    if (activeProject?.kind === 'build') {
+      if (activeTab === 'preview') setActiveTab('editor');
+      if (previewOpen) setPreviewOpen(false);
     }
   }
 
@@ -270,6 +345,20 @@ export default function App() {
         selectedModel={selectedModel}
         onModelChange={setSelectedModel}
         agentStatus={agentStatus}
+        editorOpen={editorOpen}
+        onEditorToggle={toggleEditor}
+        previewOpen={previewOpen}
+        onPreviewToggle={togglePreview}
+        settingsOpen={settingsOpen}
+        onSettingsToggle={toggleSettings}
+        terminalOpen={terminalOpen}
+        onTerminalToggle={toggleTerminal}
+        explorerOpen={explorerOpen}
+        onExplorerToggle={toggleExplorer}
+        showPreview={activeProject?.kind !== 'build'}
+        changedFiles={filesChanged}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
       />
 
       <div className="app-body">
@@ -284,9 +373,15 @@ export default function App() {
         <div className="workspace-container">
           {activeProject ? (
             <div className="workspace-main">
-              <div className="workspace-columns">
-                {/* ── Column 1: Chat/Prompt Widget Column ─────────────────── */}
-                <div className="workspace-column-left" style={{ width: chatWidth }}>
+              <div
+                className={`workspace-columns ${isResizing ? 'workspace-columns--resizing' : ''}`}
+                ref={workspaceColumnsRef}
+              >
+                {/* ── Column 1: Chat/Prompt Widget Column (Expands to full page when nothing else is open) ── */}
+                <div
+                  className={`workspace-column-left ${!hasOpenPanels ? 'workspace-column-left--full' : ''}`}
+                  style={hasOpenPanels ? { width: chatWidth } : undefined}
+                >
                   <ChatPanel
                     projectId={activeProject.id}
                     activeFilePath={activeFile ?? undefined}
@@ -297,52 +392,133 @@ export default function App() {
                     onAgentDone={handleAgentDone}
                     initialPrompt={pendingPrompt}
                     onClearInitialPrompt={() => setPendingPrompt(null)}
+                    isFullWidth={!hasOpenPanels}
                   />
                 </div>
 
-                {/* Resize handle */}
+                {/* Resize handle (always draggable with high-hit target & edge tab) */}
                 <ResizeHandle
-                  onResize={(delta) =>
-                    setChatWidth((w) =>
-                      Math.max(300, Math.min(500, w + delta))
-                    )
-                  }
+                  onResizeWidth={handleResizeWidth}
+                  onDragStart={() => setIsResizing(true)}
+                  onDragEnd={() => setIsResizing(false)}
+                  onToggle={handleTogglePanels}
+                  onEnsureOpen={handleEnsureOpen}
+                  hasOpenPanels={hasOpenPanels}
+                  containerRef={workspaceColumnsRef}
                 />
 
                 {/* ── Column 2: Main Area (Metrics + Workspace Tabs) ──────── */}
-                <div className={`workspace-column-middle ${!explorerOpen ? 'workspace-column-middle--full' : ''}`}>
-                  {/* Tab Switcher & Content view */}
+                {hasOpenPanels && (
+                  <div className={`workspace-column-middle ${!explorerOpen ? 'workspace-column-middle--full' : ''}`}>
+                  {/* Workspace Content view: multi-panel side-by-side display */}
                   <div className="editor-tab-workspace">
-                    <TabBar
-                      active={activeTab}
-                      onChange={setActiveTab}
-                      changedFiles={filesChanged}
-                      showPreview={activeProject.kind !== 'build'}
-                      explorerOpen={explorerOpen}
-                      onExplorerToggle={toggleExplorer}
-                    />
+                    <div className="workspace-panels-row">
+                      {/* Code Editor Panel */}
+                      {editorOpen && (
+                        <div className="workspace-panel-slot">
+                          <div className="panel-slot-header">
+                            <div className="panel-slot-title">
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13}>
+                                <polyline points="16 18 22 12 16 6" strokeLinecap="round" strokeLinejoin="round" />
+                                <polyline points="8 6 2 12 8 18" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                              <span>Code</span>
+                              {activeFile && (
+                                <span className="panel-slot-badge">{activeFile.split('/').pop()}</span>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              className="panel-slot-close"
+                              onClick={() => setEditorOpen(false)}
+                              title="Close Code Editor (Click to untap)"
+                              aria-label="Close Code Editor"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          <div className="panel-slot-body">
+                            <EditorPanel
+                              projectId={activeProject.id}
+                              activeFile={activeFile}
+                              onFileSelect={handleFileSelect}
+                              changedFiles={filesChanged}
+                            />
+                          </div>
+                        </div>
+                      )}
 
-                    <div className="panel-area">
-                      {activeTab === 'editor' && (
-                        <EditorPanel
-                          projectId={activeProject.id}
-                          activeFile={activeFile}
-                          onFileSelect={handleFileSelect}
-                          changedFiles={filesChanged}
-                        />
+                      {/* Live Web Preview Panel */}
+                      {previewOpen && activeProject.kind !== 'build' && (
+                        <div className="workspace-panel-slot">
+                          <div className="panel-slot-header">
+                            <div className="panel-slot-title">
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} width={13} height={13}>
+                                <circle cx="12" cy="12" r="10" />
+                                <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                              </svg>
+                              <span>Live Preview</span>
+                            </div>
+                            <button
+                              type="button"
+                              className="panel-slot-close"
+                              onClick={() => setPreviewOpen(false)}
+                              title="Close Live Preview (Click to untap)"
+                              aria-label="Close Live Preview"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          <div className="panel-slot-body">
+                            <PreviewPanel
+                              projectId={activeProject.id}
+                              autoStartToken={previewToken}
+                            />
+                          </div>
+                        </div>
                       )}
-                      {activeTab === 'preview' && activeProject.kind !== 'build' && (
-                        <PreviewPanel
-                          projectId={activeProject.id}
-                          autoStartToken={previewToken}
-                        />
+
+                      {/* Project Settings Panel */}
+                      {settingsOpen && (
+                        <div className="workspace-panel-slot">
+                          <div className="panel-slot-header">
+                            <div className="panel-slot-title">
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} width={13} height={13}>
+                                <circle cx="12" cy="12" r="3" />
+                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                              </svg>
+                              <span>Settings</span>
+                            </div>
+                            <button
+                              type="button"
+                              className="panel-slot-close"
+                              onClick={() => setSettingsOpen(false)}
+                              title="Close Settings (Click to untap)"
+                              aria-label="Close Settings"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          <div className="panel-slot-body">
+                            <SettingsPanel project={activeProject} />
+                          </div>
+                        </div>
                       )}
-                      {activeTab === 'settings' && (
-                        <SettingsPanel project={activeProject} />
-                      )}
+
                     </div>
+
+                    {/* Interactive Terminal Drawer at the bottom */}
+                    {terminalOpen && (
+                      <div className="workspace-terminal-container">
+                        <TerminalPanel
+                          projectId={activeProject.id}
+                          onClose={() => setTerminalOpen(false)}
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
+              )}
 
                 {/* ── Column 3: File Explorer (Right Column) ──────────────── */}
                 {explorerOpen && (
@@ -357,83 +533,99 @@ export default function App() {
                 )}
               </div>
 
-              {/* ── Bottom Execution / Control Footer Bar ──────────────────── */}
+              {/* ── Bottom Indication Bar (Very small status line) ──────────── */}
               <div className="app-footer">
-                {/* Execution Controls */}
-                <div className="footer-left-controls">
-                  <div className="footer-section-label">EXECUTION CONTROLS</div>
-                  <div className="footer-row-btns">
-                    <button
-                      className="footer-btn footer-btn--execute"
-                      onClick={() => {
-                        const inputEl = document.querySelector('.input-textarea') as HTMLTextAreaElement;
-                        if (inputEl) {
-                          inputEl.focus();
-                        }
-                      }}
-                    >
-                      <svg viewBox="0 0 24 24" fill="currentColor" width={11} height={11}>
-                        <path d="M8 5v14l11-7z"/>
-                      </svg>
-                      Execute
-                    </button>
-                    <button
-                      className="footer-btn footer-btn--ghost"
-                      onClick={async () => {
-                        try {
-                          await fetch('/api/chat/cancel', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ projectId: activeProject.id }),
-                          });
-                        } catch {}
-                      }}
-                    >
-                      <svg viewBox="0 0 24 24" fill="currentColor" width={10} height={10}>
-                        <rect x="5" y="5" width="14" height="14" rx="2"/>
-                      </svg>
-                      Stop
-                    </button>
-                  </div>
-                </div>
+                <div className="footer-left-group">
+                  <button
+                    className="status-bar-btn status-bar-btn--execute"
+                    onClick={() => {
+                      const inputEl = document.querySelector('.input-textarea') as HTMLTextAreaElement;
+                      if (inputEl) {
+                        inputEl.focus();
+                      }
+                    }}
+                    title="Focus Chat Input (Cmd+L / Enter)"
+                  >
+                    <svg viewBox="0 0 24 24" fill="currentColor" width={9} height={9}>
+                      <path d="M8 5v14l11-7z"/>
+                    </svg>
+                    <span>Execute</span>
+                  </button>
 
-                {/* Live agent status */}
-                <div className="footer-middle-progress">
-                  <div className="footer-section-label">AGENT STATUS</div>
-                  <div className="progress-row">
+                  <button
+                    className="status-bar-btn"
+                    onClick={async () => {
+                      try {
+                        await fetch('/api/chat/cancel', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ projectId: activeProject.id }),
+                        });
+                      } catch {}
+                    }}
+                    title="Stop Agent Turn"
+                  >
+                    <svg viewBox="0 0 24 24" fill="currentColor" width={8} height={8}>
+                      <rect x="5" y="5" width="14" height="14" rx="2"/>
+                    </svg>
+                    <span>Stop</span>
+                  </button>
+
+                  <span className="status-bar-divider" />
+
+                  <div className="status-bar-indicator">
                     <StatusIndicator status={agentStatus} />
-                    {filesChanged.length > 0 && (
-                      <span className="files-changed-note">
-                        {filesChanged.length} file{filesChanged.length === 1 ? '' : 's'} changed this turn
-                      </span>
+                    {filesChanged.length > 0 ? (
+                      <button
+                        className="status-bar-btn status-bar-btn--review"
+                        onClick={() => setShowReviewModal(true)}
+                        title="Review Multi-File Diffs and Rollback Checkpoints"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={10} height={10}>
+                          <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>
+                        </svg>
+                        <span>{filesChanged.length} file{filesChanged.length === 1 ? '' : 's'} changed · Diffs</span>
+                      </button>
+                    ) : (
+                      <button
+                        className="status-bar-btn"
+                        onClick={() => setShowReviewModal(true)}
+                        title="Inspect Git Checkpoints & Rollback History"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={10} height={10}>
+                          <circle cx="12" cy="12" r="4"/>
+                          <line x1="1.05" y1="12" x2="7" y2="12"/>
+                          <line x1="17.01" y1="12" x2="22.96" y2="12"/>
+                        </svg>
+                        <span>Checkpoints</span>
+                      </button>
                     )}
                   </div>
                 </div>
 
-                {/* Quick Actions */}
-                <div className="footer-right-actions">
-                  <div className="footer-section-label">QUICK ACTIONS</div>
-                  <div className="footer-row-btns">
-                    <a
-                      href={`/api/download?projectId=${activeProject.id}`}
-                      className="footer-btn footer-btn--ghost"
-                      download
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} width={10} height={10}>
-                        <path d="M12 3v13M7 12l5 5 5-5M5 21h14"/>
-                      </svg>
-                      Export
-                    </a>
-                    <button
-                      className="footer-btn footer-btn--ghost"
-                      onClick={() => setShowToolModal(true)}
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} width={10} height={10}>
-                        <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/>
-                      </svg>
-                      Tools
-                    </button>
-                  </div>
+                <div className="footer-right-group">
+                  <a
+                    href={`/api/download?projectId=${activeProject.id}`}
+                    className="status-bar-btn"
+                    download
+                    title="Export Project ZIP"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={10} height={10}>
+                      <path d="M12 3v13M7 12l5 5 5-5M5 21h14"/>
+                    </svg>
+                    <span>Export</span>
+                  </a>
+
+                  <button
+                    className="status-bar-btn"
+                    onClick={() => setShowToolModal(true)}
+                    title="Configure Tools & MCP"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={10} height={10}>
+                      <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/>
+                    </svg>
+                    <span>Tools</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -465,6 +657,19 @@ export default function App() {
       {/* Tool Configuration Modal */}
       {showToolModal && (
         <ToolModal onClose={() => setShowToolModal(false)} />
+      )}
+
+      {/* Multi-File Visual Diff & Checkpoint Rollback Reviewer */}
+      {showReviewModal && activeProject && (
+        <ChangesReviewModal
+          projectId={activeProject.id}
+          changedFiles={filesChanged}
+          onClose={() => setShowReviewModal(false)}
+          onRollbackComplete={() => {
+            setRefreshExplorerKey((k) => k + 1);
+            setFilesChanged([]);
+          }}
+        />
       )}
 
       <style jsx>{`
@@ -516,6 +721,21 @@ export default function App() {
           overflow: hidden;
           min-height: 0;
           padding: 12px 0 12px 12px;
+          transition: width 0.2s cubic-bezier(0.16, 1, 0.3, 1), flex 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .workspace-column-left--full {
+          flex: 1 1 0px !important;
+          min-width: 0 !important;
+          width: auto !important;
+          padding: 12px 6px 12px 12px !important;
+        }
+
+        .workspace-columns--resizing .workspace-column-left,
+        .workspace-columns--resizing .workspace-column-middle {
+          transition: none !important;
+          user-select: none !important;
+          pointer-events: none !important;
         }
 
         .workspace-column-middle {
@@ -551,113 +771,172 @@ export default function App() {
           overflow: hidden;
           background: var(--bg-deep);
           min-width: 0;
+          min-height: 0;
+          height: 100%;
         }
 
-        .panel-area {
+        .workspace-panels-row {
           flex: 1;
-          overflow: hidden;
+          display: flex;
+          flex-direction: row;
           min-width: 0;
+          min-height: 0;
+          overflow-x: auto;
+          overflow-y: hidden;
+          background: var(--border-subtle);
+          gap: 1px;
         }
 
-        /* Footer execution bar */
-        .app-footer {
-          height: var(--dock-height);
-          border-top: 1px solid var(--border-subtle);
-          background: var(--bg-surface);
-          backdrop-filter: blur(20px);
-          -webkit-backdrop-filter: blur(20px);
+        .workspace-panel-slot {
+          flex: 1 1 0px;
+          min-width: 320px;
+          height: 100%;
+          min-height: 0;
+          display: flex;
+          flex-direction: column;
+          background: var(--bg-deep);
+          overflow: hidden;
+          position: relative;
+        }
+
+        .panel-slot-header {
+          height: 28px;
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 0 16px;
+          padding: 0 10px;
+          background: var(--bg-surface);
+          border-bottom: 1px solid var(--border-subtle);
           flex-shrink: 0;
-          min-width: 0;
-          overflow: hidden;
+          user-select: none;
         }
 
-        .footer-left-controls,
-        .footer-right-actions {
+        .panel-slot-title {
           display: flex;
-          flex-direction: column;
+          align-items: center;
           gap: 6px;
-          flex-shrink: 0;
-        }
-
-        .footer-middle-progress {
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-          flex: 1;
-          max-width: 440px;
-          min-width: 0;
-          margin: 0 16px;
-          overflow: hidden;
-        }
-
-        .footer-section-label {
-          font-size: 8.5px;
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-          color: var(--text-muted);
+          font-size: 11px;
           font-weight: 600;
+          color: var(--text-secondary);
         }
 
-        .footer-row-btns {
+        .panel-slot-badge {
+          font-size: 9.5px;
+          font-family: var(--font-mono);
+          color: var(--brand);
+          background: var(--brand-glow);
+          padding: 1px 5px;
+          border-radius: 3px;
+        }
+
+        .panel-slot-close {
+          background: transparent;
+          border: none;
+          color: var(--text-muted);
+          cursor: pointer;
+          font-size: 11px;
+          padding: 2px 5px;
+          border-radius: 3px;
+          transition: all var(--transition-fast);
+        }
+
+        .panel-slot-close:hover {
+          color: var(--error);
+          background: rgba(255, 69, 58, 0.1);
+        }
+
+        .panel-slot-body {
+          flex: 1;
+          min-height: 0;
+          overflow: hidden;
+          position: relative;
+        }
+
+        .workspace-terminal-container {
+          height: 240px;
+          min-height: 160px;
+          max-height: 50%;
+          flex-shrink: 0;
+          border-top: 1px solid var(--border-subtle);
+          overflow: hidden;
+        }
+
+        /* Subtle IDE-style bottom indication bar */
+        .app-footer {
+          height: 24px;
+          min-height: 24px;
+          max-height: 24px;
+          border-top: 1px solid var(--border-subtle);
+          background: var(--bg-surface);
           display: flex;
           align-items: center;
-          gap: 8px;
+          justify-content: space-between;
+          padding: 0 10px;
+          flex-shrink: 0;
+          font-size: 11px;
+          user-select: none;
+          z-index: 10;
         }
 
-        .footer-btn {
+        .footer-left-group,
+        .footer-right-group {
           display: flex;
           align-items: center;
           gap: 6px;
-          font-size: 11.5px;
+        }
+
+        .status-bar-divider {
+          width: 1px;
+          height: 12px;
+          background: var(--border-subtle);
+          margin: 0 2px;
+        }
+
+        .status-bar-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          font-size: 10.5px;
           font-weight: 500;
-          border-radius: var(--radius-md);
-          padding: 6px 12px;
+          line-height: 1;
+          padding: 2.5px 7px;
+          border-radius: var(--radius-sm, 4px);
           cursor: pointer;
           border: 1px solid transparent;
           text-decoration: none;
           transition: all var(--transition-fast);
-        }
-
-        .footer-btn--execute {
-          background: var(--brand);
-          color: #fffaf7;
-          border: none;
-        }
-
-        .footer-btn--execute:hover {
-          background: var(--brand-dim);
-        }
-
-        .footer-btn--ghost {
-          background: var(--bg-elevated);
-          border-color: var(--border-subtle);
-          color: var(--text-primary);
-        }
-
-        .footer-btn--ghost:hover {
-          background: var(--bg-hover);
-          border-color: var(--border-base);
-        }
-
-        .footer-btn:active {
-          transform: scale(0.97);
-        }
-
-        /* Live status middle styling */
-        .progress-row {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-        }
-
-        .files-changed-note {
-          font-size: 11px;
           color: var(--text-muted);
-          font-weight: 500;
+          background: transparent;
+        }
+
+        .status-bar-btn:hover {
+          color: var(--text-primary);
+          background: var(--bg-hover);
+        }
+
+        .status-bar-btn--execute {
+          color: var(--brand);
+          background: rgba(249, 115, 22, 0.08);
+          border-color: rgba(249, 115, 22, 0.25);
+        }
+
+        .status-bar-btn--execute:hover {
+          background: rgba(249, 115, 22, 0.18);
+          color: var(--brand);
+          border-color: rgba(249, 115, 22, 0.4);
+        }
+
+        .status-bar-indicator {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 10.5px;
+        }
+
+        .status-bar-note {
+          font-size: 10px;
+          color: var(--text-muted);
+          font-family: var(--font-mono);
         }
 
       `}</style>
