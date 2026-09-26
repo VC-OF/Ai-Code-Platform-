@@ -1,4 +1,11 @@
 @import "tailwindcss";
+/* Tailwind v4 scans every non-ignored file for class names. The live SQLite
+   database (.platform/*.db-shm is locked while the app runs) and user
+   workspaces must never be part of that scan — Turbopack panics on the lock
+   ("os error 33") and takes the whole dev server down. */
+@source not "../../.platform";
+@source not "../../workspaces";
+@source not "../../.open-code";
 
 /* ── Reset ─────────────────────────────────────────────────────────────────── */
 *, *::before, *::after {

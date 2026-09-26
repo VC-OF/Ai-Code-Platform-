@@ -49,3 +49,9 @@ workspaces/*/.next/
 
 # generated settings encryption key (src/lib/crypto.ts)
 .platform/settings.key
+
+# Live SQLite database (WAL/SHM files are locked while the app runs) — never commit
+.platform/*.db
+.platform/*.db-shm
+.platform/*.db-wal
+.platform/*.migrated
