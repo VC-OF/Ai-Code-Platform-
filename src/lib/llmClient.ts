@@ -112,14 +112,14 @@ export async function* withIdleTimeout<T>(
 
 /** How long to wait for the first streamed token: the idle timeout, or
  *  longer for big prompts (prefill ≈ LLM_PREFILL_MS_PER_KTOKEN ms per 1k
- *  prompt tokens, default 2500 → ~6 min for 150k tokens), capped at 15 min. */
+ *  prompt tokens, default 4000 → ~10 min for 150k tokens), capped at 15 min. */
 export function firstTokenTimeoutMs(
   promptChars: number,
   idleMs: number,
   env: Record<string, string | undefined> = process.env
 ): number {
   const perK = Number(env.LLM_PREFILL_MS_PER_KTOKEN);
-  const rate = Number.isFinite(perK) && perK >= 0 ? perK : 2500;
+  const rate = Number.isFinite(perK) && perK >= 0 ? perK : 4000;
   const tokens = promptChars / 3.5;
   return Math.min(900_000, Math.max(idleMs, Math.round((tokens / 1000) * rate)));
 }

@@ -58,7 +58,7 @@ describe('turn resilience', () => {
 
     const { firstTokenTimeoutMs } = await import('@/lib/llmClient');
     expect(firstTokenTimeoutMs(1_000, 180_000, {})).toBe(180_000);           // tiny prompt → idle timeout
-    expect(firstTokenTimeoutMs(150_000 * 3.5, 180_000, {})).toBe(375_000);   // 150k tokens → 6.25 min
+    expect(firstTokenTimeoutMs(150_000 * 3.5, 180_000, {})).toBe(600_000);   // 150k tokens → 10 min
     expect(firstTokenTimeoutMs(1_000_000 * 3.5, 180_000, {})).toBe(900_000); // capped at 15 min
     expect(firstTokenTimeoutMs(150_000 * 3.5, 180_000, { LLM_PREFILL_MS_PER_KTOKEN: '0' })).toBe(180_000);
   });
