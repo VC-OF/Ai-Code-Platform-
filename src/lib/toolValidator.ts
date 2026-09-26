@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { BROWSER_ZOD_SCHEMAS } from './browserTools';
+import { SCIENCE_ZOD_SCHEMAS } from './scienceTools';
+import { SPAWN_AGENT_ZOD } from './subagents';
 
 const toolSchemas = {
   read_file: z.object({
@@ -130,6 +132,8 @@ const toolSchemas = {
     network: z.enum(['none', 'bridge']).optional(),
   }),
   docker_status: z.object({}).optional(),
+  spawn_agent: SPAWN_AGENT_ZOD,
+  ...SCIENCE_ZOD_SCHEMAS,
   ...BROWSER_ZOD_SCHEMAS,
 };
 

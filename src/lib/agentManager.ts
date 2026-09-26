@@ -185,6 +185,10 @@ class AgentManager {
         const convertToLLMContent = (contentStr: string) => {
           try {
             const parsed = JSON.parse(contentStr);
+            // Multimodal parts persisted by the loop (view_image attachments)
+            if (Array.isArray(parsed) && parsed.every((p) => p && typeof p === 'object' && typeof p.type === 'string')) {
+              return parsed as unknown as string;
+            }
             if (parsed && typeof parsed === 'object' && 'text' in parsed) {
               const text = parsed.text;
               const attachments = parsed.attachments || [];

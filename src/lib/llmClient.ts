@@ -126,6 +126,88 @@ function isMaxTokensRejection(err: unknown): boolean {
 // Providers that rejected max_tokens once; skip it for them afterwards
 const noMaxTokens = new Set<string>();
 
+// ─── Reasoning models ───────────────────────────────────────────────────────
+const REASONING_EFFORTS = new Set(['minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+
+/** Extra request fields for reasoning models. Opt-in via
+ *  LLM_REASONING_EFFORT=low|medium|high (OpenAI/DeepSeek/OpenRouter/Groq
+ *  accept `reasoning_effort`); providers that reject the field are retried
+ *  without it and remembered. */
+export function reasoningParams(
+  env: Record<string, string | undefined> = process.env
+): Record<string, unknown> {
+  const effort = (env.LLM_REASONING_EFFORT ?? '').trim().toLowerCase();
+  if (!effort || !REASONING_EFFORTS.has(effort)) return {};
+  return { reasoning_effort: effort };
+}
+
+function isReasoningRejection(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /reasoning/i.test(msg) &&
+    /(400|invalid|unknown|unsupported|unrecognized|not supported|unexpected)/i.test(msg);
+}
+
+// Providers that rejected reasoning_effort once
+const noReasoning = new Set<string>();
+
+/**
+ * Reasoning / "thinking" text streamed alongside the answer. DeepSeek and
+ * Ollama use `reasoning_content`; OpenRouter, Groq and vLLM use `reasoning`.
+ * Neither is part of the official chunk type.
+ */
+export function extractReasoningDelta(delta: unknown): string {
+  if (!delta || typeof delta !== 'object') return '';
+  const d = delta as { reasoning_content?: unknown; reasoning?: unknown };
+  const value = d.reasoning_content ?? d.reasoning;
+  return typeof value === 'string' ? value : '';
+}
+
+/**
+ * Strip the loop's bookkeeping fields before a request. Tool results carry
+ * `tool_name` (and history rows a `name`) for the UI and compaction, but
+ * strict OpenAI-compatible servers (Groq) reject unknown properties on
+ * `role: tool` messages with a 400.
+ */
+export function toApiMessages(messages: LLMMessage[]): LLMMessage[] {
+  return messages.map((m) => {
+    if (m.role !== 'tool') return m;
+    const { role, content, tool_call_id } = m as { role: 'tool'; content: unknown; tool_call_id: string };
+    return { role, content, tool_call_id } as LLMMessage;
+  });
+}
+
+/** Send a request, dropping optional fields the provider rejects
+ *  (max_tokens / reasoning_effort) and remembering that per provider. */
+async function requestWithOptionalFields<T>(
+  provider: string,
+  send: (fields: Record<string, unknown>) => Promise<T>
+): Promise<T> {
+  let limit = !noMaxTokens.has(provider);
+  let reasoning = !noReasoning.has(provider);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const fields = {
+      ...(limit ? { max_tokens: getMaxOutputTokens() } : {}),
+      ...(reasoning ? reasoningParams() : {}),
+    };
+    try {
+      return await send(fields);
+    } catch (err) {
+      if (reasoning && 'reasoning_effort' in fields && isReasoningRejection(err)) {
+        noReasoning.add(provider);
+        reasoning = false;
+        continue;
+      }
+      if (limit && isMaxTokensRejection(err)) {
+        noMaxTokens.add(provider);
+        limit = false;
+        continue;
+      }
+      throw err;
+    }
+  }
+  return send({});
+}
+
 export function getContextWindow(model: string): number {
   return registryContextWindow(model);
 }
@@ -219,22 +301,15 @@ async function callOnce(
 
   return withRetry(
     async () => {
-      const request = (withLimit: boolean) => client.chat.completions.create({
-        model: apiModel,
-        messages,
-        tools: tools?.length ? tools : undefined,
-        tool_choice: opts?.toolChoice,
-        ...(withLimit ? { max_tokens: getMaxOutputTokens() } : {}),
-      }, { signal: opts?.signal });
-
-      let completion;
-      try {
-        completion = await request(!noMaxTokens.has(provider));
-      } catch (err) {
-        if (!isMaxTokensRejection(err)) throw err;
-        noMaxTokens.add(provider);
-        completion = await request(false);
-      }
+      const completion = await requestWithOptionalFields(provider, (fields) =>
+        client.chat.completions.create({
+          model: apiModel,
+          messages: toApiMessages(messages),
+          tools: tools?.length ? tools : undefined,
+          tool_choice: opts?.toolChoice,
+          ...fields,
+        }, { signal: opts?.signal })
+      );
 
       return {
         content: completion.choices[0].message.content,
@@ -303,24 +378,19 @@ export async function* callLLMStream(
   for (const model of chain) {
     try {
       const { client, provider, apiModel } = await getLLMClient(model);
-      const open = (withLimit: boolean) => client.chat.completions.create({
-        model: apiModel,
-        messages,
-        tools: tools?.length ? tools : undefined,
-        tool_choice: opts?.toolChoice,
-        stream: true,
-        // Ask for real token usage in the final chunk. OpenAI-compatible
-        // servers that don't support this simply ignore it.
-        stream_options: { include_usage: true },
-        ...(withLimit ? { max_tokens: getMaxOutputTokens() } : {}),
-      }, { signal: ac.signal });
-      try {
-        stream = await open(!noMaxTokens.has(provider));
-      } catch (err) {
-        if (!isMaxTokensRejection(err)) throw err;
-        noMaxTokens.add(provider);
-        stream = await open(false);
-      }
+      stream = await requestWithOptionalFields(provider, (fields) =>
+        client.chat.completions.create({
+          model: apiModel,
+          messages: toApiMessages(messages),
+          tools: tools?.length ? tools : undefined,
+          tool_choice: opts?.toolChoice,
+          stream: true,
+          // Ask for real token usage in the final chunk. OpenAI-compatible
+          // servers that don't support this simply ignore it.
+          stream_options: { include_usage: true },
+          ...fields,
+        }, { signal: ac.signal })
+      );
       usedModel = model;
       break;
     } catch (err) {
@@ -351,6 +421,13 @@ export async function* callLLMStream(
         prompt_tokens: chunk.usage.prompt_tokens ?? 0,
         completion_tokens: chunk.usage.completion_tokens ?? 0,
       };
+    }
+
+    // Thinking tokens from reasoning models (shown in the UI, never fed
+    // back into the conversation)
+    const reasoning = extractReasoningDelta(chunk.choices[0]?.delta);
+    if (reasoning) {
+      yield { type: 'reasoning_delta' as const, delta: reasoning };
     }
 
     if (chunk.choices[0]?.delta?.content) {

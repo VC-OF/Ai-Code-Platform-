@@ -13,12 +13,16 @@ export interface ModelInfo {
   costPer1kIn: number;
   /** USD per 1k completion tokens */
   costPer1kOut: number;
+  /** Accepts image_url content parts (the view_image tool attaches images
+   *  to the conversation only when this is true) */
+  vision: boolean;
 }
 
 const DEFAULT_MODEL_INFO: ModelInfo = {
   contextWindow: 2_000_000,
   costPer1kIn: 0,
   costPer1kOut: 0,
+  vision: false,
 };
 
 /**
@@ -27,22 +31,22 @@ const DEFAULT_MODEL_INFO: ModelInfo = {
  */
 const MODELS: Record<string, Partial<ModelInfo>> = {
   // OpenAI
-  'gpt-4o':                    { contextWindow: 128_000, costPer1kIn: 0.0025,  costPer1kOut: 0.01   },
-  'gpt-4o-mini':               { contextWindow: 128_000, costPer1kIn: 0.00015, costPer1kOut: 0.0006 },
-  'gpt-4-turbo':               { contextWindow: 128_000, costPer1kIn: 0.01,    costPer1kOut: 0.03   },
+  'gpt-4o':                    { contextWindow: 128_000, costPer1kIn: 0.0025,  costPer1kOut: 0.01,   vision: true },
+  'gpt-4o-mini':               { contextWindow: 128_000, costPer1kIn: 0.00015, costPer1kOut: 0.0006, vision: true },
+  'gpt-4-turbo':               { contextWindow: 128_000, costPer1kIn: 0.01,    costPer1kOut: 0.03,   vision: true },
   'o3-mini':                   { contextWindow: 200_000, costPer1kIn: 0.0011,  costPer1kOut: 0.0044 },
-  'o1':                        { contextWindow: 200_000, costPer1kIn: 0.015,   costPer1kOut: 0.06   },
+  'o1':                        { contextWindow: 200_000, costPer1kIn: 0.015,   costPer1kOut: 0.06,   vision: true },
   // Anthropic
-  'claude-3-7-sonnet':         { contextWindow: 200_000, costPer1kIn: 0.003,   costPer1kOut: 0.015  },
-  'claude-3-5-sonnet':         { contextWindow: 200_000, costPer1kIn: 0.003,   costPer1kOut: 0.015  },
-  'claude-3-haiku':            { contextWindow: 200_000, costPer1kIn: 0.00025, costPer1kOut: 0.00125},
+  'claude-3-7-sonnet':         { contextWindow: 200_000, costPer1kIn: 0.003,   costPer1kOut: 0.015,  vision: true },
+  'claude-3-5-sonnet':         { contextWindow: 200_000, costPer1kIn: 0.003,   costPer1kOut: 0.015,  vision: true },
+  'claude-3-haiku':            { contextWindow: 200_000, costPer1kIn: 0.00025, costPer1kOut: 0.00125, vision: true },
   // DeepSeek
   'deepseek-r1':               { contextWindow: 128_000, costPer1kIn: 0.00055, costPer1kOut: 0.00219},
   'deepseek-chat':             { contextWindow: 128_000, costPer1kIn: 0.00014, costPer1kOut: 0.00028},
   // Groq-hosted
   'llama-3.3-70b-versatile':   { contextWindow: 128_000 },
   'llama-3.1-8b-instant':      { contextWindow: 128_000 },
-  'meta-llama/llama-4-scout-17b-16e-instruct': { contextWindow: 128_000 },
+  'meta-llama/llama-4-scout-17b-16e-instruct': { contextWindow: 128_000, vision: true },
   'qwen/qwen3-32b':            { contextWindow: 128_000 },
   'qwen/qwen3.6-27b':          { contextWindow: 128_000 },
   'openai/gpt-oss-120b':       { contextWindow: 128_000 },
@@ -55,7 +59,7 @@ const MODELS: Record<string, Partial<ModelInfo>> = {
   'minimax-m3:cloud':          { contextWindow: 128_000 },
   'qwen3-coder-next:cloud':    { contextWindow: 128_000 },
   'glm-5.2:cloud':             { contextWindow: 128_000 },
-  'gemma4:31b':                { contextWindow: 128_000 },
+  'gemma4:31b':                { contextWindow: 128_000, vision: true },
   'gpt-oss:120b':              { contextWindow: 128_000 },
   'gpt-oss:20b':               { contextWindow: 128_000 },
   'nemotron-3-nano:30b':       { contextWindow: 128_000 },
@@ -94,6 +98,29 @@ export function getContextWindow(model: string): number {
     if (!isNaN(parsed) && parsed > 0) return parsed;
   }
   return getModelInfo(model).contextWindow;
+}
+
+// Model names that advertise image input without being in the registry
+const VISION_NAME_PATTERN =
+  /vision|-vl\b|llava|gemma[34]|pixtral|gpt-4o|gpt-4\.1|gpt-5|claude|gemini|llama-4|llama4|minicpm-v|qwen[\w.-]*-?vl|kimi-vl|mistral-small-3|mistral-medium|nemotron-3-(ultra|super)/i;
+
+/**
+ * Whether the model accepts image content parts. LLM_VISION=1|0 overrides
+ * the registry/heuristic for models we don't know about.
+ */
+export function supportsVision(
+  model: string,
+  env: Record<string, string | undefined> = process.env
+): boolean {
+  const override = (env.LLM_VISION ?? '').trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(override)) return true;
+  if (['0', 'false', 'no', 'off'].includes(override)) return false;
+  if (getModelInfo(model).vision) return true;
+  const colon = model.indexOf(':');
+  const bare = colon > 0 && PROVIDERS.some((p) => p.prefix === model.slice(0, colon))
+    ? model.slice(colon + 1)
+    : model;
+  return VISION_NAME_PATTERN.test(bare);
 }
 
 export function computeCostUsd(

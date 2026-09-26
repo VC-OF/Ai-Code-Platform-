@@ -111,10 +111,12 @@ interface WorkspaceInfo {
   writable: boolean;
   sandbox: 'docker' | 'local';
   version: string;
-  hooks: { event: string; matcher?: string; commands: string[] }[];
+  hooks: { event: string; matcher?: string; commands: string[]; source?: string; supported?: boolean }[];
   hooksFile: string | null;
+  hooksFiles?: string[];
   hooksError?: string;
   agents: { name: string; description?: string; file: string }[];
+  commands?: { name: string; description: string; source: string }[];
 }
 interface ProviderStatus { id: string; label: string; kind: 'cloud' | 'local'; keyEnv: string | null; available: boolean }
 
@@ -264,9 +266,15 @@ async function handleHooks(ctx: SlashContext) {
       return;
     }
     const lines = info.hooks.map((h) =>
-      `- **${h.event}**${h.matcher ? ` (matcher \`${h.matcher}\`)` : ''}: ${h.commands.length ? h.commands.map((c) => `\`${c}\``).join(', ') : 'no commands'}`
+      `- **${h.event}**${h.matcher ? ` (matcher \`${h.matcher}\`)` : ''}: ${h.commands.length ? h.commands.map((c) => `\`${c}\``).join(', ') : 'no commands'}${h.supported === false ? ' — _not run by this platform_' : ''}`
     );
-    ctx.say(`**Hooks** from \`${info.hooksFile}\`\n\n${lines.join('\n')}\n\nNote: this platform lists hooks but its agent loop does not execute them.`);
+    ctx.say([
+      `**Hooks** from \`${(info.hooksFiles ?? [info.hooksFile]).filter(Boolean).join('`, `')}\``,
+      '',
+      ...lines,
+      '',
+      'The agent loop runs **PreToolUse**, **PostToolUse**, **UserPromptSubmit**, **Stop** and **SubagentStop** hooks. Each command gets the Claude Code JSON payload on stdin; exit code 2 blocks the action and feeds stderr back to the model. Commands run through the same sandbox as run_command.',
+    ].join('\n'));
   } catch (err) {
     ctx.say(`Couldn’t read hooks: ${errText(err)}`);
   }
@@ -553,7 +561,13 @@ async function handleAgents(ctx: SlashContext) {
     '',
     skills.length ? skills.map((s) => `- \`${s.name}\` — ${s.description}`).join('\n') : '- None found.',
     '',
-    'This platform runs a single agent loop; skills are listed in its prompt and loaded on demand with load_skill. Agent definitions are listed for reference.',
+    `**Project commands** (${info?.commands?.length ?? 0})`,
+    '',
+    info?.commands?.length
+      ? info.commands.map((c) => `- \`/${c.name}\` — ${c.description} _(${c.source})_`).join('\n')
+      : '- None. Add `.claude/commands/<name>.md` files (use `$ARGUMENTS` in the body).',
+    '',
+    'The main agent can delegate with `spawn_agent` to sub-agents of kind `explore`, `research`, `verify` or `general`, each with its own context window and a restricted tool set; several run in parallel. Skills load on demand with load_skill. `.claude/agents/*.md` definitions are listed for reference.',
   ].join('\n'));
 }
 

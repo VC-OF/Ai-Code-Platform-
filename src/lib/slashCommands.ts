@@ -105,22 +105,68 @@ export const SLASH_COMMANDS: SlashCommandDefinition[] = [
 // ─── Parsing & lookup ────────────────────────────────────────────────────────
 
 export function parseSlashCommand(input: string): ParsedSlashCommand | null {
-  const match = input.trim().match(/^\/([\w-]+)(?:\s+([\s\S]*))?$/);
+  // Names may carry one namespace segment for project commands ("/db:migrate")
+  const match = input.trim().match(/^\/([\w-]+(?::[\w-]+)?)(?:\s+([\s\S]*))?$/);
   if (!match) return null;
   return { name: match[1].toLowerCase(), args: match[2]?.trim() ?? '', raw: input.trim() };
 }
 
-export function findSlashCommand(name: string): SlashCommandDefinition | undefined {
+export function findSlashCommand(
+  name: string,
+  commands: SlashCommandDefinition[] = SLASH_COMMANDS
+): SlashCommandDefinition | undefined {
   const normalized = name.toLowerCase();
-  return SLASH_COMMANDS.find((command) =>
+  return commands.find((command) =>
     command.name === normalized || command.aliases?.includes(normalized)
   );
 }
 
 /** Text typed so far is a command name being completed ("/co", not "/compact x"). */
 export function getSlashQuery(input: string): string | null {
-  const match = input.match(/^\/([\w-]*)$/);
+  const match = input.match(/^\/([\w-]*(?::[\w-]*)?)$/);
   return match ? match[1].toLowerCase() : null;
+}
+
+// ─── Project (custom) commands ───────────────────────────────────────────────
+
+/** A `.claude/commands/<name>.md` command as served by /api/commands. */
+export interface CustomCommandInfo {
+  name: string;
+  description: string;
+  argumentHint?: string;
+  body: string;
+  source: string;
+}
+
+/**
+ * Substitute `$ARGUMENTS` and `$1`…`$9` (whitespace-separated, quotes
+ * respected) in a command body. A body without placeholders gets the
+ * arguments appended, so `/cmd extra notes` still passes them along.
+ */
+export function expandCommandBody(body: string, args: string): string {
+  const trimmed = args.trim();
+  const words = trimmed.match(/"[^"]*"|'[^']*'|\S+/g)?.map((w) => w.replace(/^(["'])(.*)\1$/, '$2')) ?? [];
+  const hasPlaceholder = /\$ARGUMENTS\b|\$[1-9]\b/.test(body);
+  const expanded = body
+    .replace(/\$ARGUMENTS\b/g, trimmed)
+    .replace(/\$([1-9])\b/g, (_, n: string) => words[Number(n) - 1] ?? '');
+  if (hasPlaceholder || !trimmed) return expanded.trim();
+  return `${expanded.trim()}\n\n${trimmed}`;
+}
+
+/** Turn served project commands into registry entries (listed under "Project"). */
+export function customCommandDefinitions(commands: CustomCommandInfo[]): SlashCommandDefinition[] {
+  const builtin = new Set(SLASH_COMMANDS.flatMap((c) => [c.name, ...(c.aliases ?? [])]));
+  return commands
+    .filter((c) => /^[\w-]+(:[\w-]+)?$/.test(c.name) && !builtin.has(c.name.toLowerCase()))
+    .map((c) => ({
+      name: c.name.toLowerCase(),
+      group: 'Project' as const,
+      kind: 'prompt' as const,
+      description: c.description,
+      args: c.argumentHint ?? '[arguments]',
+      prompt: (args: string) => expandCommandBody(c.body, args),
+    }));
 }
 
 /**
@@ -170,7 +216,10 @@ export function formatSlashHelp(commands: SlashCommandDefinition[] = SLASH_COMMA
     });
     return `**${group}**\n${lines.join('\n')}`;
   });
-  return ['Slash commands. Type `/` to autocomplete.', ...sections].join('\n\n');
+  return [
+    'Slash commands. Type `/` to autocomplete. Add your own as `.claude/commands/<name>.md` in the project (use `$ARGUMENTS` in the body).',
+    ...sections,
+  ].join('\n\n');
 }
 
 // ─── Formatting helpers ──────────────────────────────────────────────────────

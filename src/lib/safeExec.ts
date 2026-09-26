@@ -120,6 +120,8 @@ function validateFindArgs(args: string[]): void {
 // host is not. ruby -e / perl-style -e is already caught by /^-e$/.
 const INLINE_CODE_FLAGS: Record<string, RegExp> = {
   python: /^-c/, python3: /^-c/, php: /^-r$|^--run$/, deno: /^(eval|repl)$/,
+  // julia -e/-E, Rscript -e, octave --eval: code strings on the command line
+  julia: /^-[eE]$|^--eval/, Rscript: /^-e$/, octave: /^--eval/,
 };
 
 function validateInlineCodeArgs(bin: string, args: string[]): void {
@@ -152,6 +154,9 @@ export interface SafeExecOptions {
   env?: Record<string, string>;
   timeoutMs?: number;
   signal?: AbortSignal;
+  /** Text written to the child's stdin (hooks receive their JSON payload
+   *  this way, like Claude Code hooks). Stdin is closed afterwards. */
+  stdin?: string;
 }
 
 export class CommandError extends Error {
@@ -397,6 +402,14 @@ export async function safeExec(
 
     proc.stdout?.on('data', (chunk: Buffer) => stdoutBuf.push(chunk.toString()));
     proc.stderr?.on('data', (chunk: Buffer) => stderrBuf.push(chunk.toString()));
+
+    // Close stdin either way: a child that waits on it would hang until the
+    // timeout (docker mode uses `sh -c` in a container, which stays attached)
+    if (proc.stdin) {
+      proc.stdin.on('error', () => {}); // EPIPE when the child never reads it
+      if (opts.stdin) proc.stdin.end(opts.stdin);
+      else proc.stdin.end();
+    }
 
     proc.on('close', (code: number | null) => {
       if (settled) return;

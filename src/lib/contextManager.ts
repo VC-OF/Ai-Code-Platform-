@@ -1,8 +1,13 @@
 import { getContextWindow } from './models';
 
+/** OpenAI-style multimodal content part (text or image) */
+export type ContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } };
+
 export type ContextMessage = {
   role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string | null;
+  content: string | null | ContentPart[];
   tool_calls?: unknown;
   tool_call_id?: string;
   tool_name?: string;
@@ -12,9 +17,23 @@ export function estimateTokens(text: string): number {
   return Math.ceil((text || '').length / 3.5);
 }
 
+// Rough per-image budget (providers bill a few hundred to ~1.5k tokens)
+const IMAGE_TOKENS = 1_000;
+
+/** Text of a message, ignoring image parts. */
+export function messageText(msg: ContextMessage): string {
+  if (typeof msg.content === 'string') return msg.content;
+  if (!Array.isArray(msg.content)) return '';
+  return msg.content.map((p) => (p.type === 'text' ? p.text : '')).join('');
+}
+
+function imageCount(msg: ContextMessage): number {
+  return Array.isArray(msg.content) ? msg.content.filter((p) => p.type === 'image_url').length : 0;
+}
+
 /** Estimate a whole message, including serialized tool-call payloads. */
 export function estimateMessageTokens(msg: ContextMessage): number {
-  let tokens = estimateTokens(msg.content || '');
+  let tokens = estimateTokens(messageText(msg)) + imageCount(msg) * IMAGE_TOKENS;
   if (msg.tool_calls) {
     try {
       tokens += estimateTokens(JSON.stringify(msg.tool_calls));
@@ -64,8 +83,8 @@ export function compactMessages(
   for (const { msg, index } of scored) {
     if (currentTokens <= targetTokens) break;
     if (msg.role === 'system') continue;
-    
-    const tokens = estimateTokens(msg.content || '');
+
+    const tokens = estimateMessageTokens(msg);
     const summary = buildSummary(msg);
     
     compacted[index] = { ...msg, content: summary };
@@ -93,27 +112,31 @@ function scoreMessage(msg: ContextMessage, index: number, total: number): number
   if (msg.tool_name === 'run_tests') score += 60;
   if (msg.tool_name === 'edit_file') score += 40;
   
-  const tokens = estimateTokens(msg.content || '');
+  const tokens = estimateMessageTokens(msg);
   if (tokens > 2000) score -= 30;
   if (tokens > 5000) score -= 60;
-  
+
   return score;
 }
 
 function buildSummary(msg: ContextMessage): string {
+  const text = messageText(msg);
   if (msg.tool_name === 'read_file') {
-    const pathMatch = (msg.content || '').match(/path['":\s]+([^\s'"]+)/);
-    const lineMatch = (msg.content || '').match(/(\d+)\s+lines?/);
+    const pathMatch = text.match(/path['":\s]+([^\s'"]+)/);
+    const lineMatch = text.match(/(\d+)\s+lines?/);
     return `[read_file: ${pathMatch?.[1] ?? 'unknown'}, ${lineMatch?.[1] ?? '?'} lines — compacted]`;
   }
   if (msg.tool_name === 'list_files') {
     return `[list_files result — compacted]`;
   }
   if (msg.tool_name === 'grep_files') {
-    const matchCount = ((msg.content || '').match(/\n/g) ?? []).length;
+    const matchCount = (text.match(/\n/g) ?? []).length;
     return `[grep_files: ${matchCount} matches found — compacted]`;
   }
-  return `[${msg.role} message — compacted, ${estimateTokens(msg.content || '')} tokens removed]`;
+  if (Array.isArray(msg.content) && imageCount(msg) > 0) {
+    return `[${imageCount(msg)} image(s) viewed earlier — compacted]`;
+  }
+  return `[${msg.role} message — compacted, ${estimateMessageTokens(msg)} tokens removed]`;
 }
 
 // ─── Summarizing compaction support ──────────────────────────────────────────
@@ -162,7 +185,7 @@ const MAX_PER_MESSAGE_CHARS = 1_500;
 export function serializeForSummary(messages: ContextMessage[]): string {
   const parts: string[] = [];
   for (const m of messages) {
-    let body = typeof m.content === 'string' ? m.content : '';
+    let body = messageText(m) + (imageCount(m) ? ` [${imageCount(m)} image(s)]` : '');
     if (m.tool_calls) {
       try {
         body += `\n[tool calls: ${JSON.stringify(m.tool_calls).slice(0, 500)}]`;

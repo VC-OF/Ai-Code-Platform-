@@ -5,37 +5,13 @@ import path from 'path';
 import { ensureWorkspace, getWorkspaceRoot } from '@/lib/workspace';
 import { isDockerMode } from '@/lib/safeExec';
 import { getSandboxImage, isPolyglotImageBuilt, SANDBOX_BUILD_HINT } from '@/lib/sandboxImage';
+import { loadHooks, HOOK_EVENTS } from '@/lib/hooks';
+import { loadCustomCommands } from '@/lib/customCommands';
 import pkg from '../../../../../package.json';
 
 export const runtime = 'nodejs';
 
 const MAX_AGENT_FILES = 50;
-
-interface HookEntry {
-  event: string;
-  matcher?: string;
-  commands: string[];
-}
-
-/** Flatten Claude Code style `hooks` config: { Event: [{ matcher, hooks: [{ type, command }] }] } */
-function parseHooks(raw: unknown): HookEntry[] {
-  if (!raw || typeof raw !== 'object') return [];
-  const out: HookEntry[] = [];
-  for (const [event, groups] of Object.entries(raw as Record<string, unknown>)) {
-    if (!Array.isArray(groups)) continue;
-    for (const group of groups) {
-      if (!group || typeof group !== 'object') continue;
-      const g = group as { matcher?: unknown; hooks?: unknown };
-      const commands = Array.isArray(g.hooks)
-        ? g.hooks
-            .map((h) => (h && typeof h === 'object' ? (h as { command?: unknown }).command : undefined))
-            .filter((c): c is string => typeof c === 'string')
-        : [];
-      out.push({ event, matcher: typeof g.matcher === 'string' ? g.matcher : undefined, commands });
-    }
-  }
-  return out;
-}
 
 function frontmatterField(text: string, field: string): string | undefined {
   const fm = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
@@ -61,21 +37,22 @@ export async function GET(req: NextRequest) {
       writable = true;
     } catch {}
 
-    let hooks: HookEntry[] = [];
-    let hooksError: string | undefined;
-    let hooksFile: string | null = null;
-    for (const name of ['settings.json', 'settings.local.json']) {
-      const file = path.join(root, '.claude', name);
-      try {
-        const text = await fs.readFile(file, 'utf8');
-        hooksFile = hooksFile ?? `.claude/${name}`;
-        hooks = hooks.concat(parseHooks((JSON.parse(text) as { hooks?: unknown }).hooks));
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-          hooksError = `.claude/${name}: ${err instanceof Error ? err.message : String(err)}`;
-        }
-      }
-    }
+    // Same loader the agent loop uses, so /hooks shows exactly what will run
+    const hookConfig = await loadHooks(root);
+    const hooks = hookConfig.hooks.map((h) => ({
+      event: h.event,
+      matcher: h.matcher,
+      commands: h.commands.map((c) => c.command),
+      source: h.source,
+      supported: (HOOK_EVENTS as string[]).includes(h.event),
+    }));
+    const hooksFile = hookConfig.files[0] ?? null;
+    const hooksError = hookConfig.errors.length ? hookConfig.errors.join('; ') : undefined;
+    const commands = (await loadCustomCommands(root).catch(() => [])).map((c) => ({
+      name: c.name,
+      description: c.description,
+      source: c.source,
+    }));
 
     const agents: { name: string; description?: string; file: string }[] = [];
     try {
@@ -101,8 +78,10 @@ export async function GET(req: NextRequest) {
       version: pkg.version,
       hooks,
       hooksFile,
+      hooksFiles: hookConfig.files,
       hooksError,
       agents,
+      commands,
     });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });

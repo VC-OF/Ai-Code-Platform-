@@ -5,6 +5,7 @@ import {
   formatSlashUsage,
   getSlashQuery,
   matchSlashCommands,
+  SLASH_COMMANDS,
   type SlashCommandDefinition,
 } from '@/lib/slashCommands';
 
@@ -83,6 +84,8 @@ interface MessageInputProps {
   isStreaming:   boolean;
   activeFile?:   string | null;
   disabled?:     boolean;
+  /** Project commands from .claude/commands/*.md, merged into autocomplete */
+  extraCommands?: SlashCommandDefinition[];
 }
 
 export default function MessageInput({
@@ -93,6 +96,7 @@ export default function MessageInput({
   isStreaming,
   activeFile,
   disabled,
+  extraCommands,
 }: MessageInputProps) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -173,7 +177,9 @@ export default function MessageInput({
 
   // ── Slash-command autocomplete ─────────────────────────────────────────
   const slashQuery = getSlashQuery(value);
-  const slashMatches: SlashCommandDefinition[] = slashQuery === null ? [] : matchSlashCommands(slashQuery);
+  const slashMatches: SlashCommandDefinition[] = slashQuery === null
+    ? []
+    : matchSlashCommands(slashQuery, extraCommands?.length ? [...SLASH_COMMANDS, ...extraCommands] : SLASH_COMMANDS);
   const [dismissedFor, setDismissedFor] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [prevSlashQuery, setPrevSlashQuery] = useState<string | null>(null);

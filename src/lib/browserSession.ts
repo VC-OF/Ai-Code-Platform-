@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import type { Browser, BrowserContext, Page, ConsoleMessage, Request, Response } from "playwright-core";
 import { assertPublicHost } from "./webTools";
 import { safeResolve } from "./safeResolve";
+import { ensureOpenCodeIgnored } from "./openCodeDir";
 
 /**
  * Built-in browser for the agent.
@@ -465,18 +466,6 @@ export async function screenshot(projectId: string, workspace: string, fullPage 
   // PNG IHDR: width/height at bytes 16..24
   const width = buf.readUInt32BE(16);
   const height = buf.readUInt32BE(20);
-  await ensureGitignored(workspace);
+  await ensureOpenCodeIgnored(workspace);
   return { path: rel, width, height, bytes: buf.length };
-}
-
-/** Add .open-code/ to an existing .gitignore; never create one. */
-async function ensureGitignored(workspace: string) {
-  const gi = path.join(workspace, ".gitignore");
-  try {
-    const cur = await fs.readFile(gi, "utf-8");
-    if (/^\/?\.open-code\/?\s*$/m.test(cur)) return;
-    await fs.appendFile(gi, `${cur.endsWith("\n") || cur === "" ? "" : "\n"}.open-code/\n`);
-  } catch {
-    // no .gitignore — leave it alone
-  }
 }
