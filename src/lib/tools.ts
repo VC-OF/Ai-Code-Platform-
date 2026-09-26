@@ -1124,7 +1124,7 @@ export async function executeTool(
           success,
           output: truncate(
             result.stdout + (result.stderr ? `\nSTDERR:\n${result.stderr}` : "")
-          ),
+          ) + (filteredVerificationNote(command) ?? ""),
           summary: result.timedOut
             ? `Command '${command}' timed out`
             : `Command '${command}' ${success ? "succeeded" : `failed (exit ${result.code})`}`,
@@ -1484,6 +1484,27 @@ async function readPackageJson(workspace: string): Promise<PackageJson | null> {
   } catch {
     return null;
   }
+}
+
+const BUILD_OR_TEST_CMD =
+  /\b(cargo|go|mvn|gradle|gradlew|dotnet|make|cmake|tsc|eslint|ruff|pytest|vitest|jest|mocha)\b|\b(npm|pnpm|yarn|bun)\s+(run\s+)?(test|build|lint|typecheck|check)\b|\bpython3?\s+-m\s+(pytest|compileall)\b/;
+const OUTPUT_FILTER =
+  /\|\s*(grep|egrep|rg|head|tail|wc|awk|sed|cut|sort|uniq|findstr|Select-String|Select-Object)\b|\|\|\s*(echo|true)\b|2>\s*\/dev\/null/;
+
+/**
+ * A build/test command piped through grep/head/tail (or `|| echo ok`) hides
+ * failures: exit status and visible lines come from the filter, not the
+ * compiler. A live run declared "compiles successfully" from
+ * `cargo check | grep main.rs` while 102 errors sat in other files. Tell the
+ * model so it cannot mistake such output for a verification.
+ */
+export function filteredVerificationNote(command: string): string | null {
+  if (!BUILD_OR_TEST_CMD.test(command) || !OUTPUT_FILTER.test(command)) return null;
+  return (
+    "\n\n[Note: this command's output was filtered or truncated by a pipe / fallback (grep, head, tail, `|| echo`, `2>/dev/null`), " +
+    "so it cannot show whether the build or tests actually succeeded — the exit status and visible lines belong to the filter. " +
+    "Run run_lint / run_tests (or the unfiltered command) before claiming success.]"
+  );
 }
 
 // Glob patterns are resolved by fast-glob relative to cwd, but "../" segments
