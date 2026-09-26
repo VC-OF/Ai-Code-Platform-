@@ -33,6 +33,12 @@ Agent core (src/lib)
   │                       tools → verify (lint/tests) → git checkpoint →
   │                       persist turn messages
   ├── tools.ts          — tool schemas + the single sandboxed tool executor
+  ├── scienceTools.ts   — execute_code (figure capture), view_image,
+  │                       notebook_edit / run_notebook, save_memory
+  ├── notebooks.ts      — .ipynb parsing, rendering and cell edits
+  ├── subagents.ts      — spawn_agent: nested loops, parallel, kind-scoped tools
+  ├── hooks.ts          — .claude/settings.json hooks (PreToolUse, Stop, …)
+  ├── customCommands.ts — .claude/commands/*.md project slash commands
   ├── toolValidator.ts  — Zod validation of LLM-provided tool args
   ├── llmClient.ts      — OpenAI-compatible client + retry/circuit breaker,
   │                       streaming with real usage capture
@@ -65,12 +71,19 @@ disconnects; reconnecting clients get all events replayed):
    pushes back and forces a verification step before finishing.
 6. Persist this turn's messages to SQLite and take a final checkpoint.
 
-Tools: `list_files`, `read_file`, `create_file`, `edit_file` (unique-match
-enforced, fresh-read required), `replace_lines`, `delete_file`,
-`grep_files` / `glob_files` (pure Node — portable), `web_search` /
-`fetch_url` (SSRF-guarded, so the agent can read real docs),
-`generate_image` (free Flux via Pollinations/HF, saved into the
-workspace), `run_command` (allowlisted), `run_lint`, `run_tests`.
+Tools: `list_files`, `read_file` (renders `.ipynb` notebooks as cells),
+`create_file`, `edit_file` (unique-match enforced, fresh-read required),
+`replace_lines`, `delete_file`, `grep_files` / `glob_files` (pure Node —
+portable), `web_search` / `fetch_url` (SSRF-guarded, so the agent can read
+real docs), `generate_image` (free Flux via Pollinations/HF, saved into the
+workspace), `run_command` (allowlisted), `run_lint`, `run_tests`,
+`execute_code` (python / javascript / julia / r, plus shell / c / cpp /
+fortran in the Docker sandbox, with automatic matplotlib figure capture),
+`view_image`, `notebook_edit` / `run_notebook`, `save_memory`,
+`spawn_agent` (parallel sub-agents with their own context window),
+`update_plan`, `ask_user`, `create_artifact`, `deploy_app`, the `browser_*`
+tools and `docker_run`. Hooks from `.claude/settings.json` run around every
+tool call and at the end of the turn (see below).
 
 ## 2. Provider-agnostic LLM integration
 
@@ -130,6 +143,8 @@ Chat supports Claude Code-style slash commands including `/help`, `/clear`,
 `/cost`, `/security-review`, `/pr-comments`, `/vim`, `/terminal-setup`,
 `/hooks`, `/mcp`, `/config`, `/plan`, `/resume`, and `/add-dir`. Local commands
 execute immediately; work commands expand into explicit prompts for the agent.
+Project-defined commands (`.claude/commands/<name>.md`, with `$ARGUMENTS`)
+are merged into the autocomplete.
 
 ## 4. Security model
 
@@ -236,6 +251,80 @@ remains persisted while the working context stays within the model window.
   global vars (shared) are supported and shown with a "global" tag.
 - **Token auth** — set `AUTH_TOKEN` and every API request must present it
   (`x-api-key`, `Authorization: Bearer`, or an `auth` cookie).
+
+### Solving hard problems: physics, mathematics, engineering, data
+
+The agent works through quantitative problems with the same rigour it
+applies to code — state assumptions, derive, compute, verify independently,
+report with uncertainty:
+
+- **`execute_code`** runs a snippet from the workspace root in a scratch
+  directory (`.open-code/scratch/run-…`, git-ignored and excluded from
+  checkpoints, last 40 runs kept). Python goes through a small runner that
+  keeps traceback line numbers and saves every matplotlib figure still open
+  at exit as `figure-N.png`; figures appear as thumbnails in the chat and the
+  agent can inspect them with **`view_image`** (attached to the conversation
+  for multimodal models — `LLM_VISION=1|0` overrides the built-in
+  detection). JavaScript, Julia and R run on the host through the allowlist;
+  shell, C, C++ and Fortran need the Docker sandbox, where they are compiled
+  with `gcc` / `g++` / `gfortran -O2` and run.
+- **Notebooks** — `read_file` renders `.ipynb` files as 0-indexed cells with
+  their outputs, `notebook_edit` replaces / inserts / deletes a cell, and
+  `run_notebook` executes the notebook in place (`jupyter nbconvert
+  --execute`) and reports every cell error.
+- **Math and figures in chat** — replies render LaTeX (`$…$`, `$$…$$`,
+  `\(…\)`, `\[…\]` and ```` ```math ```` blocks) with KaTeX, and workspace
+  images (`![…](results/plot.png)`) inline.
+- **Domain skills** in `skills/` — `scientific-computing`,
+  `numerical-verification`, `data-analysis`, `research-writing` — are
+  loaded on demand with `load_skill` and encode the playbook: units and
+  dimensional analysis first, deliberate choice of numerical method,
+  verification against analytic limits / conservation laws / convergence /
+  a second method, honest uncertainty, reproducible scripts and results.
+- **Sandbox image** (`npm run sandbox:build`) ships NumPy, SciPy, SymPy,
+  pandas, matplotlib, pint, uncertainties, h5py, networkx and Jupyter plus
+  `gfortran`; add Julia / R with `docker build --build-arg
+  JULIA_VERSION=1.11.3 --build-arg WITH_R=1 -t open-code-sandbox:1
+  docker/sandbox`. On the host, `python`, `julia`, `Rscript`, `octave`,
+  `jupyter`, `gcc` / `g++` / `gfortran` and `latexmk` / `pdflatex` are
+  allowlisted for `run_command` (inline-code flags such as `python -c` or
+  `julia -e` stay blocked).
+
+### Claude Code-style agent features
+
+- **Sub-agents** — `spawn_agent` runs a delegated task in a fresh agent
+  loop with its own context window and a kind-scoped tool set: `explore`
+  (read-only), `research` (docs / web + `execute_code`, cites sources),
+  `verify` (runs tests, commands and reproductions, never fixes) and
+  `general` (implements, may edit files). Several `spawn_agent` calls in
+  one reply run **in parallel**; only each sub-agent's final report enters
+  the parent's context, and the chat shows each one as a collapsible card
+  with its nested tool timeline. Sub-agents cannot spawn, ask the user,
+  touch the plan or persist history, calls to tools outside their kind are
+  refused, and their budget is capped (`SUBAGENT_MAX_STEPS`,
+  `SUBAGENT_MAX_DURATION_MIN`). The parent checkpoints before spawning a
+  `general` agent.
+- **Hooks** — the `hooks` key of the workspace's `.claude/settings.json`
+  (also `.claude/settings.local.json`, `.opencode/settings.json`) is
+  executed: `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop` and
+  `SubagentStop`. Matchers are regexes on the tool name
+  (`edit_file|create_file`, `*`); each command receives the Claude Code
+  JSON payload on stdin (`hook_event_name`, `tool_name`, `tool_input`,
+  `tool_response`, `prompt`, `cwd`) and `OC_HOOK_*` env vars. Exit code 2
+  blocks the action (or sends the agent back to work on `Stop`) and feeds
+  stderr to the model; hooks run through the same sandbox as `run_command`.
+  `/hooks` lists exactly what will run.
+- **Project slash commands** — every `.claude/commands/<name>.md` (or
+  `.opencode/commands/`; one level of namespacing → `/dir:name`) becomes a
+  `/name` command with `$ARGUMENTS` / `$1…$9` substitution, autocompleted
+  in the composer and listed by `/agents`.
+- **Memory** — `save_memory` appends durable one-line facts to the
+  project's `AGENTS.md` under `## Memory`; `/memory` shows and edits the
+  same file, and it is part of every system prompt.
+- **Thinking** — the `reasoning` / `reasoning_content` stream of reasoning
+  models is shown live and kept as a collapsible "Thought" block; set
+  `LLM_REASONING_EFFORT=low|medium|high` to request more effort (providers
+  that reject the field are retried without it).
 
 ### Hardening before multi-user
 

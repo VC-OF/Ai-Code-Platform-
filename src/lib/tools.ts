@@ -9,6 +9,9 @@ import {
 } from "./stackVerify";
 import { webSearch, fetchUrl, htmlToText } from "./webTools";
 import { BROWSER_TOOL_SCHEMAS, isBrowserTool, executeBrowserTool } from "./browserTools";
+import { SCIENCE_TOOL_SCHEMAS, isScienceTool, executeScienceTool } from "./scienceTools";
+import { SPAWN_AGENT_SCHEMA } from "./subagents";
+import { parseNotebook, formatNotebook } from "./notebooks";
 import { generateImage } from "./imageGen";
 import { getPreviewLogs, getPreviewStatus } from "./previewManager";
 import { callMcpTool, demangleName } from "./mcpClient";
@@ -40,7 +43,7 @@ export const TOOL_SCHEMAS = [
     type: "function",
     function: {
       name: "read_file",
-      description: "Read the full text content of a file in the workspace.",
+      description: "Read the full text content of a file in the workspace. Jupyter notebooks (.ipynb) are rendered as 0-indexed cells with their outputs.",
       parameters: {
         type: "object",
         properties: {
@@ -512,6 +515,8 @@ export const TOOL_SCHEMAS = [
       },
     },
   },
+  ...SCIENCE_TOOL_SCHEMAS,
+  SPAWN_AGENT_SCHEMA,
   ...BROWSER_TOOL_SCHEMAS,
 ] as const;
 
@@ -588,6 +593,9 @@ export interface ToolResult {
   changedFile?: string;
   extra?: Record<string, unknown>;
   structured?: StructuredOutcome;
+  /** data: URL of an image the loop should attach to the conversation
+   *  (view_image) when the model accepts images */
+  attachImage?: string;
 }
 
 // ─── Tool executor ─────────────────────────────────────────────────────────────
@@ -603,6 +611,18 @@ export async function executeTool(
     // MCP tools (mcp_<server>_<tool>) route to their external server
     if (isBrowserTool(name)) {
       return await executeBrowserTool(name, args, workspace, projectIdForWorkspace(workspace));
+    }
+    if (isScienceTool(name)) {
+      return await executeScienceTool(name, args, workspace, ctx, projectIdForWorkspace(workspace), signal);
+    }
+    if (name === "spawn_agent") {
+      // Needs the loop's model/emitter/cancellation — handled in agentLoop.ts
+      return {
+        success: false,
+        output: "Error: spawn_agent is only available inside an agent turn.",
+        summary: "spawn_agent unavailable",
+        error: "spawn_agent must be run by the agent loop",
+      };
     }
     if (demangleName(name)) {
       const output = await callMcpTool(name, args);
@@ -620,6 +640,21 @@ export async function executeTool(
         const content = await fs.readFile(filePath, "utf-8");
         const lines = content.split("\n").length;
         ctx.filesRead.add(args.path as string);
+
+        // Notebooks: cells + outputs instead of raw JSON (mirrors notebook_edit indexes)
+        if (/\.ipynb$/i.test(String(args.path))) {
+          try {
+            const nb = parseNotebook(content);
+            return {
+              success: true,
+              output: truncate(formatNotebook(nb), MAX_READ_CHARS),
+              summary: `Read notebook ${args.path} (${nb.cells.length} cells)`,
+            };
+          } catch {
+            // Not a valid notebook — fall through to the raw text
+          }
+        }
+
         return {
           success: true,
           output: truncate(content, MAX_READ_CHARS),

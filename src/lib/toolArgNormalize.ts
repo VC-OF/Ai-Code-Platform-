@@ -96,6 +96,70 @@ export function normalizeToolArgs(toolName: string, input: unknown): unknown {
       rename(args, 'tasks', ['todos', 'plan', 'items']);
       args.tasks = normalizePlanTasks(args.tasks);
       break;
+    case 'execute_code': {
+      rename(args, 'code', ['source', 'script', 'snippet', 'program', 'content']);
+      rename(args, 'language', ['lang']);
+      if (typeof args.language === 'string') {
+        const lang = args.language.trim().toLowerCase();
+        args.language = LANGUAGE_ALIASES[lang] ?? lang;
+      }
+      const t = toInt(args.timeout_seconds ?? args.timeout);
+      delete args.timeout;
+      args.timeout_seconds = typeof t === 'number' && t > 900 ? 900 : t;
+      if (args.timeout_seconds === undefined) delete args.timeout_seconds;
+      break;
+    }
+    case 'view_image':
+    case 'run_notebook':
+      rename(args, 'path', PATH_ALIASES);
+      break;
+    case 'notebook_edit':
+      rename(args, 'path', [...PATH_ALIASES, 'notebook_path', 'notebook']);
+      rename(args, 'action', ['edit_mode', 'mode', 'operation', 'op']);
+      rename(args, 'cell_index', ['index', 'cell', 'cellIndex', 'cell_number', 'cell_id']);
+      rename(args, 'cell_type', ['type', 'cellType']);
+      rename(args, 'source', ['new_source', 'content', 'code', 'text']);
+      if (typeof args.action === 'string') {
+        const a = args.action.trim().toLowerCase();
+        args.action = ACTION_ALIASES[a] ?? a;
+      }
+      args.cell_index = toInt(args.cell_index);
+      break;
+    case 'save_memory':
+      rename(args, 'text', ['memory', 'note', 'content', 'fact', 'message']);
+      break;
+    case 'spawn_agent': {
+      rename(args, 'task', ['prompt', 'instructions', 'description', 'goal']);
+      rename(args, 'kind', ['type', 'agent', 'agent_type', 'subagent_type', 'role']);
+      rename(args, 'label', ['name', 'title']);
+      if (typeof args.kind === 'string') {
+        const k = args.kind.trim().toLowerCase();
+        args.kind = KIND_ALIASES[k] ?? k;
+      }
+      break;
+    }
   }
   return args;
 }
+
+const LANGUAGE_ALIASES: Record<string, string> = {
+  py: 'python', python3: 'python', ipython: 'python',
+  js: 'javascript', node: 'javascript', nodejs: 'javascript',
+  sh: 'shell', bash: 'shell', zsh: 'shell',
+  'c++': 'cpp', cxx: 'cpp', cc: 'cpp',
+  f90: 'fortran', f95: 'fortran', f: 'fortran', fortran90: 'fortran',
+  rscript: 'r', rlang: 'r',
+};
+
+const ACTION_ALIASES: Record<string, string> = {
+  replace: 'replace', update: 'replace', edit: 'replace', set: 'replace',
+  insert: 'insert', add: 'insert', append: 'insert', create: 'insert', new: 'insert',
+  delete: 'delete', remove: 'delete', del: 'delete',
+};
+
+const KIND_ALIASES: Record<string, string> = {
+  explore: 'explore', explorer: 'explore', search: 'explore', find: 'explore', 'read-only': 'explore', readonly: 'explore',
+  research: 'research', researcher: 'research', investigate: 'research', docs: 'research',
+  verify: 'verify', verifier: 'verify', test: 'verify', tester: 'verify', check: 'verify', review: 'verify', reviewer: 'verify',
+  general: 'general', 'general-purpose': 'general', coder: 'general', implement: 'general', implementer: 'general', worker: 'general', build: 'general',
+};

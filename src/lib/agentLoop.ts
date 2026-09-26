@@ -25,6 +25,9 @@ import { messageDb, checkpointDb, toolLogDb, projectDb, type PlanTask } from './
 import { executeTool, createTurnContext } from './tools';
 import { validateTool } from './toolValidator';
 import { normalizeToolArgs } from './toolArgNormalize';
+import { loadHooks, runHooks, summarizeHookResults, EMPTY_HOOKS, type HookConfig, type HookRunResult } from './hooks';
+import { runSubagent, subagentEdits, type SubagentRunResult, type SubagentKind } from './subagents';
+import { supportsVision } from './models';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -50,6 +53,8 @@ const EXECUTE_PLAN_INSTRUCTION =
   'Nothing from that plan has been executed yet. Carry it out now using tool calls, then verify with run_lint/run_tests.';
 const MAX_NO_ACTION_NUDGES = 1;     // times we challenge a "done" reply from a turn that ran no tools
 const MAX_TEXT_TOOL_NUDGES = 3;    // times we correct tool calls written as plain text
+const MAX_STOP_HOOK_NUDGES = 2;    // times a Stop hook (exit 2) may send the agent back to work
+const MAX_SUBAGENT_DEPTH = 1;      // sub-agents cannot spawn sub-agents
 const COMPACT_AT   = 0.60;         // Compact at 60% context
 const COMPACT_TO   = 0.40;         // Compact down to 40%
 
@@ -80,6 +85,15 @@ export interface AgentLoopOptions {
   currentPlan?: PlanTask[];
   /** Execution mode: 'auto' (autonomous), 'manual' (step approval), or 'plan' (architect) */
   executionMode?: 'auto' | 'manual' | 'plan';
+  /** Set when this loop is a sub-agent spawned by another turn: no plan
+   *  step, no persistence, no git checkpoints, its own step/time budget. */
+  nested?: {
+    depth: number;
+    label: string;
+    kind: SubagentKind;
+    maxSteps?: number;
+    maxDurationMs?: number;
+  };
 }
 
 export interface AgentLoopResult {
@@ -109,9 +123,15 @@ export async function runAgentLoop(
     cancellation,
   } = opts;
 
+  const nested       = opts.nested;
+  const depth        = nested?.depth ?? 0;
+  const maxSteps     = nested?.maxSteps ?? MAX_STEPS;
+  const maxDuration  = nested?.maxDurationMs ?? MAX_DURATION;
   const startTime    = Date.now();
   const ctx          = createTurnContext();
   const filesChanged: string[] = [];
+  let hooks: HookConfig = EMPTY_HOOKS;
+  let stopHookNudges = 0;
   let totalTokens    = 0;
   let stepIndex      = 0;
   let finalMessage   = '';
@@ -142,6 +162,7 @@ export async function runAgentLoop(
   // Save what this turn produced when it ends early (cancel / error) so a
   // follow-up "continue" still sees the work done so far
   const persistPartial = () => {
+    if (nested) return; // a sub-agent's transcript is never chat history
     try {
       const fresh = messages.filter((m) => !alreadyPersisted.has(m));
       persistMessages(projectId, closeDanglingToolCalls(fresh), turnIndex);
@@ -155,7 +176,7 @@ export async function runAgentLoop(
   // for provider-side prompt caching
   const incompletePlan =
     opts.currentPlan?.some((t) => t.status !== 'completed') ?? false;
-  if (incompletePlan) {
+  if (!nested && incompletePlan) {
     const planText = opts.currentPlan!
       .map((t) => `- [${t.status === 'completed' ? 'x' : t.status === 'in_progress' ? '~' : ' '}] ${t.title} (${t.id})`)
       .join('\n');
@@ -186,7 +207,27 @@ export async function runAgentLoop(
       .filter((m) => m.role === 'user')
       .at(-1)?.content ?? '';
 
-    const needsPlan = (lastUserMsg?.toString() ?? '').length > 40;
+    const needsPlan = !nested && (lastUserMsg?.toString() ?? '').length > 40;
+
+    // Hooks from .claude/settings.json — the same config /hooks reports
+    hooks = await loadHooks(workspaceRoot).catch(() => EMPTY_HOOKS);
+    for (const e of hooks.errors) emitter.error(0, `Hook config: ${e}`, true);
+
+    if (!nested && hooks.hooks.length > 0) {
+      const promptText = typeof lastUserMsg === 'string' ? lastUserMsg : JSON.stringify(lastUserMsg ?? '');
+      const promptHooks = await runHooks(
+        hooks,
+        { event: 'UserPromptSubmit', projectId, workspace: workspaceRoot, prompt: promptText },
+        { signal: cancellation.token.signal }
+      );
+      emitHookResults(emitter, 0, promptHooks);
+      const verdict = summarizeHookResults(promptHooks);
+      if (verdict.blocked) {
+        emitter.error(0, `Blocked by a UserPromptSubmit hook: ${verdict.reason}`, false);
+        emitter.status(0, 'error');
+        return buildResult('error', 0, filesChanged, totalTokens, startTime);
+      }
+    }
 
     if (needsPlan) {
       cancellation.token.throwIfCancelled();
@@ -247,12 +288,12 @@ export async function runAgentLoop(
 
     let hitTimeLimit = false;
     let verifyNudges = 0;
-    for (stepIndex = 1; stepIndex <= MAX_STEPS; stepIndex++) {
+    for (stepIndex = 1; stepIndex <= maxSteps; stepIndex++) {
       // ── Safety checks ────────────────────────────────────────────────────
       cancellation.token.throwIfCancelled();
 
       const elapsed = Date.now() - startTime - pausedMs;
-      if (elapsed >= MAX_DURATION) {
+      if (elapsed >= maxDuration) {
         // End in the paused state (not an error) so the UI offers Continue
         hitTimeLimit = true;
         break;
@@ -350,6 +391,7 @@ export async function runAgentLoop(
 
       // ── LLM call ──────────────────────────────────────────────────────────
       let textContent = '';
+      let reasoningText = '';   // thinking tokens: shown in the UI, never sent back
       let inLLMCall = false;
 
       try {
@@ -391,6 +433,11 @@ export async function runAgentLoop(
             emitter.textDelta(stepIndex, chunk.delta);
           }
 
+          if (chunk.type === 'reasoning_delta' && chunk.delta) {
+            reasoningText += chunk.delta;
+            emitter.emit({ type: 'reasoning_delta', stepIndex, delta: chunk.delta });
+          }
+
           if (chunk.type === 'tool_call_delta' && chunk.tool_call) {
             const { index, id, name, args } = chunk.tool_call;
             if (!toolCallAccumulators[index]) {
@@ -415,6 +462,10 @@ export async function runAgentLoop(
 
         inLLMCall = false;
         llmRetries = 0;
+
+        if (reasoningText) {
+          emitter.emit({ type: 'reasoning_done', stepIndex, content: reasoningText });
+        }
 
         // Assemble tool calls
         const accumulatedCalls = Object.values(toolCallAccumulators);
@@ -566,7 +617,37 @@ export async function runAgentLoop(
             continue; // Force another step
           }
 
+          // Stop hooks: exit 2 sends the agent back to work with the feedback
+          if (hooks.hooks.length > 0 && stopHookNudges < MAX_STOP_HOOK_NUDGES) {
+            const stopResults = await runHooks(
+              hooks,
+              {
+                event: nested ? 'SubagentStop' : 'Stop',
+                projectId,
+                workspace: workspaceRoot,
+                finalMessage: carriedText + textContent,
+              },
+              { signal: cancellation.token.signal }
+            );
+            emitHookResults(emitter, stepIndex, stopResults);
+            const verdict = summarizeHookResults(stopResults);
+            if (verdict.blocked) {
+              stopHookNudges++;
+              messages.push({ role: 'assistant', content: textContent || null } as ContextMessage);
+              messages.push({
+                role: 'user' as const,
+                content: `[A Stop hook blocked finishing (exit 2). Address this before you finish:]\n${verdict.reason}`,
+              } as ContextMessage);
+              continue;
+            }
+          }
+
           finalMessage = carriedText + textContent;
+          // Keep the reply in history — without it the next turn's model never
+          // saw its own summary (truncation parts were pushed already)
+          if (textContent) {
+            messages.push({ role: 'assistant', content: textContent } as ContextMessage);
+          }
           break;
         }
 
@@ -578,6 +659,19 @@ export async function runAgentLoop(
         } as ContextMessage);
 
         // ── Execute tool calls ─────────────────────────────────────────────
+        // spawn_agent calls start immediately and run concurrently; their
+        // reports are filled into placeholder tool messages after the batch
+        const pendingSubagents: {
+          msg: ContextMessage;
+          promise: Promise<SubagentRunResult>;
+          toolCallId: string;
+          started: number;
+          args: Record<string, unknown>;
+        }[] = [];
+        // view_image attachments go after ALL tool results: a user message
+        // between tool results would break the tool_calls/tool pairing
+        const attachedImages: ContextMessage[] = [];
+
         for (const tc of toolCalls) {
           cancellation.token.throwIfCancelled();
 
@@ -625,6 +719,19 @@ export async function runAgentLoop(
             continue;
           }
 
+          // A sub-agent only has its kind's tool set — a hallucinated call to
+          // anything else (e.g. create_file from an explore agent) is refused
+          if (nested && !toolNames.includes(toolName)) {
+            messages.push({
+              role:        'tool' as const,
+              tool_call_id: toolCallId,
+              tool_name:   toolName,
+              content:     `Error: ${toolName} is not available to this ${nested.kind} sub-agent. Available tools: ${toolNames.join(', ')}`,
+            } as ContextMessage);
+            emitter.toolError(stepIndex, toolCallId, toolName, `Not available to a ${nested.kind} sub-agent`, true);
+            continue;
+          }
+
           // ── ask_user: pause the loop until the user answers ─────────────
           if (toolName === 'ask_user') {
             const question = String(toolArgs.question ?? '');
@@ -668,13 +775,16 @@ export async function runAgentLoop(
             continue;
           }
 
-          // Git checkpoint before first edit
-          if (!checkpointed && (
+          // Git checkpoint before first edit (sub-agents share the parent's)
+          if (!nested && !checkpointed && (
             toolName === 'edit_file' ||
             toolName === 'create_file' ||
             toolName === 'append_file' ||
             toolName === 'delete_file' ||
-            toolName === 'replace_lines'
+            toolName === 'replace_lines' ||
+            toolName === 'notebook_edit' ||
+            toolName === 'execute_code' ||
+            (toolName === 'spawn_agent' && subagentEdits(String(toolArgs.kind)))
           )) {
             try {
               const sha = gitCheckpoint(workspaceRoot, turnIndex);
@@ -739,6 +849,62 @@ export async function runAgentLoop(
                 finalMessage: 'Turn cancelled by user during manual tool approval.',
               };
             }
+          }
+
+          // PreToolUse hooks: exit 2 vetoes the call; its feedback goes to the model
+          if (hooks.hooks.length > 0) {
+            const pre = await runHooks(
+              hooks,
+              { event: 'PreToolUse', projectId, workspace: workspaceRoot, toolName, toolInput: toolArgs },
+              { signal: cancellation.token.signal }
+            );
+            emitHookResults(emitter, stepIndex, pre);
+            const verdict = summarizeHookResults(pre);
+            if (verdict.blocked) {
+              emitter.toolStart(stepIndex, toolCallId, toolName, toolArgs);
+              emitter.toolError(
+                stepIndex, toolCallId, toolName,
+                `Blocked by a PreToolUse hook: ${verdict.reason.slice(0, 300)}`, true
+              );
+              messages.push({
+                role:         'tool' as const,
+                tool_call_id: toolCallId,
+                tool_name:    toolName,
+                content:      `Blocked by a PreToolUse hook (exit 2). Hook feedback:\n${verdict.reason}\nAdjust your approach accordingly.`,
+              } as ContextMessage);
+              continue;
+            }
+          }
+
+          // ── spawn_agent: nested loop, run concurrently with sibling spawns ──
+          if (toolName === 'spawn_agent') {
+            emitter.toolStart(stepIndex, toolCallId, toolName, toolArgs);
+            emitter.status(stepIndex, 'running');
+            toolsExecuted++;
+            const placeholder = {
+              role: 'tool' as const,
+              tool_call_id: toolCallId,
+              tool_name: toolName,
+              content: '',
+            } as ContextMessage;
+            messages.push(placeholder);
+            const request = {
+              kind:    toolArgs.kind as SubagentKind,
+              task:    String(toolArgs.task),
+              context: typeof toolArgs.context === 'string' ? toolArgs.context : undefined,
+              label:   typeof toolArgs.label === 'string' ? toolArgs.label : undefined,
+            };
+            const name = request.label ?? request.kind;
+            const promise = depth >= MAX_SUBAGENT_DEPTH
+              ? Promise.resolve(failedSubagent(name, 'Sub-agents cannot spawn further sub-agents — do the work directly.'))
+              : runSubagent(request, {
+                  projectId, workspaceRoot, llmConfig, tools, systemPrompt, emitter, cancellation,
+                  turnIndex, parentStep: stepIndex, toolCallId, depth,
+                }).catch((err: unknown) =>
+                  failedSubagent(name, err instanceof Error ? err.message : String(err))
+                );
+            pendingSubagents.push({ msg: placeholder, promise, toolCallId, started: Date.now(), args: toolArgs });
+            continue;
           }
 
           // Execute tool
@@ -844,14 +1010,82 @@ export async function runAgentLoop(
             );
           }
 
+          let toolContent = toolResult.output;
+
+          // PostToolUse hooks: exit 2 feedback rides along with the tool result
+          if (hooks.hooks.length > 0) {
+            const post = await runHooks(
+              hooks,
+              { event: 'PostToolUse', projectId, workspace: workspaceRoot, toolName, toolInput: toolArgs, toolOutput: toolResult.output },
+              { signal: cancellation.token.signal }
+            );
+            emitHookResults(emitter, stepIndex, post);
+            const verdict = summarizeHookResults(post);
+            if (verdict.blocked) toolContent += `\n\n[PostToolUse hook feedback (exit 2)]\n${verdict.reason}`;
+          }
+
+          // view_image: multimodal models get the picture itself
+          if (toolResult.attachImage) {
+            if (supportsVision(llmConfig.model)) {
+              toolContent += '\nThe image is attached to the conversation below — inspect it before drawing conclusions.';
+              attachedImages.push({
+                role: 'user',
+                content: [
+                  { type: 'text', text: `[Image ${String(toolArgs.path ?? '')} attached by view_image]` },
+                  { type: 'image_url', image_url: { url: toolResult.attachImage } },
+                ],
+              } as ContextMessage);
+            } else {
+              toolContent +=
+                `\nThe current model (${llmConfig.model}) is not marked as multimodal, so the image was not attached ` +
+                '(set LLM_VISION=1 if it does accept images). Judge the result from numbers instead — e.g. print ' +
+                'statistics or sampled values with execute_code.';
+            }
+          }
+
           // Add tool result to messages
           messages.push({
             role:         'tool' as const,
             tool_call_id: toolCallId,
             tool_name:    toolName,
-            content:      toolResult.output,
+            content:      toolContent,
           } as ContextMessage);
         }
+
+        // Sub-agents started in this batch ran concurrently — collect their
+        // reports in call order so every tool_call gets its result
+        for (const p of pendingSubagents) {
+          const r = await p.promise;
+          const duration = Date.now() - p.started;
+          totalTokens += r.totalTokens;
+          for (const f of r.filesChanged) {
+            if (!filesChanged.includes(f)) filesChanged.push(f);
+          }
+          if (r.filesChanged.length > 0) ctx.hasEdits = true;
+
+          toolLogDb.insert({
+            project_id:  projectId,
+            tool_name:   'spawn_agent',
+            args:        { kind: p.args.kind, label: p.args.label, task: String(p.args.task ?? '').slice(0, 300) },
+            result:      { success: r.success, summary: r.summary },
+            success:     r.success,
+            duration_ms: duration,
+            turn_index:  turnIndex,
+          });
+          emitter.toolEnd(stepIndex, p.toolCallId, 'spawn_agent', duration, r.success, r.summary, {
+            subagent: {
+              reason:       r.reason,
+              steps:        r.steps,
+              toolCalls:    r.toolCalls,
+              tokens:       r.totalTokens,
+              filesChanged: r.filesChanged,
+              report:       r.output.slice(0, 6_000),
+            },
+          });
+          p.msg.content = r.output;
+        }
+
+        for (const img of attachedImages) messages.push(img);
 
         emitter.status(stepIndex, 'planning');
 
@@ -881,7 +1115,7 @@ export async function runAgentLoop(
     }
 
     // ── Final checkpoint ───────────────────────────────────────────────────
-    if (ctx.hasEdits) {
+    if (!nested && ctx.hasEdits) {
       try {
         const sha = gitCheckpoint(workspaceRoot, turnIndex, 'end');
         checkpointDb.insert({
@@ -897,16 +1131,18 @@ export async function runAgentLoop(
       } catch {}
     }
 
-    // ── Persist messages to DB ─────────────────────────────────────────────
-    persistMessages(
-      projectId,
-      messages.filter((m) => !alreadyPersisted.has(m)),
-      turnIndex
-    );
-    projectDb.touch(projectId);
+    // ── Persist messages to DB (a sub-agent's transcript is not history) ───
+    if (!nested) {
+      persistMessages(
+        projectId,
+        messages.filter((m) => !alreadyPersisted.has(m)),
+        turnIndex
+      );
+      projectDb.touch(projectId);
+    }
 
     const reason: DoneReason =
-      hitTimeLimit ? 'timeout' : stepIndex > MAX_STEPS ? 'max_steps' : 'completed';
+      hitTimeLimit ? 'timeout' : stepIndex > maxSteps ? 'max_steps' : 'completed';
 
     emitter.status(stepIndex, 'done');
     emitter.done(
@@ -984,8 +1220,46 @@ function toolStatusFor(toolName: string): AgentStatus {
     update_plan:  'planning',
     deploy_app:   'running',
     ask_user:     'waiting',
+    execute_code: 'running',
+    view_image:   'reading',
+    notebook_edit: 'writing',
+    run_notebook: 'running',
+    save_memory:  'writing',
+    spawn_agent:  'running',
   };
   return map[toolName] ?? 'planning';
+}
+
+function emitHookResults(emitter: EventEmitter, stepIndex: number, results: HookRunResult[]): void {
+  for (const r of results) {
+    emitter.emit({
+      type: 'hook',
+      stepIndex,
+      event: r.event,
+      command: r.command,
+      source: r.source,
+      exitCode: r.exitCode,
+      blocked: r.blocked,
+      timedOut: r.timedOut,
+      durationMs: r.durationMs,
+      output: r.feedback.slice(0, 2_000),
+      error: r.error,
+    });
+  }
+}
+
+function failedSubagent(label: string, message: string): SubagentRunResult {
+  return {
+    success: false,
+    output: `[Sub-agent "${label}" could not run: ${message}]`,
+    summary: `${label}: failed to start`,
+    reason: 'error',
+    filesChanged: [],
+    totalTokens: 0,
+    steps: 0,
+    toolCalls: 0,
+    durationMs: 0,
+  };
 }
 
 /** Build output, dependency and cache dirs never belong in checkpoints —
@@ -996,6 +1270,7 @@ export const CHECKPOINT_EXCLUDES = [
   'node_modules/', '.npm-cache/', '.next/', 'dist/', 'build/', 'coverage/',
   'target/', '.venv/', 'venv/', '__pycache__/', '.pytest_cache/', '.ruff_cache/',
   '.mypy_cache/', '*.egg-info/', '.local/', '.cache/', '.gradle/', '*.class',
+  '.open-code/',
 ];
 const EXCLUDE_MARKER = '# open-code checkpoint excludes';
 
@@ -1089,7 +1364,8 @@ function persistMessages(
       id:           crypto.randomUUID(),
       project_id:   projectId,
       role:         m.role,
-      content:      m.content ?? '',
+      // Multimodal parts (view_image attachments) are stored as JSON
+      content:      typeof m.content === 'string' ? m.content : m.content == null ? '' : JSON.stringify(m.content),
       tool_calls:   m.tool_calls ? JSON.stringify(m.tool_calls) : null,
       tool_call_id: m.tool_call_id ?? null,
       tool_name:    m.tool_name ?? null,

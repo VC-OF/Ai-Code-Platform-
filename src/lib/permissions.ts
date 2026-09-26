@@ -13,6 +13,11 @@ export const APPROVAL_REQUIRED_TOOLS = [
   'run_command',
   'docker_run',
   'deploy_app',
+  'execute_code',
+  'notebook_edit',
+  'run_notebook',
+  'save_memory',
+  'spawn_agent',
 ] as const;
 
 /** Binaries run_command may invoke on the host (local sandbox mode). */
@@ -27,6 +32,12 @@ export const HOST_ALLOWED_BINS = [
   'vite', 'webpack', 'rollup', 'esbuild', 'turbo',
   // Python
   'python', 'python3', 'pip', 'pip3', 'uv', 'pytest', 'ruff',
+  // Scientific / numerical toolchains
+  'julia', 'Rscript', 'octave', 'jupyter',
+  // Native compilers (C / C++ / Fortran)
+  'gcc', 'g++', 'cc', 'c++', 'clang', 'clang++', 'gfortran',
+  // TeX
+  'latexmk', 'pdflatex', 'xelatex', 'lualatex', 'bibtex', 'biber',
   // Rust
   'cargo', 'rustc', 'rustfmt',
   // Go
@@ -42,6 +53,7 @@ export const HOST_ALLOWED_BINS = [
   'ls', 'cat', 'find', 'grep', 'head',
   'tail', 'wc', 'echo', 'pwd', 'which',
   'mkdir', 'touch', 'cp', 'mv',
+  'diff', 'sort', 'uniq', 'tr', 'cut', 'stat', 'du', 'nproc',
 ] as const;
 
 /** git subcommands allowed through run_command on the host. */
@@ -57,6 +69,7 @@ export const HOST_BLOCKED_SUMMARY = [
   'Shell chaining, pipes, redirection and command substitution (;, &&, ||, |, <, >, $(), backticks)',
   'Arguments touching .env files, /etc, /proc, /sys, /dev, ~/.ssh, ~/.aws, ~/.config',
   'node -e/--eval/-p/-r/--import and any node flag other than --version/--help',
+  'Inline code flags for interpreters (python -c, julia -e, Rscript -e, octave --eval, php -r, deno eval)',
   'find -exec/-delete/-fprint and other action primaries',
   'git -c/--config-env overrides, git config writes, and --output/-o file writes',
 ];

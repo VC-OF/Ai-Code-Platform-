@@ -1,5 +1,7 @@
 # Polyglot sandbox image for agent commands (safeExec docker mode).
 # Build: npm run sandbox:build   ->   open-code-sandbox:1
+# Toolchains: Node, Python 3 (+ NumPy/SciPy/SymPy/pandas/matplotlib/Jupyter),
+# Rust, Go, Java/Maven, gcc/g++/gfortran; Julia and R are opt-in build args.
 #
 # Runtime contract (see src/lib/safeExec.ts):
 #   - workspace bind-mounted at /workspace, HOME=/workspace, runs as root
@@ -27,11 +29,36 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      git build-essential pkg-config libssl-dev \
+      git build-essential gfortran pkg-config libssl-dev \
       python3 python3-pip python3-venv python-is-python3 pipx \
       openjdk-17-jdk-headless maven \
       sqlite3 curl ca-certificates jq ripgrep make cmake \
  && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Scientific Python stack importable by the system python3 (execute_code,
+# run_notebook): NumPy/SciPy/SymPy/pandas/matplotlib, units/uncertainties,
+# HDF5, graphs, plus Jupyter for notebooks. Projects still create their own
+# .venv for their pinned dependencies.
+RUN python3 -m pip install --break-system-packages --no-cache-dir \
+      numpy scipy sympy matplotlib pandas pint uncertainties h5py networkx tqdm \
+      jupyter nbconvert nbformat ipykernel \
+ && rm -rf /root/.cache
+ENV MPLBACKEND=Agg
+
+# Optional extra runtimes for execute_code / run_command:
+#   docker build --build-arg JULIA_VERSION=1.11.3 --build-arg WITH_R=1 -t open-code-sandbox:1 docker/sandbox
+ARG JULIA_VERSION=
+ARG WITH_R=0
+RUN if [ -n "$JULIA_VERSION" ]; then \
+      ARCH="$(uname -m)"; case "$ARCH" in x86_64) JARCH=x64;; aarch64) JARCH=aarch64;; *) JARCH="$ARCH";; esac; \
+      MAJOR="${JULIA_VERSION%.*}"; \
+      curl -sSfL "https://julialang-s3.julialang.org/bin/linux/${JARCH}/${MAJOR}/julia-${JULIA_VERSION}-linux-${ARCH}.tar.gz" | tar -C /opt -xz \
+      && ln -s "/opt/julia-${JULIA_VERSION}/bin/julia" /usr/local/bin/julia; \
+    fi \
+ && if [ "$WITH_R" = "1" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends r-base \
+      && apt-get clean && rm -rf /var/lib/apt/lists/*; \
+    fi
 
 # uv (fast pip/venv) + ruff + pytest as global tools
 RUN PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install uv \

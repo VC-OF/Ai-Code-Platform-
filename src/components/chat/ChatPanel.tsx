@@ -8,9 +8,13 @@ import Markdown from './Markdown';
 import ContextReport, { type ContextReportData } from './ContextReport';
 import SkillsReport, { type SkillsReportItem } from './SkillsReport';
 import {
+  customCommandDefinitions,
   findSlashCommand,
   parseSlashCommand,
+  SLASH_COMMANDS,
+  type CustomCommandInfo,
   type ExportableMessage,
+  type SlashCommandDefinition,
 } from '@/lib/slashCommands';
 import {
   getOutputStyle,
@@ -51,6 +55,73 @@ interface MessageAttachment {
   name: string;
   type: string;
   content: string;
+}
+
+// Inner event types worth keeping on a sub-agent card (deltas are dropped
+// server-side; status only updates the header)
+const SUBAGENT_INNER_TYPES = new Set([
+  'tool_start', 'tool_end', 'tool_error', 'text_done', 'error', 'plan', 'verification', 'checkpoint', 'compaction', 'hook',
+]);
+
+function upsertSubagent(
+  t: TimelineItem[],
+  toolCallId: string,
+  patch: (item: TimelineItem) => TimelineItem,
+  seed: () => TimelineItem
+): TimelineItem[] {
+  const idx = t.findIndex((item) => item.type === 'subagent' && item.toolCallId === toolCallId);
+  if (idx === -1) return [...t, patch(seed())];
+  const next = t.slice();
+  next[idx] = patch(t[idx]);
+  return next;
+}
+
+/** spawn_agent tool events open/close the card instead of adding plain rows. */
+function applySubagentToolEvent(t: TimelineItem[], event: TimelineItem): TimelineItem[] {
+  const toolCallId = String(event.toolCallId ?? '');
+  const args = (event.args ?? {}) as Record<string, unknown>;
+  const seed = (): TimelineItem => ({
+    type: 'subagent',
+    toolCallId,
+    ts: event.ts,
+    label: String(args.label ?? `${args.kind ?? 'sub'} agent`),
+    kind: String(args.kind ?? 'agent'),
+    task: String(args.task ?? '').slice(0, 600),
+    events: [],
+    status: 'planning',
+    done: false,
+  });
+  if (event.type === 'tool_start') return upsertSubagent(t, toolCallId, (item) => item, seed);
+  if (event.type === 'tool_end') {
+    const result = event.result as { success?: boolean; summary?: string; subagent?: unknown } | undefined;
+    return upsertSubagent(t, toolCallId, (item) => ({
+      ...item, done: true, success: result?.success !== false, summary: result?.summary, subagent: result?.subagent,
+    }), seed);
+  }
+  return upsertSubagent(t, toolCallId, (item) => ({
+    ...item, done: true, success: false, error: event.error,
+  }), seed);
+}
+
+/** Nest a sub-agent's forwarded event under its card. */
+function mergeSubagentEvent(t: TimelineItem[], event: TimelineItem): TimelineItem[] {
+  const toolCallId = String(event.toolCallId ?? '');
+  const inner = event.event as TimelineItem | undefined;
+  if (!toolCallId || !inner) return t;
+  const seed = (): TimelineItem => ({
+    type: 'subagent', toolCallId, ts: event.ts,
+    label: String(event.label ?? 'sub-agent'), kind: String(event.kind ?? 'agent'),
+    events: [], status: 'planning', done: false,
+  });
+  return upsertSubagent(t, toolCallId, (item) => {
+    if (inner.type === 'status') return { ...item, status: inner.status };
+    if (!SUBAGENT_INNER_TYPES.has(inner.type)) return item;
+    const events = (item.events as TimelineItem[] | undefined) ?? [];
+    const dup = inner.toolCallId
+      ? events.some((e) => e.type === inner.type && e.toolCallId === inner.toolCallId)
+      : events.some((e) => e.type === inner.type && e.ts === inner.ts);
+    return dup ? item : { ...item, events: [...events, inner] };
+  }, seed);
 }
 
 // Real prompt templates (the old pills inserted fake "/build"-style slash
@@ -277,6 +348,27 @@ export default function ChatPanel({
 
   const endRef = useRef<HTMLDivElement>(null);
 
+  // Live "thinking" text from reasoning models (never part of the reply)
+  const [streamingReasoning, setStreamingReasoning] = useState('');
+
+  // Project slash commands (.claude/commands/*.md) — served per project
+  const [customCommands, setCustomCommands] = useState<SlashCommandDefinition[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!projectId) {
+      // Welcome screen: the panel is mounted before a project is open
+      setCustomCommands([]);
+      return;
+    }
+    fetch(`/api/commands?projectId=${encodeURIComponent(projectId)}`)
+      .then((r) => (r.ok ? r.json() : { commands: [] }))
+      .then((data: { commands?: CustomCommandInfo[] }) => {
+        if (!cancelled) setCustomCommands(customCommandDefinitions(data.commands ?? []));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [projectId]);
+
   const updateStatus = (status: AgentStatus) => {
     setAgentStatus(status);
     onStatusChange?.(status);
@@ -314,8 +406,21 @@ export default function ChatPanel({
             updateStatus(event.status as AgentStatus);
           } else if (event.type === 'text_delta') {
             setStreamingText((s) => s + (event.delta ?? ''));
+          } else if (event.type === 'reasoning_delta') {
+            setStreamingReasoning((s) => s + (event.delta ?? ''));
+          } else if (event.type === 'reasoning_done') {
+            setStreamingReasoning('');
+            setTimeline((t) => {
+              const exists = t.some((item) => item.type === 'reasoning' && item.ts === event.ts);
+              return exists ? t : [...t, { ...event, type: 'reasoning' }];
+            });
+          } else if (event.type === 'hook') {
+            setTimeline((t) => (t.some((item) => item.type === 'hook' && item.ts === event.ts) ? t : [...t, event]));
+          } else if (event.type === 'subagent_event') {
+            setTimeline((t) => mergeSubagentEvent(t, event));
           } else if (event.type === 'text_done') {
             setStreamingText('');
+            setStreamingReasoning('');
             const doneContent = event.content ?? '';
             setHistory((h) => {
               const exists = h.some((m) => m.role === 'assistant' && m.content === doneContent);
@@ -374,6 +479,15 @@ export default function ChatPanel({
               setCurrentToolInfo(null);
             }
 
+            // Delegations get a nested card instead of plain tool rows
+            if (
+              event.toolName === 'spawn_agent' &&
+              (event.type === 'tool_start' || event.type === 'tool_end' || event.type === 'tool_error')
+            ) {
+              setTimeline((t) => applySubagentToolEvent(t, event));
+              continue;
+            }
+
             setTimeline((t) => {
               if (event.type === 'message') {
                 const exists = t.some((item) => item.type === 'message' && item.role === event.role && item.content === event.content);
@@ -409,6 +523,7 @@ export default function ChatPanel({
     } finally {
       setLoading(false);
       setStreamingText('');
+      setStreamingReasoning('');
       setPendingQuestion(null);
       setCurrentToolInfo(null);
       updateStatus(sawError ? 'error' : 'done');
@@ -608,7 +723,7 @@ export default function ChatPanel({
 
     const slash = parseSlashCommand(text);
     if (slash) {
-      const command = findSlashCommand(slash.name);
+      const command = findSlashCommand(slash.name, customCommands.length ? [...SLASH_COMMANDS, ...customCommands] : SLASH_COMMANDS);
       setInput('');
 
       if (!command) {
@@ -777,8 +892,8 @@ export default function ChatPanel({
       <div className="chat-timeline">
           {timeline.length === 0 && !loading && (
             <div className="chat-empty-state">
-              <h2 className="chat-empty-title">What should we build?</h2>
-              <p className="chat-empty-desc">Describe a feature, a bug, or a question about the code.</p>
+              <h2 className="chat-empty-title">What should we build or solve?</h2>
+              <p className="chat-empty-desc">Describe a feature, a bug, a question about the code — or a problem to work through: a derivation, a simulation, a data analysis.</p>
             </div>
           )}
           {timeline.map((item, i) => {
@@ -817,7 +932,7 @@ export default function ChatPanel({
                     {isUser ? (
                       <span className="msg-text">{textContent}</span>
                     ) : (
-                      <Markdown text={textContent ?? ''} />
+                      <Markdown text={textContent ?? ''} projectId={projectId} />
                     )}
                   </div>
                 </div>
@@ -829,8 +944,18 @@ export default function ChatPanel({
             if (item.type === 'skills_report') {
               return <SkillsReport key={i} skills={(item.skills as SkillsReportItem[]) ?? []} />;
             }
-            return <TimelineEvent key={i} event={item} />;
+            return <TimelineEvent key={i} event={item} projectId={projectId} />;
           })}
+
+          {/* Live thinking from reasoning models */}
+          {streamingReasoning && (
+            <div className="timeline-msg timeline-msg--assistant">
+              <div className="msg-bubble reasoning-live">
+                <span className="reasoning-live-label">Thinking</span>
+                <span className="reasoning-live-text">{streamingReasoning.slice(-600)}</span>
+              </div>
+            </div>
+          )}
 
           {/* Live token stream from the current step */}
           {streamingText && (
@@ -1135,6 +1260,7 @@ export default function ChatPanel({
         </div>
 
         <MessageInput
+          extraCommands={customCommands}
           value={input}
           onChange={setInput}
           onSend={(attachments) => send(attachments)}
