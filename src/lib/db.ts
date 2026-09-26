@@ -338,6 +338,15 @@ export const messageDb = {
       .run(projectId);
   },
 
+  /** Highest seq already stored for a turn (-1 when none), so batches
+   *  persisted at different times keep their order. */
+  getMaxSeq(projectId: string, turnIndex: number): number {
+    const row = getDb()
+      .prepare('SELECT MAX(seq) as max_seq FROM messages WHERE project_id = ? AND turn_index = ?')
+      .get(projectId, turnIndex) as { max_seq: number | null };
+    return row?.max_seq ?? -1;
+  },
+
   getLatestTurnIndex(projectId: string): number {
     const row = getDb()
       .prepare(

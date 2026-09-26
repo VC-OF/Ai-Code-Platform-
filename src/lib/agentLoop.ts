@@ -159,8 +159,10 @@ export async function runAgentLoop(
     .slice(0, 1 + (opts.persistedCount ?? 0))
     .forEach((m) => alreadyPersisted.add(m));
 
-  // Save what this turn produced when it ends early (cancel / error) so a
-  // follow-up "continue" still sees the work done so far
+  // Save what this turn has produced so far: called after every step and
+  // when the turn ends early (cancel / error), so a server restart mid-turn
+  // loses at most the step in flight and a follow-up "continue" sees the
+  // work done so far
   const persistPartial = () => {
     if (nested) return; // a sub-agent's transcript is never chat history
     try {
@@ -709,13 +711,16 @@ export async function runAgentLoop(
           // Validate args with Zod
           const validation = validateTool(toolName, toolArgs);
           if (!validation.ok) {
+            // Echo the argument keys so the model (and the timeline) can see
+            // which shape was sent, not just which field was missing
+            const sent = `Sent keys: ${Object.keys(toolArgs).join(', ') || '(none)'}`;
             messages.push({
               role:        'tool' as const,
               tool_call_id: toolCallId,
               tool_name:   toolName,
-              content:     `Validation error: ${validation.error}`,
+              content:     `Validation error: ${validation.error}. ${sent}. Re-issue the call with the documented parameters.`,
             } as ContextMessage);
-            emitter.toolError(stepIndex, toolCallId, toolName, validation.error!, true);
+            emitter.toolError(stepIndex, toolCallId, toolName, `${validation.error} (${sent})`, true);
             continue;
           }
 
@@ -1087,6 +1092,9 @@ export async function runAgentLoop(
 
         for (const img of attachedImages) messages.push(img);
 
+        // Every tool call in this batch is answered — checkpoint the transcript
+        persistPartial();
+
         emitter.status(stepIndex, 'planning');
 
       } catch (err) {
@@ -1358,10 +1366,14 @@ function persistMessages(
   messages: ContextMessage[],
   turnIndex: number
 ): void {
+  // The turn is saved in several batches (one per step) — continue the
+  // sequence so the history reads back in order
+  const base = messageDb.getMaxSeq(projectId, turnIndex) + 1;
   const rows = messages
     .filter((m) => m.role !== 'system')
-    .map((m) => ({
+    .map((m, i) => ({
       id:           crypto.randomUUID(),
+      seq:          base + i,
       project_id:   projectId,
       role:         m.role,
       // Multimodal parts (view_image attachments) are stored as JSON
