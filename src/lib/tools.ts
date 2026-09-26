@@ -552,6 +552,8 @@ export interface TurnContext {
   hasEdits: boolean;
   hasRunLint: boolean;
   hasRunTests: boolean;
+  /** Outcome of the most recent run_lint / run_tests / run_notebook this turn */
+  lastVerification?: { tool: string; passed: boolean; summary: string };
 }
 
 export function createTurnContext(): TurnContext {

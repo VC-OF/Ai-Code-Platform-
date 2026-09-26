@@ -48,6 +48,7 @@ const MAX_TRUNCATIONS = 3;         // consecutive cut-off replies before giving 
 const MAX_LLM_RETRIES = 5;         // transient model/provider failures retried per step (2s…32s backoff)
 const MAX_CONTEXT_RETRIES = 3;     // "prompt too long" → compact and retry, this many times per step
 const MAX_VERIFY_NUDGES = 2;       // times we ask for run_lint/run_tests before letting the turn end
+const MAX_FAILED_VERIFY_NUDGES = 1; // times we challenge a "done" right after a failed lint/test run
 const PLAN_INSTRUCTION =
   '[Planning step — tools are disabled for this reply.] Write a short numbered plan (at most ~10 lines) of the ' +
   'steps and files you will create or change to fulfil the request above. Do not write code, do not simulate ' +
@@ -294,6 +295,7 @@ export async function runAgentLoop(
 
     let hitTimeLimit = false;
     let verifyNudges = 0;
+    let failedVerifyNudges = 0;
     let contextRetries = 0;
 
     /**
@@ -647,6 +649,26 @@ export async function runAgentLoop(
             continue; // Force another step
           }
 
+          // The last verification failed and the reply does not own up to it:
+          // a "done" here would be the filtered-grep kind of success
+          if (ctx.lastVerification && !ctx.lastVerification.passed && failedVerifyNudges < MAX_FAILED_VERIFY_NUDGES &&
+              !/unresolved|still fail|not fixed|could not fix|remaining (error|failure)/i.test(textContent)) {
+            failedVerifyNudges++;
+            messages.push({ role: 'assistant', content: textContent || null } as ContextMessage);
+            messages.push({
+              role: 'user' as const,
+              content:
+                `⚠️ Your most recent verification failed: ${ctx.lastVerification.tool} — ${ctx.lastVerification.summary}. ` +
+                'Fix the problem and re-run it until it passes, or state explicitly that it is unresolved and why. ' +
+                'Do not judge a build or test suite by a filtered or partial command.',
+            } as ContextMessage);
+            emitter.toolError(
+              stepIndex, `verify-fail-${stepIndex}`, ctx.lastVerification.tool,
+              `Turn tried to finish after a failed ${ctx.lastVerification.tool}; asking the model to fix or acknowledge it`, true
+            );
+            continue;
+          }
+
           // Stop hooks: exit 2 sends the agent back to work with the feedback
           if (hooks.hooks.length > 0 && stopHookNudges < MAX_STOP_HOOK_NUDGES) {
             const stopResults = await runHooks(
@@ -997,6 +1019,14 @@ export async function runAgentLoop(
                 tasks: toolResult.structured.tasks,
                 ts: Date.now(),
               });
+            }
+
+            // Remember the latest verdict: finishing right after a failed
+            // check gets challenged below
+            if ((toolName === 'run_lint' || toolName === 'run_tests' || toolName === 'run_notebook') &&
+                toolResult.structured && typeof toolResult.structured.passed === 'boolean' &&
+                !toolResult.structured.skipped) {
+              ctx.lastVerification = { tool: toolName, passed: toolResult.structured.passed, summary: toolResult.summary };
             }
 
             if (toolName === 'run_lint')  {
