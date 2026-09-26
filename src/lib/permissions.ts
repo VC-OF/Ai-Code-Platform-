@@ -23,6 +23,8 @@ export const APPROVAL_REQUIRED_TOOLS = [
   'multi_edit',
   'run_background',
   'kill_job',
+  'github_create_pr',
+  'github_comment',
 ] as const;
 
 /** Binaries run_command may invoke on the host (local sandbox mode). */

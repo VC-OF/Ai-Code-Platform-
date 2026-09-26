@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getProjects, createProject, createBuildModeProject, deleteProject } from "@/lib/projects";
+import { ensureSchedulerStarted } from "@/lib/scheduler";
 
 export async function GET(req: NextRequest) {
+  // The UI lists projects on load — a cheap place to start the cron runner
+  ensureSchedulerStarted();
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");

@@ -85,7 +85,8 @@ export const SLASH_COMMANDS: SlashCommandDefinition[] = [
   { name: 'skills', aliases: ['skill'], group: 'Agent', kind: 'local', description: 'List active skills' },
   { name: 'mcp', group: 'Agent', kind: 'local', description: 'List MCP servers, tools and connection status' },
   { name: 'hooks', group: 'Agent', kind: 'local', description: 'Show hooks configured in .claude/settings.json' },
-  { name: 'plugin', aliases: ['plugins'], group: 'Agent', kind: 'local', description: 'List installed extensions (MCP servers and skills)' },
+  { name: 'plugin', aliases: ['plugins'], group: 'Agent', kind: 'local', args: '[list | install <https-git-url|path> | remove <name>]', description: 'List, install or remove plugins (skills, commands, MCP servers)' },
+  { name: 'schedule', aliases: ['schedules', 'cron'], group: 'Agent', kind: 'local', args: '[list | add "<cron>" <prompt> | remove|pause|resume <id>]', description: 'Run the agent on a cron schedule' },
   { name: 'tasks', aliases: ['bashes'], group: 'Agent', kind: 'local', description: 'Show running background work' },
   { name: 'docker', aliases: ['container', 'containers'], group: 'Agent', kind: 'local', description: 'Inspect Docker engine and containers' },
   { name: 'plan', group: 'Agent', kind: 'prompt', args: '<goal>', argsRequired: true, description: 'Create or continue an implementation plan',
@@ -339,6 +340,68 @@ export function normalizeExportFilename(name: string, fallback: string): string 
   const cleaned = name.trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/^\.+/, '');
   if (!cleaned) return fallback;
   return /\.(md|markdown)$/i.test(cleaned) ? cleaned : `${cleaned}.md`;
+}
+
+// ─── /schedule and /plugin argument parsing ──────────────────────────────────
+
+export type ScheduleCommand =
+  | { action: 'list' }
+  | { action: 'add'; cron: string; prompt: string }
+  | { action: 'remove' | 'pause' | 'resume'; id: string }
+  | { action: 'error'; message: string };
+
+export const SCHEDULE_USAGE =
+  'Usage: `/schedule list`, `/schedule add "<cron>" <prompt>` (e.g. `/schedule add "0 9 * * 1-5" run the tests and fix failures`), `/schedule remove|pause|resume <id>`.';
+
+export function parseScheduleArgs(args: string): ScheduleCommand {
+  const trimmed = args.trim();
+  if (!trimmed || /^(list|ls)$/i.test(trimmed)) return { action: 'list' };
+  const [verbRaw, ...rest] = trimmed.split(/\s+/);
+  const verb = verbRaw.toLowerCase();
+  const remainder = trimmed.slice(verbRaw.length).trim();
+  if (verb === 'add' || verb === 'new' || verb === 'create') {
+    const m = remainder.match(/^(["'])(.+?)\1\s+([\s\S]+)$/);
+    if (m) return { action: 'add', cron: m[2].trim(), prompt: m[3].trim() };
+    // Unquoted: the first five words are the cron fields
+    const words = remainder.split(/\s+/);
+    if (words.length > 5) return { action: 'add', cron: words.slice(0, 5).join(' '), prompt: words.slice(5).join(' ') };
+    return { action: 'error', message: SCHEDULE_USAGE };
+  }
+  if (['remove', 'rm', 'delete', 'pause', 'resume'].includes(verb)) {
+    const id = rest[0];
+    if (!id || rest.length > 1 || !/^[\w-]{1,64}$/.test(id)) return { action: 'error', message: SCHEDULE_USAGE };
+    const action = verb === 'pause' ? 'pause' : verb === 'resume' ? 'resume' : 'remove';
+    return { action, id };
+  }
+  return { action: 'error', message: SCHEDULE_USAGE };
+}
+
+export type PluginCommand =
+  | { action: 'list' }
+  | { action: 'install'; source: string; name?: string }
+  | { action: 'remove'; name: string }
+  | { action: 'error'; message: string };
+
+export const PLUGIN_USAGE =
+  'Usage: `/plugin list`, `/plugin install <https-git-url | local path> [--name <name>]`, `/plugin remove <name>`.';
+
+export function parsePluginArgs(args: string): PluginCommand {
+  const words = args.trim().match(/"[^"]*"|'[^']*'|\S+/g)?.map((w) => w.replace(/^(["'])(.*)\1$/, '$2')) ?? [];
+  if (words.length === 0 || /^(list|ls)$/i.test(words[0])) return { action: 'list' };
+  const verb = words[0].toLowerCase();
+  if (verb === 'install' || verb === 'add') {
+    const rest = words.slice(1);
+    const nameIdx = rest.indexOf('--name');
+    const name = nameIdx >= 0 ? rest[nameIdx + 1] : undefined;
+    const positional = nameIdx >= 0 ? [...rest.slice(0, nameIdx), ...rest.slice(nameIdx + 2)] : rest;
+    if (positional.length !== 1 || (nameIdx >= 0 && !name)) return { action: 'error', message: PLUGIN_USAGE };
+    return { action: 'install', source: positional[0], ...(name ? { name } : {}) };
+  }
+  if (verb === 'remove' || verb === 'uninstall' || verb === 'rm') {
+    if (words.length !== 2) return { action: 'error', message: PLUGIN_USAGE };
+    return { action: 'remove', name: words[1] };
+  }
+  return { action: 'error', message: PLUGIN_USAGE };
 }
 
 export function buildIssueUrl(title: string): string {

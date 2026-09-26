@@ -3,6 +3,7 @@ import { isOutputStyle } from '@/lib/outputStyle';
 import { agentManager } from '@/lib/agentManager';
 import { projectDb } from '@/lib/db';
 import { workspaceLocks } from '@/lib/workspaceLock';
+import { ensureSchedulerStarted } from '@/lib/scheduler';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300; // 5 min Vercel timeout
@@ -10,6 +11,7 @@ export const maxDuration = 300; // 5 min Vercel timeout
 // ─── POST /api/chat ───────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   let projectId = '';
+  ensureSchedulerStarted();
 
   try {
     const body = await req.json();

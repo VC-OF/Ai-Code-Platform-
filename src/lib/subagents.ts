@@ -28,6 +28,7 @@ const READ_ONLY_TOOLS = new Set([
   'job_output', 'list_jobs',
   'read_preview_logs', 'fetch_preview', 'check_preview', 'docker_status',
   'browser_open', 'browser_snapshot', 'browser_scroll', 'browser_console', 'browser_wait', 'browser_close',
+  'github_list_prs', 'github_get_pr', 'github_list_issues', 'github_get_issue',
 ]);
 
 const VERIFY_TOOLS = new Set([
@@ -37,7 +38,7 @@ const VERIFY_TOOLS = new Set([
 ]);
 
 /** Never available inside a sub-agent, whatever its kind. */
-export const SUBAGENT_EXCLUDED_TOOLS = new Set(['spawn_agent', 'ask_user', 'update_plan', 'exit_plan_mode', 'deploy_app', 'save_memory']);
+export const SUBAGENT_EXCLUDED_TOOLS = new Set(['spawn_agent', 'ask_user', 'update_plan', 'exit_plan_mode', 'deploy_app', 'save_memory', 'github_create_pr', 'github_comment']);
 
 interface KindSpec {
   summary: string;

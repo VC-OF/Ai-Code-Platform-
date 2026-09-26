@@ -141,7 +141,23 @@ const SCHEMA = `
     updated_at  INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
   );
 
+  -- Scheduled agent runs (cron, evaluated in server-local time)
+  CREATE TABLE IF NOT EXISTS schedules (
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    cron        TEXT NOT NULL,
+    prompt      TEXT NOT NULL,
+    model       TEXT,
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    last_run_at INTEGER,
+    next_run_at INTEGER,
+    created_at  INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
+  );
+
   -- Indexes
+  CREATE INDEX IF NOT EXISTS idx_schedules_due
+    ON schedules(enabled, next_run_at);
+
   CREATE INDEX IF NOT EXISTS idx_messages_project
     ON messages(project_id, turn_index, created_at);
 
@@ -605,6 +621,64 @@ export const toolLogDb = {
         success_count: number;
         avg_duration_ms: number;
       }[];
+  },
+};
+
+// ─── Schedule queries ─────────────────────────────────────────────────────────
+export interface DbSchedule {
+  id: string;
+  project_id: string;
+  cron: string;
+  prompt: string;
+  model: string | null;
+  enabled: number;
+  last_run_at: number | null;
+  next_run_at: number | null;
+  created_at: number;
+}
+
+export const scheduleDb = {
+  list(projectId?: string): DbSchedule[] {
+    const db = getDb();
+    return (projectId
+      ? db.prepare('SELECT * FROM schedules WHERE project_id = ? ORDER BY created_at ASC').all(projectId)
+      : db.prepare('SELECT * FROM schedules ORDER BY created_at ASC').all()) as DbSchedule[];
+  },
+
+  get(id: string): DbSchedule | undefined {
+    return getDb().prepare('SELECT * FROM schedules WHERE id = ?').get(id) as DbSchedule | undefined;
+  },
+
+  /** Enabled schedules whose next run is at or before `now`. */
+  due(now: number): DbSchedule[] {
+    return getDb()
+      .prepare('SELECT * FROM schedules WHERE enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ? ORDER BY next_run_at ASC')
+      .all(now) as DbSchedule[];
+  },
+
+  create(s: Pick<DbSchedule, 'id' | 'project_id' | 'cron' | 'prompt' | 'model' | 'next_run_at'>): void {
+    getDb()
+      .prepare(`
+        INSERT INTO schedules (id, project_id, cron, prompt, model, enabled, last_run_at, next_run_at, created_at)
+        VALUES (@id, @project_id, @cron, @prompt, @model, 1, NULL, @next_run_at, @created_at)
+      `)
+      .run({ ...s, created_at: Date.now() });
+  },
+
+  setEnabled(id: string, enabled: boolean, nextRunAt: number | null): boolean {
+    return getDb()
+      .prepare('UPDATE schedules SET enabled = ?, next_run_at = ? WHERE id = ?')
+      .run(enabled ? 1 : 0, nextRunAt, id).changes > 0;
+  },
+
+  markRun(id: string, lastRunAt: number, nextRunAt: number | null): void {
+    getDb()
+      .prepare('UPDATE schedules SET last_run_at = ?, next_run_at = ? WHERE id = ?')
+      .run(lastRunAt, nextRunAt, id);
+  },
+
+  delete(id: string): boolean {
+    return getDb().prepare('DELETE FROM schedules WHERE id = ?').run(id).changes > 0;
   },
 };
 

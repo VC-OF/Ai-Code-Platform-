@@ -53,11 +53,40 @@ function configPath(): string {
   );
 }
 
+/**
+ * Stdio servers from installed plugins' `.mcp.json`, named
+ * `<plugin>-<server>`. `${CLAUDE_PLUGIN_ROOT}` in command/args/env is
+ * replaced with the plugin folder (Claude Code convention).
+ */
+export async function loadPluginMcpServers(): Promise<Record<string, McpServerConfig>> {
+  const { pluginRoots, readPluginMcpServers } = await import("./plugins");
+  const out: Record<string, McpServerConfig> = {};
+  for (const plugin of await pluginRoots()) {
+    const sub = (s: string) => s.split("${CLAUDE_PLUGIN_ROOT}").join(plugin.root);
+    for (const [server, cfg] of Object.entries(await readPluginMcpServers(plugin.root))) {
+      if (!cfg || typeof cfg.command !== "string") continue; // stdio only
+      const name = `${plugin.name}-${server}`.replace(/[^a-zA-Z0-9-]+/g, "-");
+      const env: Record<string, string> = {};
+      if (cfg.env && typeof cfg.env === "object") {
+        for (const [k, v] of Object.entries(cfg.env as Record<string, unknown>)) env[k] = sub(String(v));
+      }
+      out[name] = {
+        command: sub(cfg.command),
+        args: Array.isArray(cfg.args) ? cfg.args.map((a) => sub(String(a))) : [],
+        env,
+      };
+    }
+  }
+  return out;
+}
+
 export async function loadMcpConfig(): Promise<Record<string, McpServerConfig>> {
+  const pluginServers = await loadPluginMcpServers().catch(() => ({}));
   try {
     const raw = await fs.readFile(configPath(), "utf8");
     const parsed = JSON.parse(raw);
-    const servers: Record<string, McpServerConfig> = parsed?.servers ?? {};
+    // Explicit config wins over a plugin server with the same name
+    const servers: Record<string, McpServerConfig> = { ...pluginServers, ...(parsed?.servers ?? {}) };
     // Underscores would break mcp_<server>_<tool> demangling
     for (const name of Object.keys(servers)) {
       if (!/^[a-zA-Z0-9-]+$/.test(name)) {
@@ -67,7 +96,8 @@ export async function loadMcpConfig(): Promise<Record<string, McpServerConfig>> 
     }
     return servers;
   } catch {
-    return {};
+    // No (or unreadable) config file — plugin servers still apply
+    return pluginServers;
   }
 }
 

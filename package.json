@@ -2,7 +2,11 @@
   "name": "ai-code-platform",
   "version": "0.1.0",
   "private": true,
+  "bin": {
+    "open-code": "bin/open-code.mjs"
+  },
   "scripts": {
+    "cli": "node bin/open-code.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

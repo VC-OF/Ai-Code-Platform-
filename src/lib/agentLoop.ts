@@ -1549,6 +1549,9 @@ function toolStatusFor(toolName: string): AgentStatus {
     job_output:   'reading',
     kill_job:     'running',
     list_jobs:    'reading',
+    github_create_pr: 'running', github_comment: 'running',
+    github_list_prs: 'reading', github_get_pr: 'reading',
+    github_list_issues: 'reading', github_get_issue: 'reading',
   };
   return map[toolName] ?? 'planning';
 }
