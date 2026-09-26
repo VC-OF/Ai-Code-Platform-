@@ -1291,6 +1291,8 @@ function toolStatusFor(toolName: string): AgentStatus {
     grep_files:   'reading',
     web_search:   'reading',
     fetch_url:    'reading',
+    lsp_definition: 'reading', lsp_references: 'reading', lsp_hover: 'reading',
+    lsp_symbols: 'reading', lsp_diagnostics: 'reading',
     create_file:  'writing',
     append_file:  'writing',
     edit_file:    'writing',

@@ -24,6 +24,7 @@ const READ_ONLY_TOOLS = new Set([
   'read_file', 'list_files', 'glob_files', 'grep_files', 'load_skill',
   'web_search', 'fetch_url', 'view_image', 'query_data', 'review_changes',
   'read_preview_logs', 'fetch_preview', 'check_preview', 'docker_status',
+  'lsp_definition', 'lsp_references', 'lsp_hover', 'lsp_symbols', 'lsp_diagnostics',
   'browser_open', 'browser_snapshot', 'browser_scroll', 'browser_console', 'browser_wait', 'browser_close',
 ]);
 
