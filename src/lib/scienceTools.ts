@@ -36,6 +36,8 @@ export interface ScienceToolResult {
   /** data: URL of an image to attach to the conversation (view_image).
    *  The agent loop attaches it only when the model accepts images. */
   attachImage?: string;
+  /** Untruncated output; executeTool spills it to .open-code/outputs/ when `output` was cut */
+  fullOutput?: string;
 }
 
 /** The subset of tools.ts' TurnContext these tools touch. */

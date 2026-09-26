@@ -29,6 +29,14 @@ export function toolLabel(toolName: string | undefined, args: Record<string, unk
     case 'web_search': return `Searching the web: ${s(a.query, 80)}`;
     case 'fetch_url': return `Reading ${s(a.url, 90)}`;
     case 'exit_plan_mode': return 'Presenting plan for approval';
+    case 'multi_edit': {
+      const n = Array.isArray(a.edits) ? a.edits.length : 0;
+      return `Applying ${n} edit${n === 1 ? '' : 's'} to ${s(a.path, 70)}`;
+    }
+    case 'run_background': return `Starting background job: ${s(a.command, 80)}`;
+    case 'job_output': return `Checking job ${s(a.job_id, 20)}${a.wait_seconds ? ` (waiting up to ${s(a.wait_seconds, 4)}s)` : ''}`;
+    case 'kill_job': return `Stopping job ${s(a.job_id, 20)}`;
+    case 'list_jobs': return 'Listing background jobs';
     default: return null;
   }
 }

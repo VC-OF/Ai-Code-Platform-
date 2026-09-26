@@ -23,13 +23,14 @@ function envInt(name: string, fallback: number): number {
 const READ_ONLY_TOOLS = new Set([
   'read_file', 'list_files', 'glob_files', 'grep_files', 'load_skill',
   'web_search', 'fetch_url', 'view_image', 'query_data', 'review_changes',
+  'job_output', 'list_jobs',
   'read_preview_logs', 'fetch_preview', 'check_preview', 'docker_status',
   'browser_open', 'browser_snapshot', 'browser_scroll', 'browser_console', 'browser_wait', 'browser_close',
 ]);
 
 const VERIFY_TOOLS = new Set([
   'run_lint', 'run_tests', 'run_command', 'execute_code', 'run_notebook', 'docker_run',
-  'http_request', 'plot_data',
+  'http_request', 'plot_data', 'run_background', 'kill_job',
   'browser_click', 'browser_type', 'browser_press', 'browser_select', 'browser_screenshot',
 ]);
 

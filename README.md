@@ -72,8 +72,9 @@ disconnects; reconnecting clients get all events replayed):
 6. Persist this turn's messages to SQLite and take a final checkpoint.
 
 Tools: `list_files`, `read_file` (renders `.ipynb` notebooks as cells),
-`create_file`, `edit_file` (unique-match enforced, fresh-read required),
-`replace_lines`, `delete_file`, `grep_files` / `glob_files` (pure Node —
+`create_file`, `edit_file` (unique-match enforced unless `replace_all`,
+fresh-read required), `multi_edit` (several edits to one file, applied in
+order and atomically), `replace_lines`, `delete_file`, `grep_files` / `glob_files` (pure Node —
 portable), `web_search` / `fetch_url` (SSRF-guarded, so the agent can read
 real docs), `generate_image` (free Flux via Pollinations/HF, saved into the
 workspace), `run_command` (allowlisted), `run_lint`, `run_tests`,
@@ -85,7 +86,15 @@ public API), `query_data` (read-only SQL over CSV/JSON/SQLite files),
 `plot_data` (declarative charts to PNG), `review_changes` (the turn's diff),
 `spawn_agent` (parallel sub-agents with their own context window),
 `update_plan`, `ask_user`, `create_artifact`, `deploy_app`, the `browser_*`
-tools and `docker_run`. Hooks from `.claude/settings.json` run around every
+tools, `docker_run`, and background jobs: `run_background` (long builds,
+test suites or servers under the `run_command` sandbox rules; survive across
+turns, max 8 per project, logged to `.open-code/jobs/<id>.log`),
+`job_output` (new lines, status, exit code; can wait up to 120s),
+`kill_job` and `list_jobs`. When a tool's output is truncated, the full text
+is saved to `.open-code/outputs/` (newest 50 kept) and the path is appended
+for `read_file` / `grep_files`. Several read-only calls in one model reply
+(`read_file`, `grep_files`, `web_search`, …) run concurrently; results keep
+call order. Hooks from `.claude/settings.json` run around every
 tool call and at the end of the turn (see below).
 
 ## 2. Provider-agnostic LLM integration

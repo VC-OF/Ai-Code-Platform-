@@ -732,6 +732,156 @@ export async function runAgentLoop(
         // between tool results would break the tool_calls/tool pairing
         const attachedImages: ContextMessage[] = [];
 
+        // Several calls that are all read-only run concurrently; results
+        // still land in call order (placeholders are filled after the loop)
+        const parallelBatch = toolCalls.length > 1 &&
+          toolCalls.every((tc) => PARALLEL_SAFE_TOOLS.has(tc.function.name));
+        const pendingReads: {
+          msg: ContextMessage;
+          toolName: string;
+          toolCallId: string;
+          toolArgs: Record<string, unknown>;
+          promise: Promise<{ result: Awaited<ReturnType<typeof executeTool>>; duration: number }>;
+        }[] = [];
+
+        // Post-processing shared by sequential and parallel execution:
+        // logging, events, verification bookkeeping, PostToolUse hooks
+        const finishToolResult = async (
+          toolName: string, toolCallId: string, toolArgs: Record<string, unknown>,
+          toolResult: Awaited<ReturnType<typeof executeTool>>, toolDuration: number
+        ): Promise<string> => {
+          // Log to DB
+          toolLogDb.insert({
+            project_id:  projectId,
+            tool_name:   toolName,
+            args:        toolArgs,
+            result:      { success: toolResult.success, summary: toolResult.summary },
+            success:     toolResult.success,
+            duration_ms: toolDuration,
+            turn_index:  turnIndex,
+          });
+
+          // Any verification attempt counts (skipped "no tooling" or failed
+          // runs included) so the finish gate can never loop on it
+          if (toolName === 'run_lint') ctx.hasRunLint = true;
+          if (toolName === 'run_tests') ctx.hasRunTests = true;
+
+          if (toolResult.success) {
+            emitter.toolEnd(
+              stepIndex,
+              toolCallId,
+              toolName,
+              toolDuration,
+              true,
+              toolResult.summary,
+              toolResult.extra
+            );
+
+            // Track changed files
+            if (toolResult.changedFile) {
+              if (!filesChanged.includes(toolResult.changedFile)) {
+                filesChanged.push(toolResult.changedFile);
+              }
+              ctx.hasEdits = true;
+            }
+
+            if (toolName === 'update_plan' && toolResult.structured?.tasks) {
+              emitter.emit({
+                type: 'plan_update',
+                stepIndex,
+                tasks: toolResult.structured.tasks,
+                ts: Date.now(),
+              });
+            }
+
+            // Remember the latest verdict: finishing right after a failed
+            // check gets challenged below
+            if ((toolName === 'run_lint' || toolName === 'run_tests' || toolName === 'run_notebook') &&
+                toolResult.structured && typeof toolResult.structured.passed === 'boolean' &&
+                !toolResult.structured.skipped) {
+              ctx.lastVerification = { tool: toolName, passed: toolResult.structured.passed, summary: toolResult.summary };
+            }
+
+            if (toolName === 'run_lint')  {
+              ctx.hasRunLint  = true;
+              if (toolResult.structured) {
+                emitter.emit({
+                  type:       'verification',
+                  stepIndex,
+                  tool:       'run_lint',
+                  passed:     toolResult.structured.passed,
+                  errorCount: toolResult.structured.errorCount ?? 0,
+                  warningCount: toolResult.structured.warningCount ?? 0,
+                  summary:    toolResult.summary,
+                  ts:         Date.now(),
+                });
+              }
+            }
+
+            if (toolName === 'run_tests') {
+              ctx.hasRunTests = true;
+              if (toolResult.structured) {
+                emitter.emit({
+                  type:       'verification',
+                  stepIndex,
+                  tool:       'run_tests',
+                  passed:     toolResult.structured.passed,
+                  errorCount: toolResult.structured.failed ?? 0,
+                  warningCount: 0,
+                  summary:    toolResult.summary,
+                  ts:         Date.now(),
+                });
+              }
+            }
+
+          } else {
+            emitter.toolError(
+              stepIndex,
+              toolCallId,
+              toolName,
+              // Failed commands carry their exit info in summary, not error
+              toolResult.error ?? toolResult.summary ?? 'Unknown error',
+              true,
+              toolResult.suggestion
+            );
+          }
+
+          let toolContent = toolResult.output;
+
+          // PostToolUse hooks: exit 2 feedback rides along with the tool result
+          if (hooks.hooks.length > 0) {
+            const post = await runHooks(
+              hooks,
+              { event: 'PostToolUse', projectId, workspace: workspaceRoot, toolName, toolInput: toolArgs, toolOutput: toolResult.output },
+              { signal: cancellation.token.signal }
+            );
+            emitHookResults(emitter, stepIndex, post);
+            const verdict = summarizeHookResults(post);
+            if (verdict.blocked) toolContent += `\n\n[PostToolUse hook feedback (exit 2)]\n${verdict.reason}`;
+          }
+
+          // view_image: multimodal models get the picture itself
+          if (toolResult.attachImage) {
+            if (supportsVision(llmConfig.model)) {
+              toolContent += '\nThe image is attached to the conversation below — inspect it before drawing conclusions.';
+              attachedImages.push({
+                role: 'user',
+                content: [
+                  { type: 'text', text: `[Image ${String(toolArgs.path ?? '')} attached by view_image]` },
+                  { type: 'image_url', image_url: { url: toolResult.attachImage } },
+                ],
+              } as ContextMessage);
+            } else {
+              toolContent +=
+                `\nThe current model (${llmConfig.model}) is not marked as multimodal, so the image was not attached ` +
+                '(set LLM_VISION=1 if it does accept images). Judge the result from numbers instead — e.g. print ' +
+                'statistics or sampled values with execute_code.';
+            }
+          }
+
+          return toolContent;
+        };
+
         for (const tc of toolCalls) {
           cancellation.token.throwIfCancelled();
 
@@ -929,6 +1079,7 @@ Stay in plan mode, refine the plan, and call exit_plan_mode again.`;
             toolName === 'append_file' ||
             toolName === 'delete_file' ||
             toolName === 'replace_lines' ||
+            toolName === 'multi_edit' ||
             toolName === 'notebook_edit' ||
             toolName === 'execute_code' ||
             (toolName === 'spawn_agent' && subagentEdits(String(toolArgs.kind)))
@@ -1060,143 +1211,38 @@ Stay in plan mode, refine the plan, and call exit_plan_mode again.`;
 
           const toolStart = Date.now();
           toolsExecuted++;
-          const toolResult = await executeTool(
+          const execution = executeTool(
             toolName,
             toolArgs,
             workspaceRoot,
             ctx,
             cancellation.token.signal
           );
+
+          // All-read-only batch: start now, finish (in call order) after the loop
+          if (parallelBatch) {
+            const placeholder = {
+              role: 'tool' as const,
+              tool_call_id: toolCallId,
+              tool_name: toolName,
+              content: '',
+            } as ContextMessage;
+            messages.push(placeholder);
+            pendingReads.push({
+              msg: placeholder, toolName, toolCallId, toolArgs,
+              promise: execution
+                .catch((err: unknown) => {
+                  const msg = err instanceof Error ? err.message : String(err);
+                  return { success: false, output: `Error: ${msg}`, summary: `Tool error: ${msg}`, error: msg };
+                })
+                .then((result) => ({ result, duration: Date.now() - toolStart })),
+            });
+            continue;
+          }
+
+          const toolResult = await execution;
           const toolDuration = Date.now() - toolStart;
-
-          // Log to DB
-          toolLogDb.insert({
-            project_id:  projectId,
-            tool_name:   toolName,
-            args:        toolArgs,
-            result:      { success: toolResult.success, summary: toolResult.summary },
-            success:     toolResult.success,
-            duration_ms: toolDuration,
-            turn_index:  turnIndex,
-          });
-
-          // Any verification attempt counts (skipped "no tooling" or failed
-          // runs included) so the finish gate can never loop on it
-          if (toolName === 'run_lint') ctx.hasRunLint = true;
-          if (toolName === 'run_tests') ctx.hasRunTests = true;
-
-          if (toolResult.success) {
-            emitter.toolEnd(
-              stepIndex,
-              toolCallId,
-              toolName,
-              toolDuration,
-              true,
-              toolResult.summary,
-              toolResult.extra
-            );
-
-            // Track changed files
-            if (toolResult.changedFile) {
-              if (!filesChanged.includes(toolResult.changedFile)) {
-                filesChanged.push(toolResult.changedFile);
-              }
-              ctx.hasEdits = true;
-            }
-
-            if (toolName === 'update_plan' && toolResult.structured?.tasks) {
-              emitter.emit({
-                type: 'plan_update',
-                stepIndex,
-                tasks: toolResult.structured.tasks,
-                ts: Date.now(),
-              });
-            }
-
-            // Remember the latest verdict: finishing right after a failed
-            // check gets challenged below
-            if ((toolName === 'run_lint' || toolName === 'run_tests' || toolName === 'run_notebook') &&
-                toolResult.structured && typeof toolResult.structured.passed === 'boolean' &&
-                !toolResult.structured.skipped) {
-              ctx.lastVerification = { tool: toolName, passed: toolResult.structured.passed, summary: toolResult.summary };
-            }
-
-            if (toolName === 'run_lint')  {
-              ctx.hasRunLint  = true;
-              if (toolResult.structured) {
-                emitter.emit({
-                  type:       'verification',
-                  stepIndex,
-                  tool:       'run_lint',
-                  passed:     toolResult.structured.passed,
-                  errorCount: toolResult.structured.errorCount ?? 0,
-                  warningCount: toolResult.structured.warningCount ?? 0,
-                  summary:    toolResult.summary,
-                  ts:         Date.now(),
-                });
-              }
-            }
-
-            if (toolName === 'run_tests') {
-              ctx.hasRunTests = true;
-              if (toolResult.structured) {
-                emitter.emit({
-                  type:       'verification',
-                  stepIndex,
-                  tool:       'run_tests',
-                  passed:     toolResult.structured.passed,
-                  errorCount: toolResult.structured.failed ?? 0,
-                  warningCount: 0,
-                  summary:    toolResult.summary,
-                  ts:         Date.now(),
-                });
-              }
-            }
-
-          } else {
-            emitter.toolError(
-              stepIndex,
-              toolCallId,
-              toolName,
-              // Failed commands carry their exit info in summary, not error
-              toolResult.error ?? toolResult.summary ?? 'Unknown error',
-              true,
-              toolResult.suggestion
-            );
-          }
-
-          let toolContent = toolResult.output;
-
-          // PostToolUse hooks: exit 2 feedback rides along with the tool result
-          if (hooks.hooks.length > 0) {
-            const post = await runHooks(
-              hooks,
-              { event: 'PostToolUse', projectId, workspace: workspaceRoot, toolName, toolInput: toolArgs, toolOutput: toolResult.output },
-              { signal: cancellation.token.signal }
-            );
-            emitHookResults(emitter, stepIndex, post);
-            const verdict = summarizeHookResults(post);
-            if (verdict.blocked) toolContent += `\n\n[PostToolUse hook feedback (exit 2)]\n${verdict.reason}`;
-          }
-
-          // view_image: multimodal models get the picture itself
-          if (toolResult.attachImage) {
-            if (supportsVision(llmConfig.model)) {
-              toolContent += '\nThe image is attached to the conversation below — inspect it before drawing conclusions.';
-              attachedImages.push({
-                role: 'user',
-                content: [
-                  { type: 'text', text: `[Image ${String(toolArgs.path ?? '')} attached by view_image]` },
-                  { type: 'image_url', image_url: { url: toolResult.attachImage } },
-                ],
-              } as ContextMessage);
-            } else {
-              toolContent +=
-                `\nThe current model (${llmConfig.model}) is not marked as multimodal, so the image was not attached ` +
-                '(set LLM_VISION=1 if it does accept images). Judge the result from numbers instead — e.g. print ' +
-                'statistics or sampled values with execute_code.';
-            }
-          }
+          const toolContent = await finishToolResult(toolName, toolCallId, toolArgs, toolResult, toolDuration);
 
           // Add tool result to messages
           messages.push({
@@ -1205,6 +1251,12 @@ Stay in plan mode, refine the plan, and call exit_plan_mode again.`;
             tool_name:    toolName,
             content:      toolContent,
           } as ContextMessage);
+        }
+
+        // Parallel read-only calls: results are applied in call order
+        for (const p of pendingReads) {
+          const { result, duration } = await p.promise;
+          p.msg.content = await finishToolResult(p.toolName, p.toolCallId, p.toolArgs, result, duration);
         }
 
         // Sub-agents started in this batch ran concurrently — collect their
@@ -1354,6 +1406,12 @@ Stay in plan mode, refine the plan, and call exit_plan_mode again.`;
   }
 }
 
+/** Tools with no side effects that may run concurrently within one reply. */
+export const PARALLEL_SAFE_TOOLS = new Set([
+  'read_file', 'list_files', 'glob_files', 'grep_files', 'web_search', 'fetch_url',
+  'view_image', 'query_data', 'review_changes', 'load_skill', 'job_output', 'list_jobs',
+]);
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function buildInitialMessages(
   systemPrompt: string,
@@ -1414,6 +1472,11 @@ function toolStatusFor(toolName: string): AgentStatus {
     query_data:   'reading',
     plot_data:    'writing',
     review_changes: 'reading',
+    multi_edit:   'writing',
+    run_background: 'running',
+    job_output:   'reading',
+    kill_job:     'running',
+    list_jobs:    'reading',
   };
   return map[toolName] ?? 'planning';
 }

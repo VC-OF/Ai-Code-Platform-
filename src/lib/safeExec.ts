@@ -138,7 +138,7 @@ function validateInlineCodeArgs(bin: string, args: string[]): void {
 const LIMITS = {
   timeoutMs:    30_000,        // 30 seconds
   maxBuffer:    5 * 1024 * 1024, // 5 MB
-  maxOutputLen: 50_000,        // Trim output to 50k chars
+  maxOutputLen: 500_000,       // Head+tail cap; tools truncate further and spill the full text to .open-code/outputs
 };
 
 export interface ExecResult {
@@ -273,12 +273,24 @@ function buildChildEnv(cwd: string, extraEnv?: Record<string, string>): NodeJS.P
   return env;
 }
 
-// ─── Main safe exec ──────────────────────────────────────────────────────────
-export async function safeExec(
+// ─── Validation + invocation (shared with background jobs) ─────────────────
+export interface SandboxedSpawn {
+  invocation: { bin: string; args: string[] };
+  /** Container name in docker mode (for `docker kill`), else null */
+  containerName: string | null;
+  env: NodeJS.ProcessEnv;
+}
+
+/**
+ * Validates `command` under the current sandbox rules and builds the spawn
+ * arguments: host mode = allowlisted binary without a shell, docker mode =
+ * `sh -c` inside a throwaway container. Throws CommandError when refused.
+ */
+export function prepareSandboxedSpawn(
   command: string,
   cwd: string,
-  opts: SafeExecOptions = {}
-): Promise<ExecResult> {
+  extraEnv?: Record<string, string>
+): SandboxedSpawn {
   if (!command.trim()) {
     throw new CommandError('Empty command');
   }
@@ -345,8 +357,6 @@ export async function safeExec(
     }
   }
 
-  const timeoutMs = opts.timeoutMs ?? LIMITS.timeoutMs;
-
   // 6. Spawn without host-shell interpretation. cross-spawn resolves
   //    .cmd/.bat shims on Windows (npm, tsc, …) while still escaping
   //    arguments. In docker mode the command runs via sh -c inside a
@@ -354,11 +364,28 @@ export async function safeExec(
   const containerName = `oc-sandbox-${crypto.randomBytes(6).toString('hex')}`;
   let invocation: { bin: string; args: string[] };
   if (dockerMode) {
-    invocation = buildDockerInvocation(command, cwd, containerName, opts.env);
+    invocation = buildDockerInvocation(command, cwd, containerName, extraEnv);
   } else {
     const parts = parseCommand(command);
     invocation = { bin: parts[0], args: parts.slice(1) };
   }
+
+  return {
+    invocation,
+    containerName: dockerMode ? containerName : null,
+    env: dockerMode ? process.env : buildChildEnv(cwd, extraEnv),
+  };
+}
+
+// ─── Main safe exec ──────────────────────────────────────────────────────────
+export async function safeExec(
+  command: string,
+  cwd: string,
+  opts: SafeExecOptions = {}
+): Promise<ExecResult> {
+  const dockerMode = isDockerMode();
+  const { invocation, containerName, env } = prepareSandboxedSpawn(command, cwd, opts.env);
+  const timeoutMs = opts.timeoutMs ?? LIMITS.timeoutMs;
 
   return new Promise((resolve, reject) => {
     let timedOut = false;
@@ -371,7 +398,7 @@ export async function safeExec(
 
     const proc = crossSpawn(invocation.bin, invocation.args, {
       cwd,
-      env: dockerMode ? process.env : buildChildEnv(cwd, opts.env),
+      env,
     });
 
     const killTimer = setTimeout(() => {
@@ -379,7 +406,7 @@ export async function safeExec(
       try { proc.kill('SIGTERM'); } catch {}
       if (dockerMode) {
         // Killing the docker CLI doesn't reliably stop the container
-        try { spawn('docker', ['kill', containerName]).on('error', () => {}); } catch {}
+        try { if (containerName) spawn('docker', ['kill', containerName]).on('error', () => {}); } catch {}
       }
       setTimeout(() => {
         try { proc.kill('SIGKILL'); } catch {}
@@ -389,7 +416,7 @@ export async function safeExec(
     const onAbort = () => {
       try { proc.kill('SIGTERM'); } catch {}
       if (dockerMode) {
-        try { spawn('docker', ['kill', containerName]).on('error', () => {}); } catch {}
+        try { if (containerName) spawn('docker', ['kill', containerName]).on('error', () => {}); } catch {}
       }
     };
     if (opts.signal?.aborted) onAbort();
