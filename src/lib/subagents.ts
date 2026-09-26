@@ -34,7 +34,7 @@ const VERIFY_TOOLS = new Set([
 ]);
 
 /** Never available inside a sub-agent, whatever its kind. */
-export const SUBAGENT_EXCLUDED_TOOLS = new Set(['spawn_agent', 'ask_user', 'update_plan', 'deploy_app', 'save_memory']);
+export const SUBAGENT_EXCLUDED_TOOLS = new Set(['spawn_agent', 'ask_user', 'update_plan', 'exit_plan_mode', 'deploy_app', 'save_memory']);
 
 interface KindSpec {
   summary: string;

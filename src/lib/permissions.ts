@@ -75,3 +75,16 @@ export const HOST_BLOCKED_SUMMARY = [
   'find -exec/-delete/-fprint and other action primaries',
   'git -c/--config-env overrides, git config writes, and --output/-o file writes',
 ];
+
+/** The only tools plan mode lets run (spawn_agent only for explore/research). */
+export const PLAN_MODE_TOOLS = [
+  'read_file', 'list_files', 'glob_files', 'grep_files', 'load_skill',
+  'web_search', 'fetch_url', 'view_image', 'query_data', 'review_changes',
+  'read_preview_logs', 'fetch_preview', 'check_preview',
+  'browser_snapshot', 'browser_open', 'browser_console', 'browser_scroll', 'browser_wait',
+  'docker_status', 'spawn_agent', 'update_plan', 'ask_user', 'exit_plan_mode',
+] as const;
+
+export const PLAN_MODE_SUBAGENT_KINDS = ['explore', 'research'] as const;
+
+export const PLAN_MODE_REFUSAL = 'Plan mode is read-only — present your plan with exit_plan_mode';

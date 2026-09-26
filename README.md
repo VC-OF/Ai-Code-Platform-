@@ -364,6 +364,25 @@ Four tools cover the gaps that showed up most in real runs
   blocks the action (or sends the agent back to work on `Stop`) and feeds
   stderr to the model; hooks run through the same sandbox as `run_command`.
   `/hooks` lists exactly what will run.
+- **Plan mode** — in `plan` execution mode (`/mode plan`) the loop is
+  genuinely read-only: only reading/search tools, `explore`/`research`
+  sub-agents, `update_plan` and `ask_user` run; anything else returns
+  "Plan mode is read-only". The agent presents its plan with
+  `exit_plan_mode`; **Approve plan** switches the rest of the turn to
+  auto mode, **Keep planning** keeps it read-only. Approval needs an
+  interactive session.
+- **Permission rules** — `permissions.allow` / `deny` / `ask` in
+  `.claude/settings.json`, `.claude/settings.local.json`,
+  `.opencode/settings.json` and a managed file
+  (`OPEN_CODE_MANAGED_SETTINGS`, default
+  `C:\ProgramData\OpenCode\managed-settings.json` or
+  `/etc/open-code/managed-settings.json`), in Claude Code syntax:
+  `Bash(npm test:*)`, `Edit(src/**)`, `Write`, `Read(.env)`,
+  `WebFetch(domain:example.com)`, or native names such as
+  `run_command(cargo *)` and `mcp_github_*`. Deny beats ask beats allow,
+  and a managed deny cannot be overridden. Deny refuses the call, ask
+  pauses for approval even in auto mode, allow skips the manual-mode
+  prompt. `/permissions` lists the loaded rules and their files.
 - **Project slash commands** — every `.claude/commands/<name>.md` (or
   `.opencode/commands/`; one level of namespacing → `/dir:name`) becomes a
   `/name` command with `$ARGUMENTS` / `$1…$9` substitution, autocompleted

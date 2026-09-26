@@ -13,7 +13,8 @@ export type AgentEventType =
   | 'error'
   | 'done'
   | 'status'
-  | 'usage';
+  | 'usage'
+  | 'mode_change';
 
 export type AgentStatus = 'planning' | 'reading' | 'writing' | 'linting' | 'testing' | 'running' | 'waiting' | 'done' | 'error' | 'compacting';
 

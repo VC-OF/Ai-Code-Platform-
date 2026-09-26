@@ -117,6 +117,9 @@ interface WorkspaceInfo {
   hooksError?: string;
   agents: { name: string; description?: string; file: string }[];
   commands?: { name: string; description: string; source: string }[];
+  permissionRules?: { rule: string; behavior: 'allow' | 'deny' | 'ask'; source: string; managed: boolean }[];
+  permissionFiles?: string[];
+  permissionErrors?: string[];
 }
 interface ProviderStatus { id: string; label: string; kind: 'cloud' | 'local'; keyEnv: string | null; available: boolean }
 
@@ -125,7 +128,7 @@ interface ProviderStatus { id: string; label: string; kind: 'cloud' | 'local'; k
 const MODE_DESCRIPTIONS: Record<ExecutionMode, string> = {
   auto: 'Auto: the agent edits files and runs commands without pausing.',
   manual: `Manual: the agent asks before ${APPROVAL_REQUIRED_TOOLS.map((t) => `\`${t}\``).join(', ')}.`,
-  plan: 'Plan: the agent writes a plan with `update_plan` before editing.',
+  plan: 'Plan: read-only until you approve the plan the agent presents with `exit_plan_mode`.',
 };
 
 function parseMode(arg: string): ExecutionMode | null {
@@ -158,8 +161,20 @@ function handleMode(args: string, ctx: SlashContext) {
   );
 }
 
-function handlePermissions(args: string, ctx: SlashContext) {
+async function handlePermissions(args: string, ctx: SlashContext) {
   if (switchMode(args, ctx)) return;
+  const info = await fetchJson<WorkspaceInfo>(`/api/workspace/info?${q(ctx.projectId)}`).catch(() => null);
+  const rules = info?.permissionRules ?? [];
+  const ruleLines = !info
+    ? ['_Couldn’t load permission rules._']
+    : rules.length === 0
+      ? ['No rules. Add `permissions.allow` / `deny` / `ask` to `.claude/settings.json` (e.g. `"allow": ["Bash(npm test:*)"]`).']
+      : (['deny', 'ask', 'allow'] as const).flatMap((b) => {
+          const of = rules.filter((r) => r.behavior === b);
+          return of.length
+            ? [`- **${b}**: ${of.map((r) => `\`${r.rule}\` _(${r.managed ? 'managed: ' : ''}${r.source})_`).join(', ')}`]
+            : [];
+        });
   const approval = ctx.executionMode === 'manual'
     ? `Tools that need your approval: ${APPROVAL_REQUIRED_TOOLS.map((t) => `\`${t}\``).join(', ')}.`
     : `No tools pause for approval in **${ctx.executionMode}** mode. Switch with \`/permissions manual\` to approve ${APPROVAL_REQUIRED_TOOLS.map((t) => `\`${t}\``).join(', ')}.`;
@@ -169,6 +184,11 @@ function handlePermissions(args: string, ctx: SlashContext) {
     `- Execution mode: **${ctx.executionMode}** (change with \`/permissions auto|manual|plan\`)`,
     `- ${approval}`,
     '- File tools are confined to the project workspace; paths that escape it are rejected.',
+    '',
+    '**Permission rules** (deny > ask > allow; managed rules cannot be overridden)',
+    ...ruleLines,
+    ...(info?.permissionFiles?.length ? [`Loaded from: ${info.permissionFiles.map((f) => `\`${f}\``).join(', ')}`] : []),
+    ...(info?.permissionErrors ?? []).map((e) => `- ⚠️ ${e}`),
     '',
     '**Host command allowlist** (local sandbox mode)',
     HOST_ALLOWED_BINS.map((b) => `\`${b}\``).join(', '),
@@ -720,7 +740,7 @@ export async function runSlashCommand(
     case 'cost':
     case 'usage': await handleUsage(ctx); return HANDLED;
     case 'config': openSurface('settings'); ctx.say('Opened Settings.'); return HANDLED;
-    case 'permissions': handlePermissions(args, ctx); return HANDLED;
+    case 'permissions': await handlePermissions(args, ctx); return HANDLED;
     case 'mode': handleMode(args, ctx); return HANDLED;
     case 'mcp': await handleMcp(ctx); return HANDLED;
     case 'hooks': await handleHooks(ctx); return HANDLED;

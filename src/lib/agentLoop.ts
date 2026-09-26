@@ -1,4 +1,5 @@
-import { APPROVAL_REQUIRED_TOOLS } from './permissions';
+import { APPROVAL_REQUIRED_TOOLS, PLAN_MODE_TOOLS, PLAN_MODE_SUBAGENT_KINDS, PLAN_MODE_REFUSAL } from './permissions';
+import { loadPermissionRules, decide as decidePermission, EMPTY_PERMISSION_RULES, type PermissionRules } from './permissionRules';
 import { execSync } from 'child_process';
 import {
   callLLM,
@@ -146,6 +147,9 @@ export async function runAgentLoop(
   let textToolNudges = 0;
   let noActionNudges = 0;
   let toolsExecuted  = 0;   // real tool executions this turn
+  // Mutable: an approved exit_plan_mode switches the rest of the turn to auto
+  let executionMode  = opts.executionMode ?? 'auto';
+  let permissionRules: PermissionRules = EMPTY_PERMISSION_RULES;
   const toolNames = tools.map((t) => (t as { function?: { name?: string } }).function?.name ?? '').filter(Boolean);
 
   // ── Build initial message list ───────────────────────────────────────────
@@ -219,6 +223,10 @@ export async function runAgentLoop(
     // Hooks from .claude/settings.json — the same config /hooks reports
     hooks = await loadHooks(workspaceRoot).catch(() => EMPTY_HOOKS);
     for (const e of hooks.errors) emitter.error(0, `Hook config: ${e}`, true);
+
+    // permissions.allow/deny/ask from the same settings files + managed settings
+    permissionRules = await loadPermissionRules(workspaceRoot).catch(() => EMPTY_PERMISSION_RULES);
+    for (const e of permissionRules.errors) emitter.error(0, `Permission rules: ${e}`, true);
 
     if (!nested && hooks.hooks.length > 0) {
       const promptText = typeof lastUserMsg === 'string' ? lastUserMsg : JSON.stringify(lastUserMsg ?? '');
@@ -787,6 +795,90 @@ export async function runAgentLoop(
             continue;
           }
 
+          // ── Plan mode: read-only until the user approves the plan ───────
+          if (executionMode === 'plan') {
+            const allowed = (PLAN_MODE_TOOLS as readonly string[]).includes(toolName) &&
+              (toolName !== 'spawn_agent' || (PLAN_MODE_SUBAGENT_KINDS as readonly string[]).includes(String(toolArgs.kind)));
+            if (!allowed) {
+              emitter.toolStart(stepIndex, toolCallId, toolName, toolArgs);
+              emitter.toolError(stepIndex, toolCallId, toolName, PLAN_MODE_REFUSAL, true);
+              messages.push({
+                role: 'tool' as const, tool_call_id: toolCallId, tool_name: toolName,
+                content: `Error: ${PLAN_MODE_REFUSAL}.`,
+              } as ContextMessage);
+              continue;
+            }
+          }
+
+          // ── exit_plan_mode: the user approves (or rejects) the plan ─────
+          if (toolName === 'exit_plan_mode') {
+            const plan = String(toolArgs.plan ?? '');
+            emitter.toolStart(stepIndex, toolCallId, toolName, toolArgs);
+            let content: string;
+            if (executionMode !== 'plan') {
+              content = 'Not in plan mode — proceed with the work.';
+              emitter.toolEnd(stepIndex, toolCallId, toolName, 0, true, 'Not in plan mode');
+            } else if (!opts.waitForUserInput) {
+              content = 'Error: plan approval needs an interactive session. Present the plan in your reply instead; the user can switch modes to let you implement it.';
+              emitter.toolError(stepIndex, toolCallId, toolName, 'Plan approval needs an interactive session', true);
+            } else {
+              const question = `📋 Plan ready for review\n\n${plan}`;
+              const options = ['Approve plan', 'Keep planning'];
+              emitter.status(stepIndex, 'waiting');
+              emitter.emit({ type: 'user_input_request', stepIndex, toolCallId, question, options, ts: Date.now() });
+              const waitStart = Date.now();
+              const answer = await opts.waitForUserInput(question, options);
+              pausedMs += Date.now() - waitStart;
+              cancellation.token.throwIfCancelled();
+              if (/^approve/i.test(answer.trim())) {
+                executionMode = 'auto';
+                emitter.emit({ type: 'mode_change', stepIndex, mode: 'auto' });
+                content = 'The user approved the plan. You are now in auto mode: implement the plan.';
+                emitter.toolEnd(stepIndex, toolCallId, toolName, Date.now() - waitStart, true, 'Plan approved — switching to auto mode');
+              } else {
+                content = `The user did not approve the plan yet. Their response: ${answer}
+Stay in plan mode, refine the plan, and call exit_plan_mode again.`;
+                emitter.toolEnd(stepIndex, toolCallId, toolName, Date.now() - waitStart, false, `Keep planning: ${answer.slice(0, 80)}`);
+              }
+              emitter.status(stepIndex, 'planning');
+            }
+            messages.push({ role: 'tool' as const, tool_call_id: toolCallId, tool_name: toolName, content } as ContextMessage);
+            continue;
+          }
+
+          // ── Permission rules (settings.json permissions.allow/deny/ask) ─
+          const permission = decidePermission(permissionRules, toolName, toolArgs, workspaceRoot);
+          if (permission.decision === 'deny' || (permission.decision === 'ask' && !opts.waitForUserInput)) {
+            const r = permission.rule!;
+            const why = permission.decision === 'deny'
+              ? `Denied by permission rule \`${r.rule}\` (${r.managed ? 'managed settings' : r.source})`
+              : `Permission rule \`${r.rule}\` (${r.source}) requires approval, but this run is non-interactive`;
+            emitter.toolStart(stepIndex, toolCallId, toolName, toolArgs);
+            emitter.toolError(stepIndex, toolCallId, toolName, why, true);
+            messages.push({
+              role: 'tool' as const, tool_call_id: toolCallId, tool_name: toolName,
+              content: `Error: ${why}. The tool was not run — choose a different approach or ask the user.`,
+            } as ContextMessage);
+            continue;
+          }
+          if (permission.decision === 'ask' && opts.waitForUserInput) {
+            const r = permission.rule!;
+            const question = `🛡️ [Permission rule \`${r.rule}\`]\nAllow tool \`${toolName}\`?\n\nArguments:\n\`\`\`json\n${JSON.stringify(toolArgs, null, 2).slice(0, 600)}\n\`\`\``;
+            const pauseStart = Date.now();
+            const answer = await opts.waitForUserInput(question, ['Approve', 'Deny']);
+            pausedMs += Date.now() - pauseStart;
+            cancellation.token.throwIfCancelled();
+            if (!/^approve/i.test(answer.trim())) {
+              emitter.toolStart(stepIndex, toolCallId, toolName, toolArgs);
+              emitter.toolError(stepIndex, toolCallId, toolName, `Denied by user (rule \`${r.rule}\`)`, true);
+              messages.push({
+                role: 'tool' as const, tool_call_id: toolCallId, tool_name: toolName,
+                content: `Error: the user denied ${toolName} (permission rule \`${r.rule}\`). Choose a different approach or report to the user.`,
+              } as ContextMessage);
+              continue;
+            }
+          }
+
           // ── ask_user: pause the loop until the user answers ─────────────
           if (toolName === 'ask_user') {
             const question = String(toolArgs.question ?? '');
@@ -866,7 +958,7 @@ export async function runAgentLoop(
           // Manual execution mode: require approval before running mutating actions
           const MUTATING_TOOLS = new Set<string>(APPROVAL_REQUIRED_TOOLS);
 
-          if (opts.executionMode === 'manual' && MUTATING_TOOLS.has(toolName) && opts.waitForUserInput) {
+          if (executionMode === 'manual' && permission.decision === 'default' && MUTATING_TOOLS.has(toolName) && opts.waitForUserInput) {
             let targetSummary = '';
             if (typeof toolArgs.path === 'string') targetSummary = `file "${toolArgs.path}"`;
             else if (typeof toolArgs.command === 'string') targetSummary = `command "${(toolArgs.command as string).slice(0, 80)}"`;
@@ -1311,6 +1403,7 @@ function toolStatusFor(toolName: string): AgentStatus {
     update_plan:  'planning',
     deploy_app:   'running',
     ask_user:     'waiting',
+    exit_plan_mode: 'waiting',
     execute_code: 'running',
     view_image:   'reading',
     notebook_edit: 'writing',

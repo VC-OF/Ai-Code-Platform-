@@ -296,6 +296,24 @@ export const TOOL_SCHEMAS = [
   {
     type: "function",
     function: {
+      name: "exit_plan_mode",
+      description:
+        "Plan mode only: present your finished implementation plan (markdown) for the user's approval. If approved, the rest of the turn runs in auto mode and you implement the plan; otherwise keep planning. Plan mode is read-only until then.",
+      parameters: {
+        type: "object",
+        properties: {
+          plan: {
+            type: "string",
+            description: "The implementation plan in markdown: files to change, steps, and how you will verify",
+          },
+        },
+        required: ["plan"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "generate_image",
       description:
         "Generate an image with a free AI image model (Flux) and save it into the workspace. Use for hero images, illustrations, logos, and placeholder assets. Prefer .png or .jpg paths under the app's public/asset directory.",

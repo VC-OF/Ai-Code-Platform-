@@ -104,6 +104,9 @@ export function normalizeToolArgs(toolName: string, input: unknown): unknown {
       rename(args, 'tasks', ['todos', 'plan', 'items']);
       args.tasks = normalizePlanTasks(args.tasks);
       break;
+    case 'exit_plan_mode':
+      rename(args, 'plan', ['content', 'markdown', 'text', 'summary']);
+      break;
     case 'execute_code': {
       // `{language: "bash", command: "…"}` is how models reach for a shell
       rename(args, 'code', ['source', 'script', 'snippet', 'program', 'content', 'command', 'cmd']);

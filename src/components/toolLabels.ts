@@ -28,6 +28,7 @@ export function toolLabel(toolName: string | undefined, args: Record<string, unk
     case 'review_changes': return `Reviewing changes${a.base ? ` vs ${s(a.base, 20)}` : ''}${a.path ? ` in ${s(a.path, 50)}` : ''}`;
     case 'web_search': return `Searching the web: ${s(a.query, 80)}`;
     case 'fetch_url': return `Reading ${s(a.url, 90)}`;
+    case 'exit_plan_mode': return 'Presenting plan for approval';
     default: return null;
   }
 }

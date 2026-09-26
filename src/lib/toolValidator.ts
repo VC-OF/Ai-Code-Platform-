@@ -95,6 +95,10 @@ const toolSchemas = {
     options: z.array(z.string().min(1).max(120)).max(4).optional(),
   }),
 
+  exit_plan_mode: z.object({
+    plan: z.string().min(1).max(20_000),
+  }),
+
   deploy_app: z.object({}),
 
   update_plan: z.object({

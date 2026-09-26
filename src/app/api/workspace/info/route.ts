@@ -7,6 +7,7 @@ import { isDockerMode } from '@/lib/safeExec';
 import { getSandboxImage, isPolyglotImageBuilt, SANDBOX_BUILD_HINT } from '@/lib/sandboxImage';
 import { loadHooks, HOOK_EVENTS } from '@/lib/hooks';
 import { loadCustomCommands } from '@/lib/customCommands';
+import { loadPermissionRules } from '@/lib/permissionRules';
 import pkg from '../../../../../package.json';
 
 export const runtime = 'nodejs';
@@ -54,6 +55,12 @@ export async function GET(req: NextRequest) {
       source: c.source,
     }));
 
+    // Same loader as the agent loop, so /permissions shows the rules that apply
+    const permissionConfig = await loadPermissionRules(root);
+    const permissionRules = permissionConfig.rules.map((r) => ({
+      rule: r.rule, behavior: r.behavior, source: r.source, managed: r.managed,
+    }));
+
     const agents: { name: string; description?: string; file: string }[] = [];
     try {
       const dir = path.join(root, '.claude', 'agents');
@@ -82,6 +89,9 @@ export async function GET(req: NextRequest) {
       hooksError,
       agents,
       commands,
+      permissionRules,
+      permissionFiles: permissionConfig.files,
+      permissionErrors: permissionConfig.errors,
     });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });

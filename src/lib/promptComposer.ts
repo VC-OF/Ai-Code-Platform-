@@ -32,7 +32,7 @@ export function formatModeForPrompt(mode?: 'auto' | 'manual' | 'plan'): string {
     return '## Execution Mode: Manual (Supervised)\nYou are running in Manual Supervision Mode. All modifying operations (file creations, edits, deletions, shell commands, and docker runs) will be submitted to the user for interactive approval. Clearly state what you intend to do before executing mutating tools.';
   }
   if (mode === 'plan') {
-    return '## Execution Mode: Plan-First (Architect)\nYou are running in Plan-First Mode. Before modifying files or running commands, inspect the workspace and call `update_plan` to outline your architecture and step-by-step strategy for the user.';
+    return '## Execution Mode: Plan-First (Architect)\nYou are running in Plan Mode, which is read-only: only reading/searching tools, `explore`/`research` sub-agents, `update_plan` and `ask_user` run — edits and commands are refused. Inspect the workspace, then call `exit_plan_mode` with your implementation plan in markdown (files to change, steps, how you will verify). If the user approves, the rest of the turn runs in auto mode and you implement the plan; otherwise refine it and call `exit_plan_mode` again.';
   }
   return '## Execution Mode: Autonomous (Full-Auto)\nYou are running in Autonomous Mode. You have full permission to plan, edit files, execute commands/tests, and iteratively verify solutions until the goal is fully accomplished.';
 }
