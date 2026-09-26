@@ -4,10 +4,12 @@ import {
   callLLM,
   callLLMStream,
   getContextWindow,
+  parseContextLengthError,
   type LLMConfig,
   type LLMMessage,
   type LLMTool,
 } from './llmClient';
+import { recordContextWindow } from './models';
 import { EventEmitter, type AgentStatus, type DoneReason } from './events';
 import {
   compactMessages,
@@ -44,6 +46,7 @@ const MAX_DURATION = envPositiveInt('AGENT_MAX_DURATION_MIN', 60) * 60_000;
 const STEP_TIMEOUT = 300_000;      // 5 min per LLM call (prevents premature timeout on reasoning models)
 const MAX_TRUNCATIONS = 3;         // consecutive cut-off replies before giving up
 const MAX_LLM_RETRIES = 5;         // transient model/provider failures retried per step (2s…32s backoff)
+const MAX_CONTEXT_RETRIES = 3;     // "prompt too long" → compact and retry, this many times per step
 const MAX_VERIFY_NUDGES = 2;       // times we ask for run_lint/run_tests before letting the turn end
 const PLAN_INSTRUCTION =
   '[Planning step — tools are disabled for this reply.] Write a short numbered plan (at most ~10 lines) of the ' +
@@ -291,6 +294,98 @@ export async function runAgentLoop(
 
     let hitTimeLimit = false;
     let verifyNudges = 0;
+    let contextRetries = 0;
+
+    /**
+     * Shrink the working context. Preferred: replace the oldest span with an
+     * LLM-written summary so the agent keeps usable memory of what it read,
+     * built and decided; fallback: placeholder compaction of bulky tool
+     * output. `force` (after a provider "prompt too long" rejection) keeps
+     * fewer recent messages verbatim and applies both passes if needed.
+     * Returns true when the estimated size actually went down.
+     */
+    const compactContext = async (force: boolean): Promise<boolean> => {
+      emitter.status(stepIndex, 'compacting');
+      const before = {
+        messages: messages.length,
+        tokens:   messages.reduce((s, m) => s + estimateMessageTokens(m), 0),
+      };
+
+      const split = splitForCompaction(messages, force ? 4 : 8);
+      let summarized = false;
+
+      if (split) {
+        try {
+          const summaryResp = await callWithTimeout(
+            callLLM(
+              llmConfig,
+              [
+                { role: 'system', content: SUMMARIZE_SYSTEM_PROMPT },
+                { role: 'user', content: serializeForSummary(split.evicted) },
+              ],
+              undefined,
+              { toolChoice: 'none', signal: cancellation.token.signal }
+            ),
+            STEP_TIMEOUT
+          );
+
+          const summary = summaryResp.content?.trim();
+          if (summary) {
+            const summaryMsg = {
+              role: 'user',
+              content:
+                '[Context summary — earlier conversation was compacted. ' +
+                'This brief is your memory of that span:]\n\n' + summary,
+            } as ContextMessage;
+            // Ephemeral working memory — the originals are already in the
+            // DB, so the summary itself must not be persisted as history
+            alreadyPersisted.add(summaryMsg);
+            messages = [...split.head, summaryMsg, ...split.preserved];
+            summarized = true;
+
+            totalTokens += summaryResp.usage.total_tokens;
+            trackUsage({
+              projectId,
+              model:            llmConfig.model,
+              promptTokens:     summaryResp.usage.prompt_tokens,
+              completionTokens: summaryResp.usage.completion_tokens,
+              turnIndex,
+            });
+          }
+        } catch (err) {
+          if (err instanceof CancelledError) throw err;
+          // Fall through to placeholder compaction below
+        }
+      }
+
+      const stillTooBig = () =>
+        shouldCompact(messages, { model: llmConfig.model, targetRatio: force ? COMPACT_TO : COMPACT_AT });
+      if (!summarized || (force && stillTooBig())) {
+        // Placeholder compaction preserves length/order but clones some
+        // message objects — re-mark persisted membership positionally so
+        // clones of already-saved history aren't saved again
+        const wasPersisted = messages.map((m) => alreadyPersisted.has(m));
+        const result = compactMessages(messages, {
+          model:         llmConfig.model,
+          targetRatio:   COMPACT_AT,
+          minRatio:      COMPACT_TO,
+          preserveLastN: force ? 4 : 8,
+        });
+        messages = result.messages;
+        messages.forEach((m, i) => {
+          if (wasPersisted[i]) alreadyPersisted.add(m);
+        });
+      }
+
+      const after = {
+        messages: messages.length,
+        tokens:   messages.reduce((s, m) => s + estimateMessageTokens(m), 0),
+      };
+      emitter.compaction(stepIndex, before, after);
+      emitter.status(stepIndex, 'planning');
+      return after.tokens < before.tokens;
+    };
+
     for (stepIndex = 1; stepIndex <= maxSteps; stepIndex++) {
       // ── Safety checks ────────────────────────────────────────────────────
       cancellation.token.throwIfCancelled();
@@ -321,86 +416,7 @@ export async function runAgentLoop(
 
       // ── Context compaction ────────────────────────────────────────────────
       if (shouldCompact(messages, { model: llmConfig.model, targetRatio: COMPACT_AT })) {
-        emitter.status(stepIndex, 'compacting');
-
-        const before = {
-          messages: messages.length,
-          tokens:   messages.reduce((s, m) => s + estimateMessageTokens(m), 0),
-        };
-
-        // Preferred: replace the old span with a real LLM-written summary so
-        // the agent keeps usable memory of what it read, built, and decided
-        const split = splitForCompaction(messages, 8);
-        let summarized = false;
-
-        if (split) {
-          try {
-            const summaryResp = await callWithTimeout(
-              callLLM(
-                llmConfig,
-                [
-                  { role: 'system', content: SUMMARIZE_SYSTEM_PROMPT },
-                  { role: 'user', content: serializeForSummary(split.evicted) },
-                ],
-                undefined,
-                { toolChoice: 'none', signal: cancellation.token.signal }
-              ),
-              STEP_TIMEOUT
-            );
-
-            const summary = summaryResp.content?.trim();
-            if (summary) {
-              const summaryMsg = {
-                role: 'user',
-                content:
-                  '[Context summary — earlier conversation was compacted. ' +
-                  'This brief is your memory of that span:]\n\n' + summary,
-              } as ContextMessage;
-              // Ephemeral working memory — the originals are already in the
-              // DB, so the summary itself must not be persisted as history
-              alreadyPersisted.add(summaryMsg);
-              messages = [...split.head, summaryMsg, ...split.preserved];
-              summarized = true;
-
-              totalTokens += summaryResp.usage.total_tokens;
-              trackUsage({
-                projectId,
-                model:            llmConfig.model,
-                promptTokens:     summaryResp.usage.prompt_tokens,
-                completionTokens: summaryResp.usage.completion_tokens,
-                turnIndex,
-              });
-            }
-          } catch (err) {
-            if (err instanceof CancelledError) throw err;
-            // Fall through to placeholder compaction below
-          }
-        }
-
-        if (!summarized) {
-          // Placeholder compaction preserves length/order but clones some
-          // message objects — re-mark persisted membership positionally so
-          // clones of already-saved history aren't saved again
-          const wasPersisted = messages.map((m) => alreadyPersisted.has(m));
-          const result = compactMessages(messages, {
-            model:         llmConfig.model,
-            targetRatio:   COMPACT_AT,
-            minRatio:      COMPACT_TO,
-            preserveLastN: 8,
-          });
-          messages = result.messages;
-          messages.forEach((m, i) => {
-            if (wasPersisted[i]) alreadyPersisted.add(m);
-          });
-        }
-
-        const after = {
-          messages: messages.length,
-          tokens:   messages.reduce((s, m) => s + estimateMessageTokens(m), 0),
-        };
-
-        emitter.compaction(stepIndex, before, after);
-        emitter.status(stepIndex, 'planning');
+        await compactContext(false);
       }
 
       // ── LLM call ──────────────────────────────────────────────────────────
@@ -1117,6 +1133,31 @@ export async function runAgentLoop(
           emitter.status(stepIndex, 'done');
           return buildResult('user_cancelled', stepIndex, filesChanged, totalTokens, startTime);
         }
+        // "Prompt too long" is not transient: learn the provider's real
+        // limit (registries and CONTEXT_WINDOW guesses are often wrong),
+        // compact, and retry the same step
+        const contextLimit = inLLMCall ? parseContextLengthError(err) : null;
+        if (contextLimit !== null && contextRetries < MAX_CONTEXT_RETRIES) {
+          contextRetries++;
+          const assumed = getContextWindow(llmConfig.model);
+          if (contextLimit > 0) recordContextWindow(llmConfig.model, contextLimit);
+          emitter.error(
+            stepIndex,
+            `The model rejected the prompt as too long` +
+              (contextLimit > 0 ? ` (its limit is ${contextLimit.toLocaleString('en-US')} tokens; the platform assumed ${assumed.toLocaleString('en-US')})` : '') +
+              ` — compacting the conversation and retrying (${contextRetries}/${MAX_CONTEXT_RETRIES})`,
+            true
+          );
+          const shrank = await compactContext(true);
+          if (!shrank) {
+            throw new Error(
+              'The conversation does not fit the model\'s context window even after compaction. ' +
+              'Start a new turn with /clear or /compact, or pick a model with a larger context.'
+            );
+          }
+          continue;
+        }
+
         // Transient provider failures (rate limits, dropped/stalled streams)
         // happen before anything from this step is recorded — retry it
         if (inLLMCall && llmRetries < MAX_LLM_RETRIES) {

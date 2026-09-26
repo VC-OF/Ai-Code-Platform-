@@ -19,7 +19,9 @@ export interface ModelInfo {
 }
 
 const DEFAULT_MODEL_INFO: ModelInfo = {
-  contextWindow: 2_000_000,
+  // Unknown models: a conservative guess. The real limit is learned from the
+  // provider's "context length" error on first overflow (recordContextWindow).
+  contextWindow: 128_000,
   costPer1kIn: 0,
   costPer1kOut: 0,
   vision: false,
@@ -54,8 +56,10 @@ const MODELS: Record<string, Partial<ModelInfo>> = {
   'qwen/qwen3.8-27b':          { contextWindow: 128_000 },
   'allam-2-7b':                { contextWindow: 128_000 },
   // Ollama cloud
-  'nemotron-3-ultra:cloud':    { contextWindow: 2_000_000 },
-  'nemotron-3-super:cloud':    { contextWindow: 2_000_000 },
+  // Ollama Cloud serves these with a 262,144-token window ("model maximum
+  // context length: 262144"), not the 1M+ the model cards advertise
+  'nemotron-3-ultra:cloud':    { contextWindow: 262_144 },
+  'nemotron-3-super:cloud':    { contextWindow: 262_144 },
   'minimax-m3:cloud':          { contextWindow: 128_000 },
   'qwen3-coder-next:cloud':    { contextWindow: 128_000 },
   'glm-5.2:cloud':             { contextWindow: 128_000 },
@@ -63,8 +67,8 @@ const MODELS: Record<string, Partial<ModelInfo>> = {
   'gpt-oss:120b':              { contextWindow: 128_000 },
   'gpt-oss:20b':               { contextWindow: 128_000 },
   'nemotron-3-nano:30b':       { contextWindow: 128_000 },
-  'nemotron-3-super':          { contextWindow: 2_000_000 },
-  'nemotron-3-ultra':          { contextWindow: 2_000_000 },
+  'nemotron-3-super':          { contextWindow: 262_144 },
+  'nemotron-3-ultra':          { contextWindow: 262_144 },
   // Ollama local
   'qwen2.5-coder:32b':         { contextWindow: 32_000 },
   'llama3.1':                  { contextWindow: 32_000 },
@@ -91,7 +95,24 @@ export function getModelInfo(rawModel: string): ModelInfo {
   return DEFAULT_MODEL_INFO;
 }
 
+// Context limits reported by providers at runtime ("maximum context length:
+// N"). Shared on globalThis so every module copy (dev HMR) sees them.
+const learnedWindows = ((globalThis as unknown as { __ocLearnedContextWindows?: Map<string, number> })
+  .__ocLearnedContextWindows ??= new Map<string, number>());
+
+/** Remember a provider-reported hard limit; it beats the registry AND the
+ *  CONTEXT_WINDOW override, because the provider will reject anything larger. */
+export function recordContextWindow(model: string, tokens: number): void {
+  if (Number.isFinite(tokens) && tokens >= 1_000) learnedWindows.set(model, Math.floor(tokens));
+}
+
+export function learnedContextWindow(model: string): number | undefined {
+  return learnedWindows.get(model);
+}
+
 export function getContextWindow(model: string): number {
+  const learned = learnedWindows.get(model);
+  if (learned) return learned;
   const envLimit = process.env.CONTEXT_WINDOW || process.env.LLM_CONTEXT_WINDOW;
   if (envLimit) {
     const parsed = parseInt(envLimit, 10);

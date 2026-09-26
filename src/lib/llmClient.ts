@@ -151,6 +151,24 @@ function isReasoningRejection(err: unknown): boolean {
 const noReasoning = new Set<string>();
 
 /**
+ * A request rejected for exceeding the model's context: returns the limit
+ * the provider quoted, so the loop can learn it and compact. Covers Ollama
+ * ("model maximum context length: 262144"), OpenAI ("This model's maximum
+ * context length is 128000 tokens"), Anthropic-compatible and vLLM shapes.
+ */
+export function parseContextLengthError(err: unknown): number | null {
+  const msg = err instanceof Error ? err.message : String(err ?? '');
+  if (!/context (length|window)|prompt is too long|too many tokens|maximum context|context_length_exceeded/i.test(msg)) return null;
+  const m =
+    msg.match(/maximum context length(?: is|:)?\s*(\d[\d,]*)/i) ??
+    msg.match(/context (?:length|window) of\s*(\d[\d,]*)/i) ??
+    msg.match(/(\d[\d,]*)\s*tokens?\)?\s*(?:limit|maximum)/i);
+  if (!m) return 0; // recognised as a context error, limit unknown
+  const n = Number(m[1].replace(/,/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
  * Reasoning / "thinking" text streamed alongside the answer. DeepSeek and
  * Ollama use `reasoning_content`; OpenRouter, Groq and vLLM use `reasoning`.
  * Neither is part of the official chunk type.
