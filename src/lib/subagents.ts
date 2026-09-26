@@ -28,6 +28,7 @@ const READ_ONLY_TOOLS = new Set([
   'job_output', 'list_jobs',
   'read_preview_logs', 'fetch_preview', 'check_preview', 'docker_status',
   'lsp_definition', 'lsp_references', 'lsp_hover', 'lsp_symbols', 'lsp_diagnostics',
+  'mcp_list_resources', 'mcp_read_resource',
   'browser_open', 'browser_snapshot', 'browser_scroll', 'browser_console', 'browser_wait', 'browser_close',
   'github_list_prs', 'github_get_pr', 'github_list_issues', 'github_get_issue',
 ]);
@@ -155,7 +156,7 @@ export function subagentToolSet(kind: SubagentKind, tools: LLMTool[]): LLMTool[]
   return tools.filter((t) => {
     const name = toolName(t);
     if (!name || SUBAGENT_EXCLUDED_TOOLS.has(name)) return false;
-    if (name.startsWith('mcp_')) return kind === 'general';
+    if (name.startsWith('mcp_') && !READ_ONLY_TOOLS.has(name)) return kind === 'general';
     return spec.allows(name);
   });
 }

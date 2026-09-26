@@ -109,13 +109,13 @@ describe('loaders read installed plugins', () => {
 
     const mcp = await loadMcpConfig();
     expect(Object.keys(mcp)).toEqual(['my-plugin-files']); // url-only server skipped (stdio only)
-    expect(mcp['my-plugin-files'].args?.[0]).toBe(`${path.join(pluginsDir, 'my-plugin')}/server.js`);
+    expect((mcp['my-plugin-files'] as { args?: string[] }).args?.[0]).toBe(`${path.join(pluginsDir, 'my-plugin')}/server.js`);
   });
 
   it('explicit MCP config wins over a plugin server of the same name', async () => {
     await installPlugin(src);
     await write(process.env.MCP_CONFIG_PATH!, JSON.stringify({ servers: { 'my-plugin-files': { command: 'mine' } } }));
-    expect((await loadMcpConfig())['my-plugin-files'].command).toBe('mine');
+    expect(((await loadMcpConfig())['my-plugin-files'] as { command?: string }).command).toBe('mine');
   });
 });
 

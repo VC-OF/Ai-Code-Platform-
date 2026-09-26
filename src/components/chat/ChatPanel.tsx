@@ -9,10 +9,12 @@ import ContextReport, { type ContextReportData } from './ContextReport';
 import SkillsReport, { type SkillsReportItem } from './SkillsReport';
 import {
   customCommandDefinitions,
+  mcpPromptDefinitions,
   findSlashCommand,
   parseSlashCommand,
   SLASH_COMMANDS,
   type CustomCommandInfo,
+  type McpPromptServerInfo,
   type ExportableMessage,
   type SlashCommandDefinition,
 } from '@/lib/slashCommands';
@@ -363,7 +365,20 @@ export default function ChatPanel({
     fetch(`/api/commands?projectId=${encodeURIComponent(projectId)}`)
       .then((r) => (r.ok ? r.json() : { commands: [] }))
       .then((data: { commands?: CustomCommandInfo[] }) => {
-        if (!cancelled) setCustomCommands(customCommandDefinitions(data.commands ?? []));
+        if (!cancelled) setCustomCommands((prev) => [
+          ...customCommandDefinitions(data.commands ?? []),
+          ...prev.filter((c) => c.mcpPrompt),
+        ]);
+      })
+      .catch(() => {});
+    // MCP prompts → /mcp__<server>__<prompt>
+    fetch(`/api/mcp?projectId=${encodeURIComponent(projectId)}`)
+      .then((r) => (r.ok ? r.json() : { servers: [] }))
+      .then((data: { servers?: McpPromptServerInfo[] }) => {
+        if (!cancelled) setCustomCommands((prev) => [
+          ...prev.filter((c) => !c.mcpPrompt),
+          ...mcpPromptDefinitions(data.servers ?? []),
+        ]);
       })
       .catch(() => {});
     return () => { cancelled = true; };

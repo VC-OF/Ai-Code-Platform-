@@ -287,9 +287,27 @@ remains persisted while the working context stays within the model window.
 - **MCP servers** — drop a config in `.platform/mcp.json`
   (`{"servers":{"name":{"command":"npx","args":["-y","@some/mcp-server"]}}}`)
   and each server's tools appear to the agent as `mcp_<name>_<tool>`
-  (stdio transport, initialize handshake, health shown in Settings → AI
-  Providers). This is the extension point for third-party tools without
+  (initialize handshake, health shown in Settings → AI Providers and
+  `/mcp`). This is the extension point for third-party tools without
   touching core code.
+  - **Transports**: stdio (`command`/`args`/`env`), Streamable HTTP
+    (`{"type":"http","url":"https://…/mcp","headers":{"Authorization":"Bearer ${MY_TOKEN}"}}`
+    — JSON or SSE replies, `Mcp-Session-Id` kept across requests) and
+    legacy HTTP+SSE (`{"type":"sse","url":"https://…/sse"}`). `${VAR}` and
+    `${VAR:-default}` in urls, headers, args and env resolve from the server
+    environment and the encrypted Settings vars.
+  - **Project config**: a workspace's Claude Code `.mcp.json`
+    (`{"mcpServers":{…}}`, same entry shapes) is merged on top of the
+    platform config; project entries win on a name clash.
+  - **Resources**: when a server advertises resources the agent gets
+    `mcp_list_resources {server?}` and `mcp_read_resource {server, uri}`
+    (read-only, so sub-agents of every kind may use them).
+  - **Prompts**: each server prompt becomes a slash command
+    `/mcp__<server>__<prompt> [args…]`; positional args fill the declared
+    arguments in order (quotes group words, extras go to the last one) and
+    the rendered prompt is sent as your message.
+  - `/mcp` lists each server's transport, URL (credentials and query
+    string stripped), config source and tool/resource/prompt counts.
 - **Per-project env vars** — Settings vars are scoped to the project;
   global vars (shared) are supported and shown with a "global" tag.
 - **Token auth** — set `AUTH_TOKEN` and every API request must present it
