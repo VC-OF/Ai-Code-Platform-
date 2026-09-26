@@ -215,13 +215,16 @@ describe('app tools: execution', () => {
     await ws.write('src/new.js', 'export const x = 1;\n');
     const r = await executeAppTool('review_changes', {}, ws.root, createTurnContext(), ws.projectId);
     expect(r.success, r.output).toBe(true);
-    expect(r.output).toMatch(/\d+ tracked file\(s\) modified, 1 untracked/);
+    // Other fixtures (.gitignore touched by execute_code, the SQLite file) are
+    // also dirty, so assert on structure rather than exact counts
+    expect(r.output).toMatch(/\d+ tracked file\(s\) modified, \d+ untracked/);
     expect(r.output).toContain('Untracked');
     expect(r.output).toContain('src/new.js');
     expect(r.output).toContain('-module.exports = () => 1;');
     expect(r.output).toContain('+module.exports = () => 2;');
-    expect(r.extra).toMatchObject({ untracked: 1, base: 'HEAD' });
+    expect(r.extra).toMatchObject({ base: 'HEAD' });
     expect(r.extra?.modified as number).toBeGreaterThanOrEqual(1);
+    expect(r.extra?.untracked as number).toBeGreaterThanOrEqual(1);
 
     const scoped = await executeAppTool('review_changes', { path: 'data' }, ws.root, createTurnContext(), ws.projectId);
     expect(scoped.output).toContain('(no differences)');
