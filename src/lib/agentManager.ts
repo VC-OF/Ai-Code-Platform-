@@ -20,6 +20,9 @@ export interface RunningAgent {
   pendingInput?: { question: string; resolve: (answer: string) => void };
 }
 
+/** Idle time after which the next turn counts as a new session (SessionStart hooks). */
+const SESSION_GAP_MS = 60 * 60_000;
+
 // Run state lives on globalThis so a module re-evaluation (dev HMR, or a
 // route bundle with its own copy) still sees agents that are running — a
 // fresh Map forgot them while their workspace locks stayed held. Only the
@@ -181,6 +184,9 @@ class AgentManager {
         // Get previous messages from DB (most recent history)
         const dbMessages = messageDb.getRecent(projectId, 300);
         const turnIndex = messageDb.getLatestTurnIndex(projectId) + 1;
+        // A new session: empty chat (fresh or after /clear) or a long pause
+        const lastActivity = dbMessages.at(-1)?.created_at ?? 0;
+        const sessionStart = dbMessages.length === 0 || Date.now() - lastActivity > SESSION_GAP_MS;
 
         const convertToLLMContent = (contentStr: string) => {
           try {
@@ -297,6 +303,7 @@ class AgentManager {
           drainQueuedMessages: () => agent.queuedMessages.splice(0),
           currentPlan,
           executionMode,
+          sessionStart,
         });
 
       } catch (err) {

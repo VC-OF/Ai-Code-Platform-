@@ -362,11 +362,23 @@ Four tools cover the gaps that showed up most in real runs
   touch the plan or persist history, calls to tools outside their kind are
   refused, and their budget is capped (`SUBAGENT_MAX_STEPS`,
   `SUBAGENT_MAX_DURATION_MIN`). The parent checkpoints before spawning a
-  `general` agent.
+  `general` agent. With `isolation: 'worktree'` an editing agent runs in
+  `.open-code/worktrees/<id>` on branch `oc-agent-<id>` (based on HEAD);
+  its changes are committed there and the report names the branch and diff
+  stat for the parent to merge (a no-op worktree is removed).
+- **Custom agents** — `.claude/agents/<name>.md` / `.opencode/agents/<name>.md`
+  (Claude Code format: frontmatter `name`, `description`, `tools` — Claude
+  Code names like `Read, Grep, Bash` are mapped — and optional `model`; the
+  body is the system prompt) are listed in the system prompt and spawned
+  with `spawn_agent({ agent: "<name>", task })`. `/agents` lists them.
 - **Hooks** — the `hooks` key of the workspace's `.claude/settings.json`
   (also `.claude/settings.local.json`, `.opencode/settings.json`) is
-  executed: `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop` and
-  `SubagentStop`. Matchers are regexes on the tool name
+  executed: `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`,
+  `SubagentStop`, `SessionStart` (first turn of a chat, after `/clear` or
+  an hour of inactivity — the hook's stdout is added to the turn as
+  context), `PreCompact` (payload `trigger`: `auto` | `overflow`) and
+  `Notification` (payload `message`, when the agent waits on `ask_user` or
+  a manual approval); the last three cannot be blocked by exit 2. Matchers are regexes on the tool name
   (`edit_file|create_file`, `*`); each command receives the Claude Code
   JSON payload on stdin (`hook_event_name`, `tool_name`, `tool_input`,
   `tool_response`, `prompt`, `cwd`) and `OC_HOOK_*` env vars. Exit code 2

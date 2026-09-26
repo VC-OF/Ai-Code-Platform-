@@ -12,6 +12,7 @@ export default defineConfig({
       '**/e2e/**',
       '**/.next/**',
       'workspaces/**', // generated user projects have their own test suites
+      '.claude/**',    // agent worktrees carry their own copies of the tests
     ],
   },
 });

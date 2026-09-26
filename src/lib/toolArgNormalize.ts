@@ -212,11 +212,21 @@ export function normalizeToolArgs(toolName: string, input: unknown): unknown {
       break;
     case 'spawn_agent': {
       rename(args, 'task', ['prompt', 'instructions', 'description', 'goal']);
-      rename(args, 'kind', ['type', 'agent', 'agent_type', 'subagent_type', 'role']);
+      rename(args, 'kind', ['type', 'agent_type', 'subagent_type', 'role']);
       rename(args, 'label', ['name', 'title']);
+      // `agent` naming a built-in kind is a kind; a kind that is not a
+      // built-in one is the name of a custom agent
+      if (typeof args.agent === 'string' && args.kind === undefined && BUILTIN_KIND_NAMES.has(args.agent.trim().toLowerCase())) {
+        args.kind = args.agent;
+        delete args.agent;
+      }
       if (typeof args.kind === 'string') {
         const k = args.kind.trim().toLowerCase();
-        args.kind = KIND_ALIASES[k] ?? k;
+        if (KIND_ALIASES[k]) args.kind = KIND_ALIASES[k];
+        else if (args.agent === undefined) {
+          args.agent = args.kind.trim();
+          delete args.kind;
+        } else args.kind = k;
       }
       break;
     }
@@ -238,6 +248,10 @@ const ACTION_ALIASES: Record<string, string> = {
   insert: 'insert', add: 'insert', append: 'insert', create: 'insert', new: 'insert',
   delete: 'delete', remove: 'delete', del: 'delete',
 };
+
+/** Exact built-in kind names: an `agent` arg equal to one of these means the kind
+ *  (fuzzy aliases like "reviewer" may be custom agent names). */
+const BUILTIN_KIND_NAMES = new Set(['explore', 'research', 'verify', 'general', 'general-purpose']);
 
 const KIND_ALIASES: Record<string, string> = {
   explore: 'explore', explorer: 'explore', search: 'explore', find: 'explore', 'read-only': 'explore', readonly: 'explore',
