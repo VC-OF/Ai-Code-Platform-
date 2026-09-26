@@ -11,6 +11,10 @@ import {
   formatUsageReport,
   matchModel,
   normalizeExportFilename,
+  parsePluginArgs,
+  parseScheduleArgs,
+  PLUGIN_USAGE,
+  SCHEDULE_USAGE,
   resolveCheckpoint,
   resolveProject,
   type ExportableMessage,
@@ -571,19 +575,136 @@ async function handleAgents(ctx: SlashContext) {
   ].join('\n'));
 }
 
-async function handlePlugin(ctx: SlashContext) {
-  const [mcp, skills] = await Promise.all([
-    fetchJson<McpInfo>('/api/mcp').catch(() => null),
-    loadSkills(ctx.projectId).catch(() => null),
-  ]);
-  ctx.say([
-    '**Installed extensions**',
-    '',
-    `- MCP servers: ${mcp ? (mcp.servers.length ? mcp.servers.map((s) => `${s.server} (${s.connected ? `${s.tools.length} tools` : 'down'})`).join(', ') : 'none') : 'unavailable'}`,
-    `- Skills: ${skills ? (skills.length ? `${skills.length} (${skills.map((s) => s.name).join(', ')})` : 'none') : 'unavailable'}`,
-    '',
-    'Details: `/mcp`, `/skills`. There is no plugin marketplace in this self-hosted app.',
-  ].join('\n'));
+interface PluginInfo {
+  name: string;
+  description?: string;
+  version?: string;
+  skills: string[];
+  commands: string[];
+  agents: string[];
+  mcpServers: string[];
+  hasHooks: boolean;
+}
+
+function describePluginLine(p: PluginInfo): string {
+  const parts = [
+    p.skills.length ? `skills: ${p.skills.map((s) => `${p.name}:${s}`).join(', ')}` : '',
+    p.commands.length ? `commands: ${p.commands.map((c) => `/${p.name}:${c}`).join(', ')}` : '',
+    p.agents.length ? `agents: ${p.agents.join(', ')}` : '',
+    p.mcpServers.length ? `MCP: ${p.mcpServers.map((s) => `${p.name}-${s}`).join(', ')}` : '',
+    p.hasHooks ? 'hooks (not run automatically)' : '',
+  ].filter(Boolean);
+  return `- **${p.name}**${p.version ? ` v${p.version}` : ''}${p.description ? ` — ${p.description}` : ''}${parts.length ? `\n  ${parts.join('; ')}` : ''}`;
+}
+
+async function handlePlugin(args: string, ctx: SlashContext) {
+  const cmd = parsePluginArgs(args);
+  try {
+    if (cmd.action === 'error') {
+      ctx.say(cmd.message);
+      return;
+    }
+    if (cmd.action === 'install') {
+      ctx.say(`Installing plugin from \`${cmd.source}\`…`);
+      const { plugin } = await fetchJson<{ plugin: PluginInfo }>('/api/plugins', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: cmd.source, name: cmd.name }),
+      });
+      ctx.say(`Installed plugin:\n${describePluginLine(plugin)}\n\nSkills and commands are available on the next turn; MCP servers after an MCP reconnect (\`/mcp\`).`);
+      return;
+    }
+    if (cmd.action === 'remove') {
+      await fetchJson(`/api/plugins?name=${encodeURIComponent(cmd.name)}`, { method: 'DELETE' });
+      ctx.say(`Removed plugin **${cmd.name}**.`);
+      return;
+    }
+    const [{ plugins }, mcp, skills] = await Promise.all([
+      fetchJson<{ plugins: PluginInfo[] }>('/api/plugins'),
+      fetchJson<McpInfo>('/api/mcp').catch(() => null),
+      loadSkills(ctx.projectId).catch(() => null),
+    ]);
+    ctx.say([
+      '**Plugins**',
+      '',
+      ...(plugins.length ? plugins.map(describePluginLine) : ['No plugins installed.']),
+      '',
+      `- MCP servers: ${mcp ? (mcp.servers.length ? mcp.servers.map((s) => `${s.server} (${s.connected ? `${s.tools.length} tools` : 'down'})`).join(', ') : 'none') : 'unavailable'}`,
+      `- Skills: ${skills ? (skills.length ? `${skills.length} (${skills.map((s) => s.name).join(', ')})` : 'none') : 'unavailable'}`,
+      '',
+      PLUGIN_USAGE,
+    ].join('\n'));
+  } catch (err) {
+    ctx.say(`Plugin command failed: ${errText(err)}`);
+  }
+}
+
+interface ScheduleRow {
+  id: string;
+  cron: string;
+  prompt: string;
+  model: string | null;
+  enabled: number;
+  last_run_at: number | null;
+  next_run_at: number | null;
+}
+
+const fmtTime = (ms: number | null) => (ms ? new Date(ms).toLocaleString() : '—');
+
+async function handleSchedule(args: string, ctx: SlashContext) {
+  const cmd = parseScheduleArgs(args);
+  const json = { 'Content-Type': 'application/json' };
+  try {
+    switch (cmd.action) {
+      case 'error':
+        ctx.say(cmd.message);
+        return;
+      case 'add': {
+        const { schedule } = await fetchJson<{ schedule: ScheduleRow }>('/api/schedules', {
+          method: 'POST',
+          headers: json,
+          body: JSON.stringify({ projectId: ctx.projectId, cron: cmd.cron, prompt: cmd.prompt, model: ctx.selectedModel }),
+        });
+        ctx.say(`Scheduled \`${schedule.id}\` (\`${schedule.cron}\`), next run ${fmtTime(schedule.next_run_at)}. Runs start only while the server is up and the project is idle.`);
+        return;
+      }
+      case 'remove':
+        await fetchJson(`/api/schedules?id=${encodeURIComponent(cmd.id)}`, { method: 'DELETE' });
+        ctx.say(`Removed schedule \`${cmd.id}\`.`);
+        return;
+      case 'pause':
+      case 'resume': {
+        const { schedule } = await fetchJson<{ schedule: ScheduleRow }>('/api/schedules', {
+          method: 'PATCH',
+          headers: json,
+          body: JSON.stringify({ id: cmd.id, enabled: cmd.action === 'resume' }),
+        });
+        ctx.say(cmd.action === 'pause'
+          ? `Paused schedule \`${cmd.id}\`.`
+          : `Resumed schedule \`${cmd.id}\`, next run ${fmtTime(schedule?.next_run_at ?? null)}.`);
+        return;
+      }
+      case 'list': {
+        const { schedules } = await fetchJson<{ schedules: ScheduleRow[] }>(`/api/schedules?${q(ctx.projectId)}`);
+        if (schedules.length === 0) {
+          ctx.say(`No schedules for this project.\n\n${SCHEDULE_USAGE}`);
+          return;
+        }
+        ctx.say([
+          '**Schedules**',
+          '',
+          '| ID | Cron | Prompt | State | Last run | Next run |',
+          '| --- | --- | --- | --- | --- | --- |',
+          ...schedules.map((s) =>
+            `| \`${s.id}\` | \`${s.cron}\` | ${s.prompt.replace(/\s+/g, ' ').replace(/\|/g, '\\|').slice(0, 60)} | ${s.enabled ? 'active' : 'paused'} | ${fmtTime(s.last_run_at)} | ${s.enabled ? fmtTime(s.next_run_at) : '—'} |`
+          ),
+        ].join('\n'));
+        return;
+      }
+    }
+  } catch (err) {
+    ctx.say(`Schedule command failed: ${errText(err)}`);
+  }
 }
 
 async function handleDocker(ctx: SlashContext) {
@@ -737,7 +858,8 @@ export async function runSlashCommand(
     case 'tasks': await handleTasks(ctx); return HANDLED;
     case 'agents': await handleAgents(ctx); return HANDLED;
     case 'skills': await handleSkills(ctx); return HANDLED;
-    case 'plugin': await handlePlugin(ctx); return HANDLED;
+    case 'plugin': await handlePlugin(args, ctx); return HANDLED;
+    case 'schedule': await handleSchedule(args, ctx); return HANDLED;
     case 'docker': await handleDocker(ctx); return HANDLED;
     case 'add-dir': await handleAddDir(args, ctx); return HANDLED;
     case 'output-style': handleOutputStyle(args, ctx); return HANDLED;

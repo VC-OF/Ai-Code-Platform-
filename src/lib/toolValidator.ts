@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { BROWSER_ZOD_SCHEMAS } from './browserTools';
 import { SCIENCE_ZOD_SCHEMAS } from './scienceTools';
 import { APP_ZOD_SCHEMAS } from './appTools';
+import { GITHUB_ZOD_SCHEMAS } from './githubTools';
 import { SPAWN_AGENT_ZOD } from './subagents';
 
 const toolSchemas = {
@@ -140,6 +141,7 @@ const toolSchemas = {
   spawn_agent: SPAWN_AGENT_ZOD,
   ...SCIENCE_ZOD_SCHEMAS,
   ...APP_ZOD_SCHEMAS,
+  ...GITHUB_ZOD_SCHEMAS,
   ...BROWSER_ZOD_SCHEMAS,
 };
 

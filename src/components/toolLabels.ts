@@ -27,6 +27,12 @@ export function toolLabel(toolName: string | undefined, args: Record<string, unk
     case 'plot_data': return `Plotting ${s(a.title, 50) || s(a.kind, 10) || 'chart'}${a.source ? ` from ${s(a.source, 50)}` : ''}`;
     case 'review_changes': return `Reviewing changes${a.base ? ` vs ${s(a.base, 20)}` : ''}${a.path ? ` in ${s(a.path, 50)}` : ''}`;
     case 'web_search': return `Searching the web: ${s(a.query, 80)}`;
+    case 'github_create_pr': return `Opening PR: ${s(a.title, 80)}`;
+    case 'github_list_prs': return `Listing ${s(a.state, 8) || 'open'} pull requests`;
+    case 'github_get_pr': return `Reading PR #${s(a.number, 8)}`;
+    case 'github_comment': return `Commenting on #${s(a.number, 8)}`;
+    case 'github_list_issues': return `Listing ${s(a.state, 8) || 'open'} issues`;
+    case 'github_get_issue': return `Reading issue #${s(a.number, 8)}`;
     case 'fetch_url': return `Reading ${s(a.url, 90)}`;
     default: return null;
   }

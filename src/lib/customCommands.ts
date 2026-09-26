@@ -88,5 +88,16 @@ export async function loadCustomCommands(workspace: string): Promise<CustomComma
       await add(path.join(dir, e.name), `${root}/${e.name}`, e.name.slice(0, -3));
     }
   }
+
+  // Installed plugins: <plugin>/commands/<name>.md → /<plugin>:<name>
+  const { pluginRoots } = await import('./plugins');
+  for (const plugin of await pluginRoots()) {
+    for (const f of await readDir(path.join(plugin.root, 'commands'))) {
+      if (f.isDir || !f.name.endsWith('.md')) continue;
+      const base = f.name.slice(0, -3);
+      if (!NAME_RE.test(base)) continue;
+      await add(path.join(plugin.root, 'commands', f.name), `plugin:${plugin.name}/commands/${f.name}`, `${plugin.name}:${base}`);
+    }
+  }
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }

@@ -26,6 +26,8 @@ const MAX_SKILL_CHARS = 12_000;
 
 export interface LoadSkillsOptions {
   includeGlobal?: boolean;
+  /** Skills from installed plugins (default true) */
+  includePlugins?: boolean;
 }
 
 /** Load project-local skills and open-source Google Antigravity global skills
@@ -65,7 +67,36 @@ export async function loadSkills(
     }
   }
 
-  // 2. Scan global / open-source Google Antigravity skills if requested or running in application mode
+  // 2. Installed plugins: <plugin>/skills/<skill>/SKILL.md → "<plugin>:<skill>"
+  if (options?.includePlugins !== false && skills.length < MAX_SKILLS) {
+    const { pluginRoots } = await import('./plugins');
+    for (const plugin of await pluginRoots()) {
+      if (skills.length >= MAX_SKILLS) break;
+      let entries: { name: string; isDirectory(): boolean }[];
+      try {
+        entries = await fs.readdir(path.join(plugin.root, 'skills'), { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const entry of entries) {
+        if (!entry.isDirectory() || skills.length >= MAX_SKILLS) continue;
+        try {
+          const raw = await fs.readFile(path.join(plugin.root, 'skills', entry.name, 'SKILL.md'), 'utf8');
+          const parsed = parseSkill(raw, entry.name, `plugin:${plugin.name}/skills/${entry.name}/SKILL.md`);
+          if (!parsed) continue;
+          parsed.name = `${plugin.name}:${parsed.name}`;
+          if (!seenNames.has(parsed.name.toLowerCase())) {
+            seenNames.add(parsed.name.toLowerCase());
+            skills.push(parsed);
+          }
+        } catch {
+          // A broken plugin skill should not block the agent either.
+        }
+      }
+    }
+  }
+
+  // 3. Scan global / open-source Google Antigravity skills if requested or running in application mode
   const shouldIncludeGlobal =
     options?.includeGlobal ?? (process.env.NODE_ENV !== 'test');
 
@@ -145,7 +176,7 @@ export function formatSkillsForPrompt(skills: SkillDefinition[]): string {
 
 /** Whether a skill came from the project workspace or a global root. */
 export function skillGroup(skill: SkillDefinition): 'project' | 'global' {
-  return skill.source.startsWith('global:') ? 'global' : 'project';
+  return skill.source.startsWith('global:') || skill.source.startsWith('plugin:') ? 'global' : 'project';
 }
 
 /** Case-insensitive lookup used by the load_skill tool. */

@@ -371,6 +371,44 @@ Four tools cover the gaps that showed up most in real runs
 - **Memory** — `save_memory` appends durable one-line facts to the
   project's `AGENTS.md` under `## Memory`; `/memory` shows and edits the
   same file, and it is part of every system prompt.
+- **Headless CLI** — `bin/open-code.mjs` (`npm run cli --`, or `open-code`
+  after `npm link`) drives a running platform over HTTP:
+  `open-code -p "add tests for utils" --project my-app --output-format json`.
+  Options: `--project <id|name>`, `--new <name>`, `--continue` (most recent
+  project), `--model`, `--mode auto|manual|plan`,
+  `--output-format text|json|stream-json`, `--server` (or `OPEN_CODE_URL`,
+  default `http://localhost:3000`); `AUTH_TOKEN` is sent as `x-api-key`.
+  `text` streams the reply to stdout and one line per tool call to stderr,
+  `json` prints `{result, reason, filesChanged, tokens, durationMs}`,
+  `stream-json` passes the NDJSON events through. Exit code 0 = completed,
+  1 = error/cancelled, 2 = `max_steps`/`timeout`. `ask_user` questions are
+  answered on the terminal; without a TTY the run fails with the question.
+  Also `open-code projects` and `open-code status <project>`.
+- **GitHub** — `github_create_pr` (pushes the branch with
+  `git push -u origin <branch>`, then opens the PR), `github_list_prs`,
+  `github_get_pr` (with review comments and CI check-run conclusions),
+  `github_comment`, `github_list_issues`, `github_get_issue`. The repo is
+  taken from the workspace's `origin` remote (https or ssh github.com URL);
+  the token is `GITHUB_TOKEN` from Settings → Environment Variables
+  (project or global) or the server env. Creating PRs and commenting need
+  approval in manual mode; the read-only tools are available to
+  `explore` / `research` / `verify` sub-agents.
+- **Scheduled agents** — `/schedule add "0 9 * * 1-5" run the tests and fix
+  failures` runs a turn on a 5-field cron (server-local time; `*`, lists,
+  ranges, steps, month/day names) with the currently selected model.
+  `/schedule list | pause <id> | resume <id> | remove <id>`; API at
+  `/api/schedules` (GET/POST/PATCH/DELETE). An in-process runner (started
+  by the first API request, checks every 30 s, `OPEN_CODE_SCHEDULER=off`
+  disables it) starts due runs only while the server is up and the project
+  is idle; a busy project is retried on the next tick.
+- **Plugins** — `/plugin install <https git url | local dir> [--name n]`
+  clones (`git clone --depth 1`) or copies a Claude Code-layout plugin into
+  `.platform/plugins/<name>/` (override: `OPEN_CODE_PLUGINS_DIR`). Its
+  `skills/*/SKILL.md` appear as `<plugin>:<skill>`, `commands/*.md` as
+  `/<plugin>:<command>`, and `.mcp.json` stdio servers as
+  `<plugin>-<server>` (`${CLAUDE_PLUGIN_ROOT}` is substituted); `agents/`
+  and `hooks/hooks.json` are listed but hooks are not run automatically.
+  `/plugin list`, `/plugin remove <name>`; API at `/api/plugins`.
 - **Thinking** — the `reasoning` / `reasoning_content` stream of reasoning
   models is shown live and kept as a collapsible "Thought" block; set
   `LLM_REASONING_EFFORT=low|medium|high` to request more effort (providers

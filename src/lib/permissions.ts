@@ -20,6 +20,8 @@ export const APPROVAL_REQUIRED_TOOLS = [
   'spawn_agent',
   'http_request',
   'plot_data',
+  'github_create_pr',
+  'github_comment',
 ] as const;
 
 /** Binaries run_command may invoke on the host (local sandbox mode). */

@@ -47,6 +47,9 @@ const TOOLS = [
   { category: 'Interaction',  tool: 'ask_user',      scope: 'workspace', desc: 'Pause and ask you a clarifying question mid-run' },
   { category: 'Interaction',  tool: 'update_plan',   scope: 'workspace', desc: 'Maintain a persistent task plan shown in chat, resumable across turns' },
   { category: 'Deploy',       tool: 'deploy_app',    scope: 'network',   desc: 'Deploy the workspace to Vercel (needs VERCEL_TOKEN)' },
+  { category: 'GitHub',       tool: 'github_create_pr', scope: 'network', desc: 'Push the branch and open a pull request (needs GITHUB_TOKEN)' },
+  { category: 'GitHub',       tool: 'github_get_pr', scope: 'network',   desc: 'List/read PRs and issues, with review comments and CI checks' },
+  { category: 'GitHub',       tool: 'github_comment', scope: 'network',  desc: 'Comment on an issue or pull request' },
 ];
 
 export default function ToolModal({ onClose }: ToolModalProps) {
