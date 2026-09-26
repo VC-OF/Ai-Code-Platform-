@@ -146,6 +146,33 @@ execute immediately; work commands expand into explicit prompts for the agent.
 Project-defined commands (`.claude/commands/<name>.md`, with `$ARGUMENTS`)
 are merged into the autocomplete.
 
+### Configuration (`.env.local`)
+
+Everything is optional except a model provider. `.env.local.example` carries
+the same list with comments.
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `LLM_MODEL` / `OPENAI_MODEL` | `nemotron-3-ultra:cloud` | Model the agent uses; the model picker overrides it per project. |
+| `LLM_BASE_URL` / `OPENAI_API_BASE`, `LLM_API_KEY` / `OPENAI_API_KEY` | OpenAI | Default OpenAI-compatible endpoint + key (see the provider table above). |
+| `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `DEEPSEEK_API_KEY`, `TOGETHER_API_KEY`, `OLLAMA_BASE_URL` | — | Per-provider keys / endpoints; keys can also be added in Settings → Environment Variables (global). |
+| `LLM_FALLBACKS` (or `FALLBACK_MODEL`) | — | Comma-separated models tried in order when the selected one fails or rate-limits before producing output. |
+| `LLM_MAX_OUTPUT_TOKENS` | `16384` | Output cap per reply; providers that reject it are retried without it. |
+| `LLM_REASONING_EFFORT` | off | `low` / `medium` / `high` — sent as `reasoning_effort` to reasoning models (DeepSeek, OpenAI o-series, OpenRouter, Groq); providers that reject the field are retried without it. Thinking tokens are shown in the chat either way. |
+| `LLM_VISION` | auto | `1` / `0` forces whether `view_image` attaches images to the model; default uses the model registry plus name heuristics (`gpt-4o`, `claude`, `gemma4`, `-vl`, `llava`, …). |
+| `LLM_TIMEOUT_MS`, `LLM_STREAM_IDLE_MS` | `180000` | Bounded wait for response headers / for the next streamed chunk. |
+| `CONTEXT_WINDOW` / `LLM_CONTEXT_WINDOW` | per model | Override the context size used for compaction (60 % triggers a summary). |
+| `AGENT_MAX_STEPS`, `AGENT_MAX_DURATION_MIN` | `150`, `60` | Per-turn limits; hitting one pauses the turn with a **Continue** button. |
+| `SUBAGENT_MAX_STEPS`, `SUBAGENT_MAX_DURATION_MIN` | `100`, `30` | Budget for `general` sub-agents (`explore` 40 steps / 15 min, `research` 50 / 20, `verify` 60 / 20 are fixed). |
+| `SANDBOX_MODE` | `local` | `docker` runs every agent/terminal command (and the preview server) in throwaway containers; needed for shell/C/C++/Fortran in `execute_code`. |
+| `SANDBOX_IMAGE` | `open-code-sandbox:1` if built, else `node:20` | Image for sandboxed commands; build the polyglot one with `npm run sandbox:build` (add `--build-arg JULIA_VERSION=1.11.3 --build-arg WITH_R=1` for Julia / R). |
+| `SANDBOX_PREVIEW_IMAGE`, `SANDBOX_PYTHON_IMAGE`, `DOCKER_ALLOWED_IMAGES` | — | Overrides for the containerised preview server and the images `docker_run` may use. |
+| `SETTINGS_ENCRYPTION_KEY` | generated | AES-256-GCM key for the encrypted Settings store. |
+| `AUTH_TOKEN` | — | Require this token (`x-api-key`, `Authorization: Bearer`, or `auth` cookie) on every API request. |
+| `VERCEL_TOKEN`, `HUGGINGFACE_API_KEY` | — | One-click deploy; Flux image-generation fallback. |
+| `MCP_CONFIG_PATH` | `.platform/mcp.json` | Where MCP server definitions are read from. |
+| `PORT` | `3000` | The platform's own port (preview servers pick a free port automatically). |
+
 ## 4. Security model
 
 Defense in depth for a **local, single-user** tool — still not hardened
