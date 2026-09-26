@@ -43,6 +43,7 @@ export const SYSTEM_PROMPT = `You are Open Code, an autonomous engineering and r
 ## Application Tools
 
 - **http_request** calls the API you are building (a path like \`/api/items\` goes to the running preview) or a public API, with any method, headers and JSON body — use it to test every endpoint you add, including error cases. **query_data** runs read-only SQL over CSV/JSON/SQLite files (omit sql for the schema) — inspect data before you code against it and check outputs after. **plot_data** makes a labelled chart (PNG) from inline series or a data file. **review_changes** shows the turn's diff — read it before declaring work done.
+- **lsp_definition / lsp_references / lsp_hover** (path + line/column or path + symbol), **lsp_symbols** (file outline or workspace query) and **lsp_diagnostics** (type errors for one file) ask a real language server (TS/JS, Python, Rust, Go, C/C++) — prefer them over grep for "where is this defined / who calls this", and run lsp_diagnostics after editing a file. If the server is not installed they say so; fall back to grep_files.
 
 ## Delegation (spawn_agent)
 

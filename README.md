@@ -84,6 +84,8 @@ fortran in the Docker sandbox, with automatic matplotlib figure capture),
 `http_request` (any method/headers/body against the running preview or a
 public API), `query_data` (read-only SQL over CSV/JSON/SQLite files),
 `plot_data` (declarative charts to PNG), `review_changes` (the turn's diff),
+`lsp_definition` / `lsp_references` / `lsp_hover` / `lsp_symbols` /
+`lsp_diagnostics` (language-server code intelligence),
 `spawn_agent` (parallel sub-agents with their own context window),
 `update_plan`, `ask_user`, `create_artifact`, `deploy_app`, the `browser_*`
 tools, `docker_run`, and background jobs: `run_background` (long builds,
@@ -350,6 +352,23 @@ Four tools cover the gaps that showed up most in real runs
 - **`review_changes`** — git status, stat and unified diff against `HEAD`
   (this turn), `HEAD~n` or a sha, for self-review before finishing and for
   `verify` sub-agents.
+
+### Language-server tools
+
+`src/lib/lspTools.ts` speaks LSP (JSON-RPC over stdio, no extra deps) to one
+real language server per project and language, started lazily and shut down
+after 10 idle minutes: `typescript-language-server` for TS/JS (project
+`node_modules/.bin`, the platform's, then `PATH`), `pyright-langserver` or
+`pylsp` for Python, `rust-analyzer`, `gopls` and `clangd`.
+
+- **`lsp_definition`**, **`lsp_references`**, **`lsp_hover`** — `path` +
+  `line`/`column` (1-based), or `path` + `symbol` (first occurrence).
+- **`lsp_symbols`** — a file outline (`path`) or workspace search (`query`).
+- **`lsp_diagnostics`** — one file's errors and warnings (waits up to ~5s).
+
+Results are `path:line:col` plus the source line. A missing server returns an
+error naming what to install. All five are read-only (explore sub-agents get
+them too).
 
 ### Claude Code-style agent features
 

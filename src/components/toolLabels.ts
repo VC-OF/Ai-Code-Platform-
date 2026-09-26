@@ -26,6 +26,15 @@ export function toolLabel(toolName: string | undefined, args: Record<string, unk
     case 'query_data': return a.sql ? `Querying ${s(a.source, 50)}: ${s(a.sql, 70)}` : `Inspecting ${s(a.source, 80)}`;
     case 'plot_data': return `Plotting ${s(a.title, 50) || s(a.kind, 10) || 'chart'}${a.source ? ` from ${s(a.source, 50)}` : ''}`;
     case 'review_changes': return `Reviewing changes${a.base ? ` vs ${s(a.base, 20)}` : ''}${a.path ? ` in ${s(a.path, 50)}` : ''}`;
+    case 'lsp_definition':
+    case 'lsp_references':
+    case 'lsp_hover': {
+      const verb = toolName === 'lsp_definition' ? 'Finding definition of' : toolName === 'lsp_references' ? 'Finding references to' : 'Hovering';
+      const at = a.symbol ? `${s(a.symbol, 40)} in ${s(a.path, 60)}` : `${s(a.path, 60)}:${s(a.line, 6)}${a.column ? `:${s(a.column, 4)}` : ''}`;
+      return `${verb} ${at}`;
+    }
+    case 'lsp_symbols': return a.query ? `Searching symbols: ${s(a.query, 60)}` : `Outlining ${s(a.path, 80)}`;
+    case 'lsp_diagnostics': return `Checking diagnostics for ${s(a.path, 80)}`;
     case 'web_search': return `Searching the web: ${s(a.query, 80)}`;
     case 'github_create_pr': return `Opening PR: ${s(a.title, 80)}`;
     case 'github_list_prs': return `Listing ${s(a.state, 8) || 'open'} pull requests`;

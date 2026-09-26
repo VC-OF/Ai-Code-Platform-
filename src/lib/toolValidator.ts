@@ -4,6 +4,7 @@ import { SCIENCE_ZOD_SCHEMAS } from './scienceTools';
 import { APP_ZOD_SCHEMAS } from './appTools';
 import { JOB_ZOD_SCHEMAS } from './jobTools';
 import { GITHUB_ZOD_SCHEMAS } from './githubTools';
+import { LSP_ZOD_SCHEMAS } from './lspTools';
 import { SPAWN_AGENT_ZOD } from './subagents';
 
 const toolSchemas = {
@@ -163,6 +164,7 @@ const toolSchemas = {
   ...APP_ZOD_SCHEMAS,
   ...JOB_ZOD_SCHEMAS,
   ...GITHUB_ZOD_SCHEMAS,
+  ...LSP_ZOD_SCHEMAS,
   ...BROWSER_ZOD_SCHEMAS,
 };
 

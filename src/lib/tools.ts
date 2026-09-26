@@ -14,6 +14,7 @@ import { APP_TOOL_SCHEMAS, isAppTool, executeAppTool } from "./appTools";
 import { JOB_TOOL_SCHEMAS, isJobTool, executeJobTool } from "./jobTools";
 import { OPEN_CODE_DIR, ensureOpenCodeIgnored, openCodePath } from "./openCodeDir";
 import { GITHUB_TOOL_SCHEMAS, isGithubTool, executeGithubTool } from "./githubTools";
+import { LSP_TOOL_SCHEMAS, isLspTool, executeLspTool } from "./lspTools";
 import { SPAWN_AGENT_SCHEMA } from "./subagents";
 import { parseNotebook, formatNotebook } from "./notebooks";
 import { directoryMemoryFor, formatDirectoryMemory } from "./memoryFiles";
@@ -573,6 +574,7 @@ export const TOOL_SCHEMAS = [
   ...APP_TOOL_SCHEMAS,
   ...JOB_TOOL_SCHEMAS,
   ...GITHUB_TOOL_SCHEMAS,
+  ...LSP_TOOL_SCHEMAS,
   SPAWN_AGENT_SCHEMA,
   ...BROWSER_TOOL_SCHEMAS,
 ] as const;
@@ -730,6 +732,9 @@ async function runTool(
     }
     if (isGithubTool(name)) {
       return await executeGithubTool(name, args, workspace, projectIdForWorkspace(workspace));
+    }
+    if (isLspTool(name)) {
+      return await executeLspTool(name, args, workspace);
     }
     if (name === "spawn_agent") {
       // Needs the loop's model/emitter/cancellation — handled in agentLoop.ts

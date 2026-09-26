@@ -206,6 +206,22 @@ export function normalizeToolArgs(toolName: string, input: unknown): unknown {
       }
       if (typeof args.kind === 'string') args.kind = args.kind.trim().toLowerCase().replace(/plot$/, '').replace(/^(lines?)$/, 'line');
       break;
+    case 'lsp_definition':
+    case 'lsp_references':
+    case 'lsp_hover':
+    case 'lsp_symbols':
+    case 'lsp_diagnostics':
+      rename(args, 'path', PATH_ALIASES);
+      rename(args, 'line', ['line_number', 'lineNumber', 'row']);
+      rename(args, 'column', ['col', 'character', 'char']);
+      rename(args, 'symbol', ['name', 'identifier']);
+      if (toolName === 'lsp_symbols') rename(args, 'query', ['search', 'pattern']);
+      for (const k of ['line', 'column']) {
+        args[k] = toInt(args[k]);
+        if (args[k] === undefined) delete args[k];
+      }
+      if (typeof args.include_declaration === 'string') args.include_declaration = args.include_declaration.trim().toLowerCase() !== 'false';
+      break;
     case 'review_changes':
       rename(args, 'base', ['ref', 'against', 'since']);
       rename(args, 'path', PATH_ALIASES);
