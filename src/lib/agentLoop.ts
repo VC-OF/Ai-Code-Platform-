@@ -90,12 +90,16 @@ export interface AgentLoopOptions {
   currentPlan?: PlanTask[];
   /** Execution mode: 'auto' (autonomous), 'manual' (step approval), or 'plan' (architect) */
   executionMode?: 'auto' | 'manual' | 'plan';
+  /** First turn of a session (fresh chat, after /clear or a long pause):
+   *  runs SessionStart hooks. Defaults to turnIndex === 1. */
+  sessionStart?: boolean;
   /** Set when this loop is a sub-agent spawned by another turn: no plan
    *  step, no persistence, no git checkpoints, its own step/time budget. */
   nested?: {
     depth: number;
     label: string;
-    kind: SubagentKind;
+    /** Built-in kind or custom agent name */
+    kind: string;
     maxSteps?: number;
     maxDurationMs?: number;
   };
@@ -206,6 +210,17 @@ export async function runAgentLoop(
     messages.push(contextMsg);
   }
 
+  // Notification hooks fire whenever the loop blocks on the user
+  const notifyHooks = async (message: string) => {
+    if (nested || hooks.hooks.length === 0) return;
+    const res = await runHooks(
+      hooks,
+      { event: 'Notification', projectId, workspace: workspaceRoot, message },
+      { signal: cancellation.token.signal }
+    ).catch(() => [] as HookRunResult[]);
+    emitHookResults(emitter, stepIndex, res);
+  };
+
   emitter.status(0, 'planning');
 
   try {
@@ -233,6 +248,28 @@ export async function runAgentLoop(
         emitter.error(0, `Blocked by a UserPromptSubmit hook: ${verdict.reason}`, false);
         emitter.status(0, 'error');
         return buildResult('error', 0, filesChanged, totalTokens, startTime);
+      }
+    }
+
+    // SessionStart hooks: their stdout joins this turn as context (Claude Code semantics)
+    if (!nested && (opts.sessionStart ?? turnIndex === 1) && hooks.hooks.length > 0) {
+      const startHooks = await runHooks(
+        hooks,
+        { event: 'SessionStart', projectId, workspace: workspaceRoot, source: turnIndex === 1 ? 'startup' : 'resume' },
+        { signal: cancellation.token.signal }
+      );
+      emitHookResults(emitter, 0, startHooks);
+      const context = startHooks
+        .filter((h) => h.exitCode === 0 && h.stdout)
+        .map((h) => h.stdout)
+        .join('\n\n');
+      if (context) {
+        const sessionMsg = {
+          role: 'user',
+          content: `[Context from SessionStart hooks:]\n${context}`,
+        } as ContextMessage;
+        alreadyPersisted.add(sessionMsg);
+        messages.push(sessionMsg);
       }
     }
 
@@ -308,6 +345,15 @@ export async function runAgentLoop(
      */
     const compactContext = async (force: boolean): Promise<boolean> => {
       emitter.status(stepIndex, 'compacting');
+      if (hooks.hooks.length > 0) {
+        // Informational: exit 2 cannot veto compaction
+        const pre = await runHooks(
+          hooks,
+          { event: 'PreCompact', projectId, workspace: workspaceRoot, trigger: force ? 'overflow' : 'auto' },
+          { signal: cancellation.token.signal }
+        );
+        emitHookResults(emitter, stepIndex, pre);
+      }
       const before = {
         messages: messages.length,
         tokens:   messages.reduce((s, m) => s + estimateMessageTokens(m), 0),
@@ -805,6 +851,7 @@ export async function runAgentLoop(
               ts: Date.now(),
             });
 
+            await notifyHooks(`The agent is asking: ${question}`);
             const waitStart = Date.now();
             const answer = opts.waitForUserInput
               ? await opts.waitForUserInput(question, options)
@@ -873,6 +920,7 @@ export async function runAgentLoop(
             else targetSummary = JSON.stringify(toolArgs).slice(0, 80);
 
             const question = `🛡️ [Manual Approval Required]\nAllow tool \`${toolName}\` on ${targetSummary}?\n\nArguments:\n\`\`\`json\n${JSON.stringify(toolArgs, null, 2).slice(0, 600)}\n\`\`\``;
+            await notifyHooks(`Approval needed for ${toolName} on ${targetSummary}`);
             const pauseStart = Date.now();
             const answer = await opts.waitForUserInput(question, ['Approve', 'Skip Tool', 'Cancel Run']);
             pausedMs += Date.now() - pauseStart;
@@ -944,12 +992,14 @@ export async function runAgentLoop(
             } as ContextMessage;
             messages.push(placeholder);
             const request = {
-              kind:    toolArgs.kind as SubagentKind,
+              kind:    typeof toolArgs.kind === 'string' ? toolArgs.kind as SubagentKind : undefined,
+              agent:   typeof toolArgs.agent === 'string' ? toolArgs.agent : undefined,
+              isolation: toolArgs.isolation === 'worktree' ? 'worktree' as const : undefined,
               task:    String(toolArgs.task),
               context: typeof toolArgs.context === 'string' ? toolArgs.context : undefined,
               label:   typeof toolArgs.label === 'string' ? toolArgs.label : undefined,
             };
-            const name = request.label ?? request.kind;
+            const name = request.label ?? request.agent ?? request.kind ?? 'agent';
             const promise = depth >= MAX_SUBAGENT_DEPTH
               ? Promise.resolve(failedSubagent(name, 'Sub-agents cannot spawn further sub-agents — do the work directly.'))
               : runSubagent(request, {
@@ -1129,7 +1179,7 @@ export async function runAgentLoop(
           toolLogDb.insert({
             project_id:  projectId,
             tool_name:   'spawn_agent',
-            args:        { kind: p.args.kind, label: p.args.label, task: String(p.args.task ?? '').slice(0, 300) },
+            args:        { kind: p.args.kind, agent: p.args.agent, isolation: p.args.isolation, label: p.args.label, task: String(p.args.task ?? '').slice(0, 300) },
             result:      { success: r.success, summary: r.summary },
             success:     r.success,
             duration_ms: duration,
@@ -1142,6 +1192,7 @@ export async function runAgentLoop(
               toolCalls:    r.toolCalls,
               tokens:       r.totalTokens,
               filesChanged: r.filesChanged,
+              branch:       r.branch,
               report:       r.output.slice(0, 6_000),
             },
           });

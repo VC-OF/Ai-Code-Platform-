@@ -2,6 +2,8 @@ import { z } from 'zod';
 import type { LLMConfig, LLMTool } from './llmClient';
 import { EventEmitter } from './events';
 import type { CancellationSource } from './cancellation';
+import { loadCustomAgents, findCustomAgent, type CustomAgent } from './customAgents';
+import { createAgentWorktree, finishAgentWorktree } from './agentWorktree';
 
 /**
  * Sub-agents: the main agent can delegate a self-contained task to a fresh
@@ -110,26 +112,34 @@ export const SPAWN_AGENT_SCHEMA = {
       "'explore' (read-only: find and explain code/files), 'research' (docs/literature + quick calculations, cites sources), " +
       "'verify' (independently re-run tests/reproduce results/compare with expectations without fixing anything), " +
       "'general' (implements a delegated sub-task end to end, may edit files). " +
+      'Instead of kind you may pass agent: the name of a project-defined custom agent (see "Custom agents" in the system prompt). ' +
+      "isolation: 'worktree' runs a general agent in its own git worktree/branch; the report names the branch to merge. " +
       'Use it to keep your own context small (broad searches, long documents), to run independent workstreams in parallel (issue several spawn_agent calls in ONE reply — they execute concurrently; give them non-overlapping files), and to get an independent check of your work before declaring it done. ' +
       'The sub-agent only knows what you put in task/context: state the goal, what a good report contains, relevant paths, constraints and what you already know.',
     parameters: {
       type: 'object',
       properties: {
-        kind: { type: 'string', enum: SUBAGENT_KINDS, description: 'What the sub-agent may do' },
+        kind: { type: 'string', enum: SUBAGENT_KINDS, description: 'What the sub-agent may do (omit when agent is given)' },
+        agent: { type: 'string', description: 'Name of a project custom agent (.claude/agents/<name>.md) — alternative to kind' },
+        isolation: { type: 'string', enum: ['worktree'], description: 'Run in a separate git worktree on branch oc-agent-<id> (general / custom agents that edit files)' },
         task: { type: 'string', description: 'Complete, self-contained instructions (what to do, where to look, what to report)' },
         context: { type: 'string', description: 'Facts, findings and constraints the sub-agent should start from (optional)' },
         label: { type: 'string', description: 'Short name shown in the UI, e.g. "boundary-conditions research" (optional)' },
       },
-      required: ['kind', 'task'],
+      required: ['task'],
     },
   },
 };
 
 export const SPAWN_AGENT_ZOD = z.object({
-  kind: z.enum(SUBAGENT_KINDS as [SubagentKind, ...SubagentKind[]]),
+  kind: z.enum(SUBAGENT_KINDS as [SubagentKind, ...SubagentKind[]]).optional(),
+  agent: z.string().min(1).max(80).optional(),
+  isolation: z.enum(['worktree']).optional(),
   task: z.string().min(10).max(30_000),
   context: z.string().max(30_000).optional(),
   label: z.string().max(60).optional(),
+}).refine((a) => (a.kind ? 1 : 0) + (a.agent ? 1 : 0) === 1, {
+  message: 'Pass exactly one of kind or agent',
 });
 
 function toolName(tool: LLMTool): string {
@@ -145,6 +155,28 @@ export function subagentToolSet(kind: SubagentKind, tools: LLMTool[]): LLMTool[]
     if (name.startsWith('mcp_')) return kind === 'general';
     return spec.allows(name);
   });
+}
+
+/** Tools a custom agent may call: its declared list (or everything), minus exclusions. */
+export function customAgentToolSet(agent: CustomAgent, tools: LLMTool[]): LLMTool[] {
+  const allowed = agent.tools ? new Set(agent.tools) : null;
+  return tools.filter((t) => {
+    const name = toolName(t);
+    if (!name || SUBAGENT_EXCLUDED_TOOLS.has(name)) return false;
+    return !allowed || allowed.has(name);
+  });
+}
+
+export function customAgentSystemPrompt(agent: CustomAgent, parentPrompt: string, label: string): string {
+  return (
+    `${parentPrompt}\n\n` +
+    `## Sub-agent mode: ${agent.name} ("${label}")\n` +
+    'You are a sub-agent spawned by the main agent for ONE delegated task. You do not talk to the user.\n\n' +
+    `### Custom agent instructions (${agent.source})\n${agent.prompt}\n\n` +
+    'When done, reply with a plain-text report and no tool calls. That report is the ONLY thing the main agent receives, so make it complete and self-contained: ' +
+    'concrete findings, exact file paths, commands you ran with their results, and open questions. ' +
+    'Never claim work you did not do. Do not ask questions — decide, and state your assumptions.'
+  );
 }
 
 export function subagentSystemPrompt(kind: SubagentKind, parentPrompt: string, label: string): string {
@@ -163,7 +195,10 @@ export function subagentSystemPrompt(kind: SubagentKind, parentPrompt: string, l
 // ─── Running ───────────────────────────────────────────────────────────────────
 
 export interface SubagentRequest {
-  kind: SubagentKind;
+  kind?: SubagentKind;
+  /** Custom agent name (alternative to kind) */
+  agent?: string;
+  isolation?: 'worktree';
   task: string;
   context?: string;
   label?: string;
@@ -197,6 +232,8 @@ export interface SubagentRunResult {
   steps: number;
   toolCalls: number;
   durationMs: number;
+  /** Worktree branch holding the agent's committed changes */
+  branch?: string;
 }
 
 /**
@@ -211,7 +248,7 @@ class SubagentEmitter extends EventEmitter {
 
   constructor(
     private parent: EventEmitter,
-    private meta: { toolCallId: string; stepIndex: number; label: string; kind: SubagentKind }
+    private meta: { toolCallId: string; stepIndex: number; label: string; kind: string }
   ) {
     super(null as unknown as ReadableStreamDefaultController);
   }
@@ -242,31 +279,48 @@ function clip(s: string, max: number): string {
 const MAX_REPORT_CHARS = 16_000;
 
 export async function runSubagent(req: SubagentRequest, env: SubagentEnv): Promise<SubagentRunResult> {
-  const spec = KIND_SPECS[req.kind];
-  const label = (req.label?.trim() || `${req.kind} agent`).slice(0, 60);
+  let custom: CustomAgent | undefined;
+  if (req.agent) {
+    custom = findCustomAgent(await loadCustomAgents(env.workspaceRoot).catch(() => []), req.agent);
+    if (!custom) throw new Error(`Unknown custom agent "${req.agent}" — see "Custom agents" in the system prompt, or use kind.`);
+  }
+  const kind: SubagentKind = req.kind ?? 'general';
+  const spec = KIND_SPECS[kind];
+  const kindLabel = custom ? custom.name : kind;
+  const label = (req.label?.trim() || `${kindLabel} agent`).slice(0, 60);
   const child = new SubagentEmitter(env.emitter, {
     toolCallId: env.toolCallId,
     stepIndex: env.parentStep,
     label,
-    kind: req.kind,
+    kind: kindLabel,
   });
 
   // Lazy: agentLoop imports this module for the spawn_agent handling
   const { runAgentLoop } = await import('./agentLoop');
 
+  const worktree = req.isolation === 'worktree' && (custom || spec.edits)
+    ? createAgentWorktree(env.workspaceRoot)
+    : null;
+  const workspaceRoot = worktree?.path ?? env.workspaceRoot;
+
   const task =
     req.task.trim() +
-    (req.context?.trim() ? `\n\n## Context from the main agent\n${req.context.trim()}` : '');
+    (req.context?.trim() ? `\n\n## Context from the main agent\n${req.context.trim()}` : '') +
+    (worktree
+      ? `\n\n(You are working in an isolated git worktree on branch ${worktree.branch}, based on the last commit — uncommitted changes in the main workspace are not visible here. Dependencies such as node_modules may need installing.)`
+      : '');
 
   const started = Date.now();
   const result = await runAgentLoop({
     projectId: env.projectId,
-    workspaceRoot: env.workspaceRoot,
+    workspaceRoot,
     messages: [{ role: 'user', content: task }],
     persistedCount: 0,
-    llmConfig: env.llmConfig,
-    tools: subagentToolSet(req.kind, env.tools),
-    systemPrompt: subagentSystemPrompt(req.kind, env.systemPrompt, label),
+    llmConfig: custom?.model ? { ...env.llmConfig, model: custom.model } : env.llmConfig,
+    tools: custom ? customAgentToolSet(custom, env.tools) : subagentToolSet(kind, env.tools),
+    systemPrompt: custom
+      ? customAgentSystemPrompt(custom, env.systemPrompt, label)
+      : subagentSystemPrompt(kind, env.systemPrompt, label),
     turnIndex: env.turnIndex,
     emitter: child,
     cancellation: env.cancellation,
@@ -274,18 +328,21 @@ export async function runSubagent(req: SubagentRequest, env: SubagentEnv): Promi
     nested: {
       depth: env.depth + 1,
       label,
-      kind: req.kind,
+      kind: kindLabel,
       maxSteps: spec.maxSteps,
       maxDurationMs: spec.maxDurationMs,
     },
   });
 
+  const wtOutcome = worktree ? finishAgentWorktree(env.workspaceRoot, worktree) : null;
+
   const durationMs = Date.now() - started;
-  const files = result.filesChanged;
+  // Worktree edits are on a branch, not in the parent's workspace
+  const files = wtOutcome ? [] : result.filesChanged;
   const report = (result.finalMessage ?? child.lastText ?? '').trim();
   const status = result.reason === 'completed' ? 'finished' : `stopped (${result.reason})`;
   const header =
-    `[Sub-agent "${label}" (${req.kind}) ${status} — ${result.stepsCompleted} steps, ${child.toolCalls} tool calls, ` +
+    `[Sub-agent "${label}" (${kindLabel}) ${status} — ${result.stepsCompleted} steps, ${child.toolCalls} tool calls, ` +
     `${result.totalTokens} tokens, ${(durationMs / 1000).toFixed(0)}s${files.length ? `; files changed: ${files.join(', ')}` : ''}]`;
 
   let body = report || (child.lastError ? `The sub-agent failed: ${child.lastError}` : '(the sub-agent produced no final report)');
@@ -294,10 +351,12 @@ export async function runSubagent(req: SubagentRequest, env: SubagentEnv): Promi
   } else if (result.reason === 'error' && child.lastError && report) {
     body += `\n\n(The sub-agent ended with an error: ${child.lastError})`;
   }
+  if (wtOutcome) body += `\n\n${wtOutcome.note}`;
 
   return {
     success: result.reason === 'completed',
     output: `${header}\n\n${clip(body, MAX_REPORT_CHARS)}`,
+    branch: wtOutcome?.changed ? wtOutcome.branch : undefined,
     summary: `${label}: ${status}${files.length ? `, ${files.length} file${files.length > 1 ? 's' : ''} changed` : ''} (${child.toolCalls} tool calls)`,
     reason: result.reason,
     filesChanged: files,

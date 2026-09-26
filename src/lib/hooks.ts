@@ -18,15 +18,27 @@ import { safeExec, CommandError } from './safeExec';
  * Each hook receives a JSON payload on stdin (`hook_event_name`, `tool_name`,
  * `tool_input`, `tool_response`, `prompt`, `cwd`) plus OC_HOOK_* env vars.
  * Exit code 2 blocks the action (PreToolUse: the tool is not run; Stop: the
- * agent keeps working) and its stderr is fed back to the model. Any other
+ * agent keeps working) and its stderr is fed back to the model.
+ * SessionStart (first turn of a session) adds the hook's stdout to the turn
+ * as context; PreCompact (payload `trigger`: auto | overflow) and
+ * Notification (payload `message`, when the agent waits for the user) are
+ * informational — exit 2 does not block them. Any other
  * non-zero exit is reported but does not block. Commands go through
  * safeExec, so the host allowlist / docker sandbox apply exactly as they do
  * for run_command.
  */
 
-export type HookEvent = 'PreToolUse' | 'PostToolUse' | 'UserPromptSubmit' | 'Stop' | 'SubagentStop';
+export type HookEvent =
+  | 'PreToolUse' | 'PostToolUse' | 'UserPromptSubmit' | 'Stop' | 'SubagentStop'
+  | 'SessionStart' | 'PreCompact' | 'Notification';
 
-export const HOOK_EVENTS: HookEvent[] = ['PreToolUse', 'PostToolUse', 'UserPromptSubmit', 'Stop', 'SubagentStop'];
+export const HOOK_EVENTS: HookEvent[] = [
+  'PreToolUse', 'PostToolUse', 'UserPromptSubmit', 'Stop', 'SubagentStop',
+  'SessionStart', 'PreCompact', 'Notification',
+];
+
+/** Events where exit 2 cannot block anything (it is reported like any failure). */
+export const NON_BLOCKING_EVENTS = new Set<HookEvent>(['SessionStart', 'PreCompact', 'Notification']);
 
 export const HOOK_SETTINGS_FILES = [
   '.claude/settings.json',
@@ -156,6 +168,12 @@ export interface HookInput {
   prompt?: string;
   /** The agent's final message (Stop / SubagentStop) */
   finalMessage?: string;
+  /** PreCompact: what triggered compaction */
+  trigger?: 'auto' | 'overflow';
+  /** Notification: what the agent is waiting for */
+  message?: string;
+  /** SessionStart: why a session started */
+  source?: string;
 }
 
 export interface HookRunResult {
@@ -167,6 +185,8 @@ export interface HookRunResult {
   blocked: boolean;
   /** Text to feed back to the model (stderr, falling back to stdout) */
   feedback: string;
+  /** Raw stdout (SessionStart context) */
+  stdout?: string;
   durationMs: number;
   timedOut: boolean;
   /** The command could not be started (e.g. not on the host allowlist) */
@@ -187,6 +207,9 @@ function payloadFor(input: HookInput): string {
     tool_response: input.toolOutput !== undefined ? clip(input.toolOutput, MAX_PAYLOAD_CHARS) : undefined,
     prompt: input.prompt,
     final_message: input.finalMessage !== undefined ? clip(input.finalMessage, MAX_PAYLOAD_CHARS) : undefined,
+    trigger: input.trigger,
+    message: input.message,
+    source: input.source,
   };
   return JSON.stringify(payload);
 }
@@ -231,8 +254,9 @@ export async function runHooks(
           command: hook.command,
           source: group.source,
           exitCode: res.code,
-          blocked: res.code === 2 && !res.timedOut,
+          blocked: res.code === 2 && !res.timedOut && !NON_BLOCKING_EVENTS.has(input.event),
           feedback,
+          stdout: clip(res.stdout.trim(), MAX_FEEDBACK_CHARS),
           durationMs: Date.now() - started,
           timedOut: res.timedOut,
         });

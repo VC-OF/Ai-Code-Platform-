@@ -115,7 +115,7 @@ interface WorkspaceInfo {
   hooksFile: string | null;
   hooksFiles?: string[];
   hooksError?: string;
-  agents: { name: string; description?: string; file: string }[];
+  agents: { name: string; description?: string; file: string; tools?: string[]; model?: string }[];
   commands?: { name: string; description: string; source: string }[];
 }
 interface ProviderStatus { id: string; label: string; kind: 'cloud' | 'local'; keyEnv: string | null; available: boolean }
@@ -273,7 +273,7 @@ async function handleHooks(ctx: SlashContext) {
       '',
       ...lines,
       '',
-      'The agent loop runs **PreToolUse**, **PostToolUse**, **UserPromptSubmit**, **Stop** and **SubagentStop** hooks. Each command gets the Claude Code JSON payload on stdin; exit code 2 blocks the action and feeds stderr back to the model. Commands run through the same sandbox as run_command.',
+      'The agent loop runs **PreToolUse**, **PostToolUse**, **UserPromptSubmit**, **Stop**, **SubagentStop**, **SessionStart** (stdout is added as context), **PreCompact** and **Notification** hooks. Each command gets the Claude Code JSON payload on stdin; exit code 2 blocks the action and feeds stderr back to the model (SessionStart, PreCompact and Notification cannot be blocked). Commands run through the same sandbox as run_command.',
     ].join('\n'));
   } catch (err) {
     ctx.say(`Couldn’t read hooks: ${errText(err)}`);
@@ -554,8 +554,8 @@ async function handleAgents(ctx: SlashContext) {
     '**Agents**',
     '',
     agents.length
-      ? agents.map((a) => `- \`${a.name}\`${a.description ? ` — ${a.description}` : ''} _(${a.file})_`).join('\n')
-      : '- No `.claude/agents/*.md` definitions in this workspace.',
+      ? agents.map((a) => `- \`${a.name}\`${a.description ? ` — ${a.description}` : ''}${a.tools ? ` · tools: ${a.tools.join(', ')}` : ''}${a.model ? ` · model: ${a.model}` : ''} _(${a.file})_`).join('\n')
+      : '- No `.claude/agents/*.md` or `.opencode/agents/*.md` definitions in this workspace.',
     '',
     `**Skills** (${skills.length})`,
     '',
@@ -567,7 +567,7 @@ async function handleAgents(ctx: SlashContext) {
       ? info.commands.map((c) => `- \`/${c.name}\` — ${c.description} _(${c.source})_`).join('\n')
       : '- None. Add `.claude/commands/<name>.md` files (use `$ARGUMENTS` in the body).',
     '',
-    'The main agent can delegate with `spawn_agent` to sub-agents of kind `explore`, `research`, `verify` or `general`, each with its own context window and a restricted tool set; several run in parallel. Skills load on demand with load_skill. `.claude/agents/*.md` definitions are listed for reference.',
+    'The main agent can delegate with `spawn_agent` to sub-agents of kind `explore`, `research`, `verify` or `general`, each with its own context window and a restricted tool set; several run in parallel (`isolation: \'worktree\'` gives an editing agent its own git branch). The custom agents above are usable via `spawn_agent({ agent: "<name>" })` with their own prompt, tools and model. Skills load on demand with load_skill.',
   ].join('\n'));
 }
 

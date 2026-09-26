@@ -11,6 +11,7 @@ import {
 import { loadSkills, formatSkillsForPrompt, formatSkillListing, type SkillDefinition } from './skills';
 import { listKnowledgeItems, formatKnowledgeForPrompt, type KnowledgeItem } from './knowledge';
 import { TOOL_SCHEMAS } from './tools';
+import { loadCustomAgents, formatCustomAgentsForPrompt } from './customAgents';
 import { isDockerMode } from './safeExec';
 import { getMcpToolSchemas } from './mcpClient';
 import { projectDb, messageDb } from './db';
@@ -45,6 +46,7 @@ export async function buildPromptParts(
   const mcpTools = await getMcpToolSchemas().catch(() => [] as Record<string, unknown>[]);
   const skills = await loadSkills(project.workspace, { includeGlobal: true });
   const knowledgeItems = await listKnowledgeItems(project.workspace).catch(() => [] as KnowledgeItem[]);
+  const customAgentsText = formatCustomAgentsForPrompt(await loadCustomAgents(project.workspace).catch(() => []));
 
   const basePrompt = SYSTEM_PROMPT +
     (isDockerMode()
@@ -55,7 +57,10 @@ export async function buildPromptParts(
       : '') +
     (project.kind === 'build'
       ? '\n\nNote: this project is Build Mode — an existing, real codebase opened directly from disk, not a fresh scaffold. It may not follow any particular template or framework. Explore the file structure and read key files (README, package.json, lint/format configs) before making assumptions, and follow the project\'s existing conventions rather than introducing new ones.'
-      : '');
+      : '') +
+    (customAgentsText ? `
+
+${customAgentsText}` : '');
 
   return {
     parts: {

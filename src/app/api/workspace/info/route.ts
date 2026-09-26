@@ -1,24 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs/promises';
 import { constants as fsConstants } from 'fs';
-import path from 'path';
 import { ensureWorkspace, getWorkspaceRoot } from '@/lib/workspace';
 import { isDockerMode } from '@/lib/safeExec';
 import { getSandboxImage, isPolyglotImageBuilt, SANDBOX_BUILD_HINT } from '@/lib/sandboxImage';
 import { loadHooks, HOOK_EVENTS } from '@/lib/hooks';
 import { loadCustomCommands } from '@/lib/customCommands';
+import { loadCustomAgents } from '@/lib/customAgents';
 import pkg from '../../../../../package.json';
 
 export const runtime = 'nodejs';
-
-const MAX_AGENT_FILES = 50;
-
-function frontmatterField(text: string, field: string): string | undefined {
-  const fm = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-  if (!fm) return undefined;
-  const line = fm[1].split(/\r?\n/).find((l) => l.startsWith(`${field}:`));
-  return line?.slice(field.length + 1).trim().replace(/^["']|["']$/g, '') || undefined;
-}
 
 /**
  * Read-only workspace facts for local slash commands (/hooks, /agents,
@@ -54,19 +45,14 @@ export async function GET(req: NextRequest) {
       source: c.source,
     }));
 
-    const agents: { name: string; description?: string; file: string }[] = [];
-    try {
-      const dir = path.join(root, '.claude', 'agents');
-      const entries = (await fs.readdir(dir)).filter((f) => f.endsWith('.md')).slice(0, MAX_AGENT_FILES);
-      for (const file of entries) {
-        const text = await fs.readFile(path.join(dir, file), 'utf8').catch(() => '');
-        agents.push({
-          name: frontmatterField(text, 'name') || file.replace(/\.md$/, ''),
-          description: frontmatterField(text, 'description'),
-          file: `.claude/agents/${file}`,
-        });
-      }
-    } catch {}
+    // Same loader spawn_agent uses, so /agents shows exactly what is spawnable
+    const agents = (await loadCustomAgents(root).catch(() => [])).map((a) => ({
+      name: a.name,
+      description: a.description,
+      file: a.source,
+      tools: a.tools,
+      model: a.model,
+    }));
 
     return NextResponse.json({
       workspace: root,
