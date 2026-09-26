@@ -43,7 +43,7 @@ const MAX_STEPS    = envPositiveInt('AGENT_MAX_STEPS', 150);
 const MAX_DURATION = envPositiveInt('AGENT_MAX_DURATION_MIN', 60) * 60_000;
 const STEP_TIMEOUT = 300_000;      // 5 min per LLM call (prevents premature timeout on reasoning models)
 const MAX_TRUNCATIONS = 3;         // consecutive cut-off replies before giving up
-const MAX_LLM_RETRIES = 3;         // transient model/provider failures retried per step
+const MAX_LLM_RETRIES = 5;         // transient model/provider failures retried per step (2s…32s backoff)
 const MAX_VERIFY_NUDGES = 2;       // times we ask for run_lint/run_tests before letting the turn end
 const PLAN_INSTRUCTION =
   '[Planning step — tools are disabled for this reply.] Write a short numbered plan (at most ~10 lines) of the ' +

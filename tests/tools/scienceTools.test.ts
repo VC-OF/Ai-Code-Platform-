@@ -47,6 +47,11 @@ describe('science tools: schemas and normalisation', () => {
       language: 'python', code: 'print(1)', timeout_seconds: 900,
     });
     expect(normalizeToolArgs('execute_code', { language: 'c++', code: 'x' })).toMatchObject({ language: 'cpp' });
+    // Models reach for a shell as {language: "bash", command: "…"}
+    expect(normalizeToolArgs('execute_code', { language: 'bash', command: 'ls -la results/' })).toEqual({
+      language: 'shell', code: 'ls -la results/',
+    });
+    expect(normalizeToolArgs('execute_code', { command: 'wc -l a.py' })).toEqual({ language: 'shell', code: 'wc -l a.py' });
     expect(normalizeToolArgs('notebook_edit', { file_path: 'n.ipynb', edit_mode: 'update', index: '2', new_source: 'y' })).toEqual({
       path: 'n.ipynb', action: 'replace', cell_index: 2, source: 'y',
     });
@@ -110,6 +115,15 @@ describe('science tools: execution', () => {
     expect(await ws.exists(`${r.extra?.runDir}/main.js`)).toBe(true);
     expect(await ws.read('.gitignore')).toContain('.open-code/');
   }, 30_000);
+
+  it('grep_files accepts a single file as the search path', async () => {
+    await ws.write('src/solver.py', 'def rk4(f, y, t, h):\n    return y\n\ndef euler(f, y, t, h):\n    return y\n');
+    const r = await executeTool('grep_files', { pattern: '^def ', path: 'src/solver.py' }, ws.root, createTurnContext());
+    expect(r.success).toBe(true);
+    expect(r.output).toContain('solver.py:1: def rk4');
+    expect(r.output).toContain('solver.py:4: def euler');
+    expect(r.summary).toContain('2 matches');
+  });
 
   it('reports failures with exit code and stderr', async () => {
     const r = await executeTool('execute_code', { language: 'javascript', code: "console.error('boom'); process.exit(3)" }, ws.root, createTurnContext());

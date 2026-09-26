@@ -97,11 +97,14 @@ export function normalizeToolArgs(toolName: string, input: unknown): unknown {
       args.tasks = normalizePlanTasks(args.tasks);
       break;
     case 'execute_code': {
-      rename(args, 'code', ['source', 'script', 'snippet', 'program', 'content']);
+      // `{language: "bash", command: "…"}` is how models reach for a shell
+      rename(args, 'code', ['source', 'script', 'snippet', 'program', 'content', 'command', 'cmd']);
       rename(args, 'language', ['lang']);
       if (typeof args.language === 'string') {
         const lang = args.language.trim().toLowerCase();
         args.language = LANGUAGE_ALIASES[lang] ?? lang;
+      } else if (args.language === undefined && typeof args.code === 'string' && !/\n/.test(args.code)) {
+        args.language = 'shell';
       }
       const t = toInt(args.timeout_seconds ?? args.timeout);
       delete args.timeout;

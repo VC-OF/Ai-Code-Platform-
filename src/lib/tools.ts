@@ -960,14 +960,17 @@ export async function executeTool(
           };
         }
 
-        const searchRoot = args.path
+        let searchRoot = args.path
           ? safeResolve(workspace, args.path as string)
           : workspace;
-        const matches = await nodeGrep(
-          searchRoot,
-          regex,
-          args.glob ? String(args.glob) : undefined
-        );
+        let globFilter = args.glob ? String(args.glob) : undefined;
+        // A file path means "search this one file" (models do this constantly)
+        const rootStat = await fs.stat(searchRoot).catch(() => null);
+        if (rootStat?.isFile()) {
+          globFilter = path.basename(searchRoot);
+          searchRoot = path.dirname(searchRoot);
+        }
+        const matches = await nodeGrep(searchRoot, regex, globFilter);
 
         let output = matches
           .slice(0, 100)
