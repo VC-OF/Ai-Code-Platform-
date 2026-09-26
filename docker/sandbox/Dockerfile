@@ -60,10 +60,11 @@ RUN if [ -n "$JULIA_VERSION" ]; then \
       && apt-get clean && rm -rf /var/lib/apt/lists/*; \
     fi
 
-# uv (fast pip/venv) + ruff + pytest as global tools
+# uv (fast pip/venv) + ruff as global tools. pytest is deliberately NOT a
+# pipx tool: an isolated venv could not import the scientific stack above,
+# so it is installed into the system python (see the pip layer).
 RUN PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install uv \
  && PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install ruff \
- && PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install pytest \
  && rm -rf /root/.cache
 
 # Rust (minimal profile + clippy/rustfmt). Binaries go to /usr/local/cargo/bin;
