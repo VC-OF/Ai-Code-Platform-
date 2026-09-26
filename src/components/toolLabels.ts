@@ -22,6 +22,10 @@ export function toolLabel(toolName: string | undefined, args: Record<string, unk
     case 'save_memory': return `Remembering: ${s(a.text, 90)}`;
     case 'spawn_agent': return `Delegating to ${s(a.kind, 10)} sub-agent${a.label ? ` "${s(a.label, 40)}"` : ''}`;
     case 'load_skill': return `Loading skill ${s(a.name, 40)}`;
+    case 'http_request': return `${s(a.method, 8) || 'GET'} ${s(a.url, 90)}`;
+    case 'query_data': return a.sql ? `Querying ${s(a.source, 50)}: ${s(a.sql, 70)}` : `Inspecting ${s(a.source, 80)}`;
+    case 'plot_data': return `Plotting ${s(a.title, 50) || s(a.kind, 10) || 'chart'}${a.source ? ` from ${s(a.source, 50)}` : ''}`;
+    case 'review_changes': return `Reviewing changes${a.base ? ` vs ${s(a.base, 20)}` : ''}${a.path ? ` in ${s(a.path, 50)}` : ''}`;
     case 'web_search': return `Searching the web: ${s(a.query, 80)}`;
     case 'fetch_url': return `Reading ${s(a.url, 90)}`;
     default: return null;

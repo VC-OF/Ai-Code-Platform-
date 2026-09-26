@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { BROWSER_ZOD_SCHEMAS } from './browserTools';
 import { SCIENCE_ZOD_SCHEMAS } from './scienceTools';
+import { APP_ZOD_SCHEMAS } from './appTools';
 import { SPAWN_AGENT_ZOD } from './subagents';
 
 const toolSchemas = {
@@ -134,6 +135,7 @@ const toolSchemas = {
   docker_status: z.object({}).optional(),
   spawn_agent: SPAWN_AGENT_ZOD,
   ...SCIENCE_ZOD_SCHEMAS,
+  ...APP_ZOD_SCHEMAS,
   ...BROWSER_ZOD_SCHEMAS,
 };
 

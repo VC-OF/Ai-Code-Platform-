@@ -10,6 +10,7 @@ import {
 import { webSearch, fetchUrl, htmlToText } from "./webTools";
 import { BROWSER_TOOL_SCHEMAS, isBrowserTool, executeBrowserTool } from "./browserTools";
 import { SCIENCE_TOOL_SCHEMAS, isScienceTool, executeScienceTool } from "./scienceTools";
+import { APP_TOOL_SCHEMAS, isAppTool, executeAppTool } from "./appTools";
 import { SPAWN_AGENT_SCHEMA } from "./subagents";
 import { parseNotebook, formatNotebook } from "./notebooks";
 import { generateImage } from "./imageGen";
@@ -516,6 +517,7 @@ export const TOOL_SCHEMAS = [
     },
   },
   ...SCIENCE_TOOL_SCHEMAS,
+  ...APP_TOOL_SCHEMAS,
   SPAWN_AGENT_SCHEMA,
   ...BROWSER_TOOL_SCHEMAS,
 ] as const;
@@ -614,6 +616,9 @@ export async function executeTool(
     }
     if (isScienceTool(name)) {
       return await executeScienceTool(name, args, workspace, ctx, projectIdForWorkspace(workspace), signal);
+    }
+    if (isAppTool(name)) {
+      return await executeAppTool(name, args, workspace, ctx, projectIdForWorkspace(workspace), signal);
     }
     if (name === "spawn_agent") {
       // Needs the loop's model/emitter/cancellation — handled in agentLoop.ts

@@ -18,6 +18,8 @@ export const APPROVAL_REQUIRED_TOOLS = [
   'run_notebook',
   'save_memory',
   'spawn_agent',
+  'http_request',
+  'plot_data',
 ] as const;
 
 /** Binaries run_command may invoke on the host (local sandbox mode). */

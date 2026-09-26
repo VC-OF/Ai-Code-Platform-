@@ -80,6 +80,9 @@ workspace), `run_command` (allowlisted), `run_lint`, `run_tests`,
 `execute_code` (python / javascript / julia / r, plus shell / c / cpp /
 fortran in the Docker sandbox, with automatic matplotlib figure capture),
 `view_image`, `notebook_edit` / `run_notebook`, `save_memory`,
+`http_request` (any method/headers/body against the running preview or a
+public API), `query_data` (read-only SQL over CSV/JSON/SQLite files),
+`plot_data` (declarative charts to PNG), `review_changes` (the turn's diff),
 `spawn_agent` (parallel sub-agents with their own context window),
 `update_plan`, `ask_user`, `create_artifact`, `deploy_app`, the `browser_*`
 tools and `docker_run`. Hooks from `.claude/settings.json` run around every
@@ -316,6 +319,26 @@ report with uncertainty:
   `jupyter`, `gcc` / `g++` / `gfortran` and `latexmk` / `pdflatex` are
   allowlisted for `run_command` (inline-code flags such as `python -c` or
   `julia -e` stay blocked).
+
+### Application tools
+
+Four tools cover the gaps that showed up most in real runs
+(`src/lib/appTools.ts`):
+
+- **`http_request`** — call the API the agent is building: a path such as
+  `/api/items` goes to the project's running preview; absolute URLs go to
+  public hosts (the platform's own port and private networks are blocked,
+  redirects are reported rather than followed). Any method, headers, JSON or
+  text body; JSON responses come back pretty-printed.
+- **`query_data`** — read-only SQL over `.csv`/`.tsv` (table `data`),
+  `.json`/`.jsonl`, or SQLite files; without `sql` it returns the schema,
+  inferred types, row count and a sample. Mutating statements are refused.
+- **`plot_data`** — a labelled matplotlib chart (line/scatter/bar/step,
+  log axes) from inline series or straight from a data file (optionally
+  through a query); saved as PNG and shown as a thumbnail in the chat.
+- **`review_changes`** — git status, stat and unified diff against `HEAD`
+  (this turn), `HEAD~n` or a sha, for self-review before finishing and for
+  `verify` sub-agents.
 
 ### Claude Code-style agent features
 

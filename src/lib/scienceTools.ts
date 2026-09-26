@@ -309,7 +309,7 @@ async function pruneRunDirs(scratchAbs: string): Promise<void> {
 
 // ─── execute_code ──────────────────────────────────────────────────────────────
 
-async function executeCode(
+export async function executeCode(
   args: Record<string, unknown>,
   workspace: string,
   ctx: ScienceTurnContext,

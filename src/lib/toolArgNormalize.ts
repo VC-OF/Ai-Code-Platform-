@@ -131,6 +131,40 @@ export function normalizeToolArgs(toolName: string, input: unknown): unknown {
     case 'save_memory':
       rename(args, 'text', ['memory', 'note', 'content', 'fact', 'message']);
       break;
+    case 'http_request': {
+      rename(args, 'url', ['uri', 'endpoint', 'path']);
+      rename(args, 'body', ['data', 'json', 'payload']);
+      if (typeof args.method === 'string') args.method = args.method.trim().toUpperCase();
+      const t = toInt(args.timeout_seconds ?? args.timeout);
+      delete args.timeout;
+      if (typeof t === 'number') args.timeout_seconds = Math.min(120, t);
+      else delete args.timeout_seconds;
+      break;
+    }
+    case 'query_data':
+      rename(args, 'source', [...PATH_ALIASES, 'table', 'dataset']);
+      rename(args, 'sql', ['query', 'statement']);
+      args.limit = toInt(args.limit);
+      if (args.limit === undefined) delete args.limit;
+      break;
+    case 'plot_data':
+      rename(args, 'path', ['output', 'out', 'file_path', 'filename', 'save_as']);
+      rename(args, 'source', ['file', 'dataset', 'data_file', 'csv']);
+      rename(args, 'kind', ['type', 'chart', 'chart_type', 'plot_type']);
+      rename(args, 'y_columns', ['y_column', 'y_cols', 'columns', 'y']);
+      rename(args, 'x_column', ['x_col']);
+      if (typeof args.y_columns === 'string') args.y_columns = [args.y_columns];
+      // `{x, y: [...numbers]}` → one series
+      if (Array.isArray(args.y_columns) && args.y_columns.every((v) => typeof v === 'number') && !args.source) {
+        args.series = [{ y: args.y_columns }];
+        delete args.y_columns;
+      }
+      if (typeof args.kind === 'string') args.kind = args.kind.trim().toLowerCase().replace(/plot$/, '').replace(/^(lines?)$/, 'line');
+      break;
+    case 'review_changes':
+      rename(args, 'base', ['ref', 'against', 'since']);
+      rename(args, 'path', PATH_ALIASES);
+      break;
     case 'spawn_agent': {
       rename(args, 'task', ['prompt', 'instructions', 'description', 'goal']);
       rename(args, 'kind', ['type', 'agent', 'agent_type', 'subagent_type', 'role']);

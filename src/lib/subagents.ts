@@ -22,13 +22,14 @@ function envInt(name: string, fallback: number): number {
 
 const READ_ONLY_TOOLS = new Set([
   'read_file', 'list_files', 'glob_files', 'grep_files', 'load_skill',
-  'web_search', 'fetch_url', 'view_image',
+  'web_search', 'fetch_url', 'view_image', 'query_data', 'review_changes',
   'read_preview_logs', 'fetch_preview', 'check_preview', 'docker_status',
   'browser_open', 'browser_snapshot', 'browser_scroll', 'browser_console', 'browser_wait', 'browser_close',
 ]);
 
 const VERIFY_TOOLS = new Set([
   'run_lint', 'run_tests', 'run_command', 'execute_code', 'run_notebook', 'docker_run',
+  'http_request', 'plot_data',
   'browser_click', 'browser_type', 'browser_press', 'browser_select', 'browser_screenshot',
 ]);
 
@@ -60,7 +61,7 @@ const KIND_SPECS: Record<SubagentKind, KindSpec> = {
     summary: 'documentation / literature research with quick calculations',
     maxSteps: 50,
     maxDurationMs: 20 * 60_000,
-    allows: (n) => READ_ONLY_TOOLS.has(n) || n === 'execute_code',
+    allows: (n) => READ_ONLY_TOOLS.has(n) || n === 'execute_code' || n === 'plot_data' || n === 'http_request',
     edits: false,
     instructions:
       'Investigate with web_search and fetch_url (always cite the URLs you relied on), the workspace files, and execute_code for quick checks and calculations. ' +

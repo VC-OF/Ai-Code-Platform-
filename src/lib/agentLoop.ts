@@ -1246,6 +1246,10 @@ function toolStatusFor(toolName: string): AgentStatus {
     run_notebook: 'running',
     save_memory:  'writing',
     spawn_agent:  'running',
+    http_request: 'running',
+    query_data:   'reading',
+    plot_data:    'writing',
+    review_changes: 'reading',
   };
   return map[toolName] ?? 'planning';
 }
