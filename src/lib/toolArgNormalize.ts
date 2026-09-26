@@ -83,6 +83,40 @@ export function normalizeToolArgs(toolName: string, input: unknown): unknown {
       rename(args, 'path', PATH_ALIASES);
       rename(args, 'oldText', ['old_text', 'old_string', 'oldString', 'old_str', 'search']);
       rename(args, 'newText', ['new_text', 'new_string', 'newString', 'new_str', 'replace']);
+      rename(args, 'replace_all', ['replaceAll', 'all']);
+      break;
+    case 'multi_edit':
+      rename(args, 'path', PATH_ALIASES);
+      rename(args, 'edits', ['changes', 'replacements']);
+      if (typeof args.edits === 'string') {
+        try { args.edits = JSON.parse(args.edits); } catch { /* validator reports it */ }
+      }
+      if (Array.isArray(args.edits)) {
+        args.edits = args.edits.map((e) => {
+          if (!e || typeof e !== 'object') return e;
+          const edit = { ...(e as Args) };
+          rename(edit, 'oldText', ['old_text', 'old_string', 'oldString', 'old_str', 'search']);
+          rename(edit, 'newText', ['new_text', 'new_string', 'newString', 'new_str', 'replace']);
+          rename(edit, 'replace_all', ['replaceAll', 'all']);
+          return edit;
+        });
+      }
+      break;
+    case 'run_background':
+      rename(args, 'command', ['cmd']);
+      rename(args, 'name', ['label', 'title']);
+      break;
+    case 'job_output':
+    case 'kill_job':
+      rename(args, 'job_id', ['id', 'jobId', 'job']);
+      rename(args, 'since_line', ['sinceLine', 'since', 'from_line', 'offset']);
+      rename(args, 'wait_seconds', ['wait', 'timeout', 'timeout_seconds', 'waitSeconds']);
+      args.since_line = toInt(args.since_line);
+      args.wait_seconds = toInt(args.wait_seconds);
+      if (typeof args.wait_seconds === 'number' && args.wait_seconds > 120) args.wait_seconds = 120;
+      if (args.since_line === undefined) delete args.since_line;
+      if (args.wait_seconds === undefined) delete args.wait_seconds;
+      if (toolName === 'kill_job') { delete args.since_line; delete args.wait_seconds; }
       break;
     case 'replace_lines':
       rename(args, 'path', PATH_ALIASES);

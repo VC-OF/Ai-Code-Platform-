@@ -11,6 +11,8 @@ import { webSearch, fetchUrl, htmlToText } from "./webTools";
 import { BROWSER_TOOL_SCHEMAS, isBrowserTool, executeBrowserTool } from "./browserTools";
 import { SCIENCE_TOOL_SCHEMAS, isScienceTool, executeScienceTool } from "./scienceTools";
 import { APP_TOOL_SCHEMAS, isAppTool, executeAppTool } from "./appTools";
+import { JOB_TOOL_SCHEMAS, isJobTool, executeJobTool } from "./jobTools";
+import { OPEN_CODE_DIR, ensureOpenCodeIgnored, openCodePath } from "./openCodeDir";
 import { SPAWN_AGENT_SCHEMA } from "./subagents";
 import { parseNotebook, formatNotebook } from "./notebooks";
 import { generateImage } from "./imageGen";
@@ -108,15 +110,44 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "edit_file",
       description:
-        "Replace an exact snippet of text inside an existing file with new text. oldText must match exactly once in the file. You MUST have called read_file on this file earlier in this turn.",
+        "Replace an exact snippet of text inside an existing file with new text. oldText must match exactly once in the file unless replace_all is true. You MUST have called read_file on this file earlier in this turn. For several changes to one file use multi_edit.",
       parameters: {
         type: "object",
         properties: {
           path: { type: "string" },
           oldText: { type: "string" },
           newText: { type: "string" },
+          replace_all: { type: "boolean", description: "Replace every occurrence of oldText (default false)" },
         },
         required: ["path", "oldText", "newText"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "multi_edit",
+      description:
+        "Apply several exact-text replacements to ONE file in a single call. Edits apply in order, each to the result of the previous one, and atomically: if any edit fails nothing is written. Each oldText must match exactly once unless its replace_all is true. You MUST have called read_file on this file earlier in this turn.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Relative file path" },
+          edits: {
+            type: "array",
+            description: "Edits applied sequentially",
+            items: {
+              type: "object",
+              properties: {
+                oldText: { type: "string" },
+                newText: { type: "string" },
+                replace_all: { type: "boolean" },
+              },
+              required: ["oldText", "newText"],
+            },
+          },
+        },
+        required: ["path", "edits"],
       },
     },
   },
@@ -520,6 +551,7 @@ export const TOOL_SCHEMAS = [
   },
   ...SCIENCE_TOOL_SCHEMAS,
   ...APP_TOOL_SCHEMAS,
+  ...JOB_TOOL_SCHEMAS,
   SPAWN_AGENT_SCHEMA,
   ...BROWSER_TOOL_SCHEMAS,
 ] as const;
@@ -602,11 +634,56 @@ export interface ToolResult {
   /** data: URL of an image the loop should attach to the conversation
    *  (view_image) when the model accepts images */
   attachImage?: string;
+  /** Untruncated output. When it is longer than `output`, executeTool saves
+   *  it under .open-code/outputs/ and points the model at the file */
+  fullOutput?: string;
+}
+
+// ─── Large output spill ────────────────────────────────────────────────────────
+
+const OUTPUTS_KEEP = 50;
+
+/** Save a tool's full output to .open-code/outputs/ and return the note to
+ *  append to the truncated output. Keeps the newest OUTPUTS_KEEP files. */
+export async function spillFullOutput(workspace: string, toolName: string, full: string): Promise<string> {
+  const safeTool = toolName.replace(/[^a-z0-9_-]/gi, "_");
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const rel = openCodePath("outputs", `${safeTool}-${stamp}-${Math.random().toString(36).slice(2, 6)}.txt`);
+  const dir = path.join(workspace, OPEN_CODE_DIR, "outputs");
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(workspace, rel), full, "utf-8");
+  await ensureOpenCodeIgnored(workspace);
+  try {
+    const entries = await Promise.all(
+      (await fs.readdir(dir)).map(async (f) => ({ f, t: (await fs.stat(path.join(dir, f))).mtimeMs }))
+    );
+    entries.sort((a, b) => b.t - a.t || b.f.localeCompare(a.f));
+    for (const e of entries.slice(OUTPUTS_KEEP)) await fs.rm(path.join(dir, e.f), { force: true });
+  } catch {}
+  return `\n[Full output (${full.length} chars) saved to ${rel} — read it with read_file start_line/end_line or grep_files]`;
 }
 
 // ─── Tool executor ─────────────────────────────────────────────────────────────
 
 export async function executeTool(
+  name: string,
+  args: Record<string, unknown>,
+  workspace: string,
+  ctx: TurnContext,
+  signal?: AbortSignal
+): Promise<ToolResult> {
+  const result = await runTool(name, args, workspace, ctx, signal);
+  if (result.fullOutput !== undefined && result.fullOutput.length > result.output.length) {
+    try {
+      result.output += await spillFullOutput(workspace, name, result.fullOutput);
+    } catch {
+      // The truncated output is still useful on its own
+    }
+  }
+  return result;
+}
+
+async function runTool(
   name: string,
   args: Record<string, unknown>,
   workspace: string,
@@ -623,6 +700,9 @@ export async function executeTool(
     }
     if (isAppTool(name)) {
       return await executeAppTool(name, args, workspace, ctx, projectIdForWorkspace(workspace), signal);
+    }
+    if (isJobTool(name)) {
+      return await executeJobTool(name, args, workspace, ctx, signal);
     }
     if (name === "spawn_agent") {
       // Needs the loop's model/emitter/cancellation — handled in agentLoop.ts
@@ -772,6 +852,16 @@ export async function executeTool(
 
         // Exact match — must be unique
         const occurrences = content.split(oldText).length - 1;
+        if (args.replace_all && occurrences > 0) {
+          await fs.writeFile(filePath, content.split(oldText).join(newText), "utf-8");
+          ctx.filesEdited.add(relPath);
+          return {
+            success: true,
+            output: `Edited ${relPath} (${occurrences} occurrence${occurrences === 1 ? "" : "s"} replaced)`,
+            summary: `Edited ${relPath} (replaced ${occurrences}×)`,
+            changedFile: relPath,
+          };
+        }
         if (occurrences === 1) {
           // Function replacer: newText must be inserted literally ($&, $1 … are not patterns)
           const updated = content.replace(oldText, () => newText);
@@ -855,6 +945,62 @@ export async function executeTool(
           summary: `Edit failed — text not found in ${relPath}`,
           error: `Text not found in '${relPath}'`,
           suggestion: `Check the file contents with read_file and adjust oldText`,
+        };
+      }
+
+      // ── multi_edit ─────────────────────────────────────────────────────
+      case "multi_edit": {
+        const relPath = args.path as string;
+        const filePath = safeResolve(workspace, relPath);
+        if (
+          !ctx.filesRead.has(relPath) &&
+          !ctx.filesEdited.has(relPath) &&
+          !ctx.filesCreated.has(relPath)
+        ) {
+          return {
+            success: false,
+            output: `Error: Must read '${relPath}' before editing.`,
+            summary: `Edit rejected — file not read`,
+            error: `File '${relPath}' must be read first`,
+            suggestion: `Call read_file with path '${relPath}' first`,
+          };
+        }
+
+        const edits = args.edits as { oldText: string; newText: string; replace_all?: boolean }[];
+        let content = await fs.readFile(filePath, "utf-8");
+        let added = 0;
+        let removed = 0;
+        // All in memory first: one failing edit leaves the file untouched
+        for (const [i, e] of edits.entries()) {
+          const count = content.split(e.oldText).length - 1;
+          if (count === 0 || (count > 1 && !e.replace_all)) {
+            const why = count === 0
+              ? "was not found"
+              : `matched ${count} times — it must match exactly once (add context or set replace_all)`;
+            return {
+              success: false,
+              output:
+                `Error: edit ${i + 1} of ${edits.length}: oldText ${why} in ${relPath}` +
+                `${i > 0 ? " (after applying the previous edits)" : ""}. No changes were written.`,
+              summary: `Multi-edit failed at edit ${i + 1} — nothing written`,
+              error: `edit ${i + 1}: oldText ${count === 0 ? "not found" : "ambiguous"}`,
+              suggestion: "Re-read the file and fix that edit's oldText; earlier edits change the text later ones see",
+            };
+          }
+          content = e.replace_all
+            ? content.split(e.oldText).join(e.newText)
+            : content.replace(e.oldText, () => e.newText);
+          added += e.newText.split("\n").length * count;
+          removed += e.oldText.split("\n").length * count;
+        }
+        await fs.writeFile(filePath, content, "utf-8");
+        ctx.filesEdited.add(relPath);
+        return {
+          success: true,
+          output: `Applied ${edits.length} edit${edits.length === 1 ? "" : "s"} to ${relPath}`,
+          summary: `Edited ${relPath} (${edits.length} edits, +${added}/-${removed} lines)`,
+          changedFile: relPath,
+          extra: { diff: { linesAdded: added, linesRemoved: removed } },
         };
       }
 
@@ -1004,6 +1150,7 @@ export async function executeTool(
         }
         const matches = await nodeGrep(searchRoot, regex, globFilter);
 
+        const allLines = matches.map((m) => `${m.file}:${m.line}: ${m.text}`).join("\n");
         let output = matches
           .slice(0, 100)
           .map((m) => `${m.file}:${m.line}: ${m.text}`)
@@ -1015,6 +1162,7 @@ export async function executeTool(
         return {
           success: true,
           output: truncate(output) || "(no matches)",
+          fullOutput: allLines,
           summary: `Grep found ${matches.length} matches for '${args.pattern}'`,
         };
       }
@@ -1120,11 +1268,11 @@ export async function executeTool(
         });
         ctx.commandsRun.push(command);
         const success = result.code === 0 && !result.timedOut;
+        const full = result.stdout + (result.stderr ? `\nSTDERR:\n${result.stderr}` : "");
         return {
           success,
-          output: truncate(
-            result.stdout + (result.stderr ? `\nSTDERR:\n${result.stderr}` : "")
-          ) + (filteredVerificationNote(command) ?? ""),
+          output: truncate(full) + (filteredVerificationNote(command) ?? ""),
+          fullOutput: full,
           summary: result.timedOut
             ? `Command '${command}' timed out`
             : `Command '${command}' ${success ? "succeeded" : `failed (exit ${result.code})`}`,
@@ -1321,6 +1469,7 @@ export async function executeTool(
         let errorCount = 0;
         let warningCount = 0;
         let output = "";
+        let fullLog = "";
         let ranAnything = false;
         const skipped: string[] = [];
 
@@ -1335,14 +1484,20 @@ export async function executeTool(
               errorCount += r.errorCount;
               warningCount += r.warningCount;
               output += multi ? r.output.replace(/^(?=.)/gm, prefix) : r.output;
+              fullLog += multi ? r.full.replace(/^(?=.)/gm, prefix) : r.full;
               continue;
             }
             const r = await runCheckPlan(lintPlan(stack, isDockerMode()), proj.dir, signal);
             if (r.skipped) { skipped.push(`${prefix}${r.label} (${r.skipped})`); continue; }
             ranAnything = true;
             if (!r.passed) { passed = false; errorCount += 1; }
-            output += `${prefix}${r.label} — ${r.command}: ${r.passed ? "✓ No errors" : `✗ exit ${r.code}${r.timedOut ? " (timed out)" : ""}`}\n`;
-            if (!r.passed || r.output.trim()) output += `${truncate(r.output, 8000)}\n`;
+            const head = `${prefix}${r.label} — ${r.command}: ${r.passed ? "✓ No errors" : `✗ exit ${r.code}${r.timedOut ? " (timed out)" : ""}`}\n`;
+            output += head;
+            fullLog += head;
+            if (!r.passed || r.output.trim()) {
+              output += `${truncate(r.output, 8000)}\n`;
+              fullLog += `${r.output}\n`;
+            }
           }
         }
 
@@ -1357,6 +1512,7 @@ export async function executeTool(
         return {
           success: true,
           output: truncate(output || "Lint passed"),
+          fullOutput: fullLog || undefined,
           summary: !ranAnything
             ? "Lint skipped (no tooling)"
             : passed
@@ -1374,6 +1530,7 @@ export async function executeTool(
         let total = 0;
         let failed = 0;
         let output = "";
+        let fullLog = "";
         let ranAnything = false;
         const skipped: string[] = [];
 
@@ -1388,6 +1545,7 @@ export async function executeTool(
               total += r.total;
               failed += r.failed;
               output += multi ? `${prefix}npm test: ${r.passed ? "✓" : "✗"}\n${r.output}\n` : r.output;
+              fullLog += multi ? `${prefix}npm test: ${r.passed ? "✓" : "✗"}\n${r.full}\n` : r.full;
               continue;
             }
             const plan = await testPlan(stack, proj.dir, isDockerMode(), args.pattern as string | undefined);
@@ -1399,7 +1557,9 @@ export async function executeTool(
             if (!r.passed) passed = false;
             total += counts.total;
             failed += r.passed ? counts.failed : Math.max(counts.failed, 1);
-            output += `${prefix}${r.label} — ${r.command}: ${r.passed ? "✓ passed" : `✗ exit ${r.code}${r.timedOut ? " (timed out)" : ""}`}\n${truncate(r.output, 12_000)}\n`;
+            const head = `${prefix}${r.label} — ${r.command}: ${r.passed ? "✓ passed" : `✗ exit ${r.code}${r.timedOut ? " (timed out)" : ""}`}\n`;
+            output += `${head}${truncate(r.output, 12_000)}\n`;
+            fullLog += `${head}${r.output}\n`;
           }
         }
 
@@ -1420,6 +1580,7 @@ export async function executeTool(
         return {
           success: true,
           output: truncate(output),
+          fullOutput: fullLog,
           // "passed (0 total)" hid runs where the runner discovered no tests
           // (e.g. JUnit 5 without a JUnit-Platform-aware surefire)
           summary: passed
@@ -1604,6 +1765,7 @@ async function runJsLint(dir: string, signal?: AbortSignal) {
   let errorCount = 0;
   let warningCount = 0;
   let output = "";
+  let full = "";
   let ran = false;
 
   if (hasTsconfig) {
@@ -1615,8 +1777,10 @@ async function runJsLint(dir: string, signal?: AbortSignal) {
         const combined = tscResult.stdout + "\n" + tscResult.stderr;
         errorCount += (combined.match(/error TS/g) ?? []).length || 1;
         output += `TypeScript:\n${truncate(combined)}\n`;
+        full += `TypeScript:\n${combined}\n`;
       } else {
         output += "TypeScript: ✓ No errors\n";
+        full += "TypeScript: ✓ No errors\n";
       }
     }
   }
@@ -1633,18 +1797,20 @@ async function runJsLint(dir: string, signal?: AbortSignal) {
         warningCount += totalWarnings;
         if (totalErrors > 0) passed = false;
         output += `ESLint: ${totalErrors} errors, ${totalWarnings} warnings\n`;
+        full += `ESLint: ${totalErrors} errors, ${totalWarnings} warnings\n`;
       } catch {
         output += truncate(eslintResult.stdout);
+        full += eslintResult.stdout;
       }
     }
   }
-  return { ran, passed, errorCount, warningCount, output };
+  return { ran, passed, errorCount, warningCount, output, full };
 }
 
 async function runJsTests(dir: string, pattern: unknown, signal?: AbortSignal) {
   const pkg = await readPackageJson(dir);
   if (!pkg?.scripts?.test) {
-    return { skipped: true, passed: true, total: 0, failed: 0, output: "" };
+    return { skipped: true, passed: true, total: 0, failed: 0, output: "", full: "" };
   }
   const cmd = pattern ? `npm test -- ${String(pattern)}` : "npm test";
   const result = await safeExec(cmd, dir, { signal, timeoutMs: 120_000 });
@@ -1664,5 +1830,5 @@ async function runJsTests(dir: string, pattern: unknown, signal?: AbortSignal) {
     total = parseInt(totalMatch?.[1] ?? "0");
     failed = parseInt(failedMatch?.[1] ?? "0");
   }
-  return { skipped: false, passed, total, failed, output: truncate(combined) };
+  return { skipped: false, passed, total, failed, output: truncate(combined), full: combined };
 }

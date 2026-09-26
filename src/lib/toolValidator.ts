@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { BROWSER_ZOD_SCHEMAS } from './browserTools';
 import { SCIENCE_ZOD_SCHEMAS } from './scienceTools';
 import { APP_ZOD_SCHEMAS } from './appTools';
+import { JOB_ZOD_SCHEMAS } from './jobTools';
 import { SPAWN_AGENT_ZOD } from './subagents';
 
 const toolSchemas = {
@@ -31,6 +32,21 @@ const toolSchemas = {
     path: z.string().min(1).max(500),
     oldText: z.string().min(1).max(50_000),
     newText: z.string().max(50_000),
+    replace_all: z.boolean().optional(),
+  }),
+
+  multi_edit: z.object({
+    path: z.string().min(1).max(500),
+    edits: z
+      .array(
+        z.object({
+          oldText: z.string().min(1).max(50_000),
+          newText: z.string().max(50_000),
+          replace_all: z.boolean().optional(),
+        })
+      )
+      .min(1)
+      .max(50),
   }),
   
   replace_lines: z.object({
@@ -140,6 +156,7 @@ const toolSchemas = {
   spawn_agent: SPAWN_AGENT_ZOD,
   ...SCIENCE_ZOD_SCHEMAS,
   ...APP_ZOD_SCHEMAS,
+  ...JOB_ZOD_SCHEMAS,
   ...BROWSER_ZOD_SCHEMAS,
 };
 

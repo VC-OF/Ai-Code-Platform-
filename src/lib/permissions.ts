@@ -20,6 +20,9 @@ export const APPROVAL_REQUIRED_TOOLS = [
   'spawn_agent',
   'http_request',
   'plot_data',
+  'multi_edit',
+  'run_background',
+  'kill_job',
 ] as const;
 
 /** Binaries run_command may invoke on the host (local sandbox mode). */
