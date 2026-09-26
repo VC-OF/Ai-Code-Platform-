@@ -43,6 +43,26 @@ describe('turn resilience', () => {
     expect(stalled).toBe(true);
   });
 
+  it('waits longer for the first chunk (prefill) than between chunks', async () => {
+    async function* slowStart() {
+      await new Promise((r) => setTimeout(r, 120));
+      yield 1;
+      await new Promise((r) => setTimeout(r, 120));
+      yield 2;
+    }
+    const seen: number[] = [];
+    await expect(async () => {
+      for await (const n of withIdleTimeout(slowStart(), 50, () => {}, 300)) seen.push(n);
+    }).rejects.toBeInstanceOf(LLMStallError);
+    expect(seen).toEqual([1]); // first chunk allowed at 120ms < 300ms; second stalled at 50ms
+
+    const { firstTokenTimeoutMs } = await import('@/lib/llmClient');
+    expect(firstTokenTimeoutMs(1_000, 180_000, {})).toBe(180_000);           // tiny prompt → idle timeout
+    expect(firstTokenTimeoutMs(150_000 * 3.5, 180_000, {})).toBe(375_000);   // 150k tokens → 6.25 min
+    expect(firstTokenTimeoutMs(1_000_000 * 3.5, 180_000, {})).toBe(900_000); // capped at 15 min
+    expect(firstTokenTimeoutMs(150_000 * 3.5, 180_000, { LLM_PREFILL_MS_PER_KTOKEN: '0' })).toBe(180_000);
+  });
+
   it('passes through a healthy stream', async () => {
     async function* fast() { yield 1; yield 2; }
     const seen: number[] = [];

@@ -75,20 +75,27 @@ export class LLMStallError extends Error {
 }
 
 /** Iterate `source`, failing with LLMStallError when no item arrives within
- *  `idleMs`. `onStall` should abort the underlying request. */
+ *  `idleMs`. `onStall` should abort the underlying request. The wait for the
+ *  FIRST item may be longer (`firstChunkMs`): before any token arrives the
+ *  provider is still prefilling the prompt, which takes minutes for a
+ *  100k+-token context. */
 export async function* withIdleTimeout<T>(
   source: AsyncIterable<T>,
   idleMs: number,
-  onStall: () => void
+  onStall: () => void,
+  firstChunkMs: number = idleMs
 ): AsyncGenerator<T> {
   const it = source[Symbol.asyncIterator]();
+  let first = true;
   while (true) {
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const waitMs = first ? Math.max(idleMs, firstChunkMs) : idleMs;
+    first = false;
     const stall = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
         onStall();
-        reject(new LLMStallError(idleMs));
-      }, idleMs);
+        reject(new LLMStallError(waitMs));
+      }, waitMs);
     });
     let res: IteratorResult<T>;
     try {
@@ -101,6 +108,20 @@ export async function* withIdleTimeout<T>(
     if (res.done) return;
     yield res.value;
   }
+}
+
+/** How long to wait for the first streamed token: the idle timeout, or
+ *  longer for big prompts (prefill ≈ LLM_PREFILL_MS_PER_KTOKEN ms per 1k
+ *  prompt tokens, default 2500 → ~6 min for 150k tokens), capped at 15 min. */
+export function firstTokenTimeoutMs(
+  promptChars: number,
+  idleMs: number,
+  env: Record<string, string | undefined> = process.env
+): number {
+  const perK = Number(env.LLM_PREFILL_MS_PER_KTOKEN);
+  const rate = Number.isFinite(perK) && perK >= 0 ? perK : 2500;
+  const tokens = promptChars / 3.5;
+  return Math.min(900_000, Math.max(idleMs, Math.round((tokens / 1000) * rate)));
 }
 
 export function getModel() {
@@ -431,8 +452,10 @@ export async function* callLLMStream(
   let finishReason: string | null = null;
 
   const idleMs = envMs('LLM_STREAM_IDLE_MS', 180_000);
+  const promptChars = messages.reduce((s, m) => s + (typeof m.content === 'string' ? m.content.length : JSON.stringify(m.content ?? '').length), 0);
+  const firstMs = firstTokenTimeoutMs(promptChars, idleMs);
   try {
-  for await (const chunk of withIdleTimeout(stream, idleMs, () => ac.abort('stalled'))) {
+  for await (const chunk of withIdleTimeout(stream, idleMs, () => ac.abort('stalled'), firstMs)) {
     // The usage-only final chunk has an empty choices array
     if (chunk.usage) {
       usage = {
