@@ -63,6 +63,14 @@ export function normalizeToolArgs(toolName: string, input: unknown): unknown {
 
   switch (toolName) {
     case 'read_file':
+      rename(args, 'path', PATH_ALIASES);
+      rename(args, 'start_line', ['startLine', 'start', 'offset', 'from']);
+      rename(args, 'end_line', ['endLine', 'end', 'to']);
+      args.start_line = toInt(args.start_line);
+      args.end_line = toInt(args.end_line);
+      if (args.start_line === undefined) delete args.start_line;
+      if (args.end_line === undefined) delete args.end_line;
+      break;
     case 'delete_file':
       rename(args, 'path', PATH_ALIASES);
       break;

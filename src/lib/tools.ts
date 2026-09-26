@@ -44,11 +44,13 @@ export const TOOL_SCHEMAS = [
     type: "function",
     function: {
       name: "read_file",
-      description: "Read the full text content of a file in the workspace. Jupyter notebooks (.ipynb) are rendered as 0-indexed cells with their outputs.",
+      description: "Read a file in the workspace. Pass start_line/end_line (1-indexed, inclusive) to read only a range — do that for big files you have already read once instead of re-reading all of it. Jupyter notebooks (.ipynb) are rendered as 0-indexed cells with their outputs.",
       parameters: {
         type: "object",
         properties: {
           path: { type: "string", description: "Relative file path" },
+          start_line: { type: "integer", description: "First line to return (1-indexed, optional)" },
+          end_line: { type: "integer", description: "Last line to return (inclusive, optional)" },
         },
         required: ["path"],
       },
@@ -658,6 +660,29 @@ export async function executeTool(
           } catch {
             // Not a valid notebook — fall through to the raw text
           }
+        }
+
+        // Line range: cheap re-reads of a big file after edits
+        const startLine = args.start_line !== undefined ? Number(args.start_line) : undefined;
+        const endLine = args.end_line !== undefined ? Number(args.end_line) : undefined;
+        if (startLine !== undefined || endLine !== undefined) {
+          const all = content.split("\n");
+          const from = Math.max(1, startLine ?? 1);
+          const to = Math.min(all.length, endLine ?? all.length);
+          if (from > all.length) {
+            return {
+              success: false,
+              output: `Error: start_line ${from} is beyond the end of ${args.path} (${all.length} lines).`,
+              summary: `Read failed — ${args.path} has ${all.length} lines`,
+              error: "start_line out of range",
+            };
+          }
+          const slice = all.slice(from - 1, to).map((l, i) => `${String(from + i).padStart(5)}| ${l}`).join("\n");
+          return {
+            success: true,
+            output: truncate(`Lines ${from}-${to} of ${all.length} in ${args.path}:\n${slice}`, MAX_READ_CHARS),
+            summary: `Read ${args.path} lines ${from}-${to} of ${all.length}`,
+          };
         }
 
         return {

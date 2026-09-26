@@ -7,6 +7,10 @@ import { SPAWN_AGENT_ZOD } from './subagents';
 const toolSchemas = {
   read_file: z.object({
     path: z.string().min(1).max(500),
+    start_line: z.number().int().min(1).optional(),
+    end_line: z.number().int().min(1).optional(),
+  }).refine((d) => d.start_line === undefined || d.end_line === undefined || d.start_line <= d.end_line, {
+    message: 'start_line must be <= end_line',
   }),
   
   load_skill: z.object({

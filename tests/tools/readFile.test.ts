@@ -39,4 +39,19 @@ describe('read_file tool', () => {
     expect(result.success).toBe(false);
     expect(result.error).toBeTruthy();
   });
+
+  it('returns a numbered line range on request', async () => {
+    await ws.write('src/big.txt', Array.from({ length: 50 }, (_, i) => `line ${i + 1}`).join('\n'));
+    const ctx = createTurnContext();
+    const r = await executeTool('read_file', { path: 'src/big.txt', start_line: 10, end_line: 12 }, ws.root, ctx);
+    expect(r.success).toBe(true);
+    expect(r.output).toBe('Lines 10-12 of 50 in src/big.txt:\n   10| line 10\n   11| line 11\n   12| line 12');
+    expect(r.summary).toBe('Read src/big.txt lines 10-12 of 50');
+    expect(ctx.filesRead.has('src/big.txt')).toBe(true); // a range read still satisfies the edit guard
+
+    const tail = await executeTool('read_file', { path: 'src/big.txt', start_line: 49 }, ws.root, ctx);
+    expect(tail.output).toContain('Lines 49-50 of 50');
+    const beyond = await executeTool('read_file', { path: 'src/big.txt', start_line: 99 }, ws.root, ctx);
+    expect(beyond.success).toBe(false);
+  });
 });
