@@ -13,6 +13,7 @@ vi.mock('@/lib/settingsStore', () => ({ getDecryptedEnv: async () => ({}) }));
 vi.mock('@/lib/models', () => ({
   resolveProvider: () => ({ name: 'mock', apiKey: 'k', baseURL: 'http://x', model: 'm' }),
   getContextWindow: () => 128_000,
+  supportsPromptCaching: () => false,
 }));
 
 async function* chunks(list: unknown[]) {

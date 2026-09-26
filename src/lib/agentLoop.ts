@@ -31,6 +31,7 @@ import { normalizeToolArgs } from './toolArgNormalize';
 import { loadHooks, runHooks, summarizeHookResults, EMPTY_HOOKS, type HookConfig, type HookRunResult } from './hooks';
 import { runSubagent, subagentEdits, type SubagentRunResult, type SubagentKind } from './subagents';
 import { supportsVision } from './models';
+import { autoMemoryEnabled, runAutoMemory, AUTO_MEMORY_MIN_TOOL_CALLS } from './autoMemory';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -143,6 +144,7 @@ export async function runAgentLoop(
   let hooks: HookConfig = EMPTY_HOOKS;
   let stopHookNudges = 0;
   let totalTokens    = 0;
+  let toolCallCount  = 0;
   let stepIndex      = 0;
   let finalMessage   = '';
   let checkpointed   = false;
@@ -485,7 +487,7 @@ export async function runAgentLoop(
         let toolCalls:
           | { id: string; type: 'function'; function: { name: string; arguments: string } }[]
           | null = null;
-        let usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+        let usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, cached_tokens: 0 };
         let finishReason: string | null = null;
 
         inLLMCall = true;
@@ -541,6 +543,7 @@ export async function runAgentLoop(
                 prompt_tokens:     chunk.usage.prompt_tokens,
                 completion_tokens: chunk.usage.completion_tokens,
                 total_tokens:      chunk.usage.prompt_tokens + chunk.usage.completion_tokens,
+                cached_tokens:     chunk.usage.cached_tokens ?? 0,
               };
             }
           }
@@ -582,6 +585,7 @@ export async function runAgentLoop(
             prompt_tokens:     promptEst,
             completion_tokens: completionEst,
             total_tokens:      promptEst + completionEst,
+            cached_tokens:     0,
           };
         }
 
@@ -593,13 +597,14 @@ export async function runAgentLoop(
           model:             llmConfig.model,
           promptTokens:     usage.prompt_tokens,
           completionTokens: usage.completion_tokens,
+          cachedTokens:     usage.cached_tokens || undefined,
           turnIndex,
         });
 
         emitter.usage(
           stepIndex,
           llmConfig.model,
-          { prompt: usage.prompt_tokens, completion: usage.completion_tokens },
+          { prompt: usage.prompt_tokens, completion: usage.completion_tokens, cached: usage.cached_tokens },
           getContextWindow(llmConfig.model),
           costUsd
         );
@@ -778,6 +783,7 @@ export async function runAgentLoop(
         // between tool results would break the tool_calls/tool pairing
         const attachedImages: ContextMessage[] = [];
 
+        toolCallCount += toolCalls.length;
         // Several calls that are all read-only run concurrently; results
         // still land in call order (placeholders are filled after the loop)
         const parallelBatch = toolCalls.length > 1 &&
@@ -1431,6 +1437,19 @@ Stay in plan mode, refine the plan, and call exit_plan_mode again.`;
 
     const reason: DoneReason =
       hitTimeLimit ? 'timeout' : stepIndex > maxSteps ? 'max_steps' : 'completed';
+
+    // ── Auto-memory: durable facts from a substantial turn → AGENTS.md ─────
+    if (!nested && reason === 'completed' && toolCallCount >= AUTO_MEMORY_MIN_TOOL_CALLS && autoMemoryEnabled()) {
+      try {
+        const lines = await callWithTimeout(
+          runAutoMemory({ workspace: workspaceRoot, llmConfig, messages: messages as LLMMessage[], signal: cancellation.token.signal }),
+          30_000
+        );
+        if (lines.length) emitter.emit({ type: 'memory_update', lines });
+      } catch {
+        // Best effort — never affects the turn
+      }
+    }
 
     emitter.status(stepIndex, 'done');
     emitter.done(

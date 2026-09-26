@@ -126,6 +126,22 @@ const VISION_NAME_PATTERN =
   /vision|-vl\b|llava|gemma[34]|pixtral|gpt-4o|gpt-4\.1|gpt-5|claude|gemini|llama-4|llama4|minicpm-v|qwen[\w.-]*-?vl|kimi-vl|mistral-small-3|mistral-medium|nemotron-3-(ultra|super)/i;
 
 /**
+ * Whether requests should carry Anthropic `cache_control` breakpoints:
+ * Anthropic models via OpenRouter (openrouter:anthropic/*) or claude-*
+ * directly. LLM_PROMPT_CACHE=1|0 overrides.
+ */
+export function supportsPromptCaching(
+  model: string,
+  env: Record<string, string | undefined> = process.env
+): boolean {
+  const override = (env.LLM_PROMPT_CACHE ?? '').trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(override)) return true;
+  if (['0', 'false', 'no', 'off'].includes(override)) return false;
+  const m = model.trim().toLowerCase();
+  return m.startsWith('openrouter:anthropic/') || m.startsWith('claude-');
+}
+
+/**
  * Whether the model accepts image content parts. LLM_VISION=1|0 overrides
  * the registry/heuristic for models we don't know about.
  */

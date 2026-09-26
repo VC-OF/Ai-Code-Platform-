@@ -8,6 +8,7 @@ import {
   SLASH_COMMANDS,
   type SlashCommandDefinition,
 } from '@/lib/slashCommands';
+import { getMentionQuery, fuzzyMatchPaths, completeMention } from '@/lib/mentionMatch';
 
 export const VIM_STORAGE_KEY = 'oc-vim-mode';
 export const VIM_TOGGLE_EVENT = 'oc-vim-toggle';
@@ -86,6 +87,8 @@ interface MessageInputProps {
   disabled?:     boolean;
   /** Project commands from .claude/commands/*.md, merged into autocomplete */
   extraCommands?: SlashCommandDefinition[];
+  /** Enables `@file` autocomplete over the project's workspace files */
+  projectId?: string;
 }
 
 export default function MessageInput({
@@ -97,6 +100,7 @@ export default function MessageInput({
   activeFile,
   disabled,
   extraCommands,
+  projectId,
 }: MessageInputProps) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -206,6 +210,59 @@ export default function MessageInput({
     });
   };
 
+  // ── @file mention autocomplete ─────────────────────────────────────────
+  const [caret, setCaret] = useState(0);
+  const [workspaceFiles, setWorkspaceFiles] = useState<{ path: string; isDirectory: boolean }[] | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const [mentionDismissed, setMentionDismissed] = useState<string | null>(null);
+  const mention = popoverOpen || !projectId ? null : getMentionQuery(value, caret);
+  const mentionKey = mention ? `${mention.start}:${mention.query}` : null;
+  const [prevMentionKey, setPrevMentionKey] = useState<string | null>(null);
+  if (mentionKey !== prevMentionKey) {
+    setPrevMentionKey(mentionKey);
+    setMentionIndex(0);
+  }
+  const mentionActive = mention !== null;
+
+  // Load the file tree the first time an @ is typed (refreshed per project)
+  useEffect(() => {
+    if (!mentionActive || !projectId || workspaceFiles) return;
+    let cancelled = false;
+    fetch(`/api/files?projectId=${encodeURIComponent(projectId)}`)
+      .then((r) => (r.ok ? r.json() : { tree: [] }))
+      .then((data: { tree?: { path: string; isDirectory: boolean }[] }) => {
+        if (cancelled) return;
+        setWorkspaceFiles((data.tree ?? []).map((f) => ({ ...f, path: f.path.replace(/\\/g, '/') })));
+      })
+      .catch(() => { if (!cancelled) setWorkspaceFiles([]); });
+    return () => { cancelled = true; };
+  }, [mentionActive, projectId, workspaceFiles]);
+
+  const [filesFor, setFilesFor] = useState(projectId);
+  if (filesFor !== projectId) {
+    setFilesFor(projectId);
+    setWorkspaceFiles(null);
+  }
+
+  const mentionMatches = mention && workspaceFiles
+    ? fuzzyMatchPaths(mention.query, workspaceFiles.map((f) => f.path))
+    : [];
+  const mentionOpen = mentionMatches.length > 0 && mentionDismissed !== value;
+  const activeMention = mentionOpen ? mentionMatches[Math.min(mentionIndex, mentionMatches.length - 1)] : undefined;
+  const mentionOptionId = (i: number) => `mention-option-${i}`;
+
+  const completeFileMention = (filePath: string) => {
+    if (!mention) return;
+    const isDir = !!workspaceFiles?.find((f) => f.path === filePath)?.isDirectory;
+    const next = completeMention(value, mention.start, caret, filePath, isDir);
+    onChange(next.value);
+    setCaret(next.caret);
+    requestAnimationFrame(() => {
+      ref.current?.focus();
+      setCursor(next.caret);
+    });
+  };
+
   // Auto-resize textarea
   useEffect(() => {
     const el = ref.current;
@@ -215,6 +272,25 @@ export default function MessageInput({
   }, [value]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (mentionOpen && activeMention) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const delta = e.key === 'ArrowDown' ? 1 : -1;
+        setMentionIndex((i) => (i + delta + mentionMatches.length) % mentionMatches.length);
+        return;
+      }
+      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+        e.preventDefault();
+        completeFileMention(activeMention);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setMentionDismissed(value);
+        return;
+      }
+    }
+
     if (popoverOpen && activeCommand) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
@@ -411,6 +487,32 @@ export default function MessageInput({
         </div>
       )}
 
+      {mentionOpen && (
+        <div className="slash-popover" role="listbox" id="mention-listbox" aria-label="Workspace files">
+          {mentionMatches.map((filePath, index) => {
+            const active = filePath === activeMention;
+            const slash = filePath.lastIndexOf('/');
+            return (
+              <div
+                key={filePath}
+                id={mentionOptionId(index)}
+                role="option"
+                aria-selected={active}
+                className={`slash-option ${active ? 'slash-option--active' : ''}`}
+                onMouseEnter={() => setMentionIndex(index)}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  completeFileMention(filePath);
+                }}
+              >
+                <span className="slash-option-name">@{filePath.slice(slash + 1)}</span>
+                <span className="slash-option-desc">{slash > 0 ? filePath.slice(0, slash) : ''}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Hidden file input */}
       <input
         ref={fileInputRef}
@@ -462,7 +564,11 @@ export default function MessageInput({
       <textarea
         ref={ref}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => {
+          onChange(e.target.value);
+          setCaret(e.target.selectionStart ?? e.target.value.length);
+        }}
+        onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
         onKeyDown={handleKeyDown}
         placeholder={
           isStreaming
@@ -475,9 +581,13 @@ export default function MessageInput({
         aria-label="Message"
         role="combobox"
         aria-autocomplete="list"
-        aria-expanded={popoverOpen}
-        aria-controls={popoverOpen ? 'slash-command-listbox' : undefined}
-        aria-activedescendant={activeCommand ? optionId(activeCommand.name) : undefined}
+        aria-expanded={popoverOpen || mentionOpen}
+        aria-controls={popoverOpen ? 'slash-command-listbox' : mentionOpen ? 'mention-listbox' : undefined}
+        aria-activedescendant={
+          activeCommand ? optionId(activeCommand.name)
+            : activeMention ? mentionOptionId(Math.min(mentionIndex, mentionMatches.length - 1))
+            : undefined
+        }
       />
 
       {/* Toolbar */}

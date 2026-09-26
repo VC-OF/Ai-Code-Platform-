@@ -1267,6 +1267,7 @@ export default function ChatPanel({
           onCancel={cancelRun}
           isStreaming={loading}
           activeFile={activeFilePath}
+          projectId={projectId}
         />
       </div>
 

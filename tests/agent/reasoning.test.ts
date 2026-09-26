@@ -54,7 +54,7 @@ describe('reasoning models', () => {
       { type: 'reasoning_delta', delta: 'First, ' },
       { type: 'reasoning_delta', delta: 'check units.' },
       { type: 'delta', delta: '42' },
-      { type: 'done', usage: { prompt_tokens: 0, completion_tokens: 0 }, finishReason: 'stop' },
+      { type: 'done', usage: { prompt_tokens: 0, completion_tokens: 0, cached_tokens: 0 }, finishReason: 'stop' },
     ]);
   });
 

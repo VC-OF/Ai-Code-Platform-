@@ -44,7 +44,7 @@ export const SLASH_COMMANDS: SlashCommandDefinition[] = [
   { name: 'compact', aliases: ['compress'], group: 'Context', kind: 'local', args: '[instructions]', description: 'Summarize older messages to free context' },
   { name: 'cost', group: 'Context', kind: 'local', description: 'Show token usage and estimated cost for this project' },
   { name: 'usage', group: 'Context', kind: 'local', description: 'Show token usage per model for this project' },
-  { name: 'memory', group: 'Context', kind: 'local', args: '[text]', description: 'Show AGENTS.md or append a line to it' },
+  { name: 'memory', group: 'Context', kind: 'local', args: '[text]', description: 'List memory files (AGENTS.md, CLAUDE.md…) or append a line to AGENTS.md' },
   { name: 'todos', group: 'Context', kind: 'local', description: 'Show the current plan tasks' },
 
   // ── Project ────────────────────────────────────────────────────────────────
