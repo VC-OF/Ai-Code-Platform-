@@ -90,6 +90,9 @@ export async function detectStacks(dir: string): Promise<Stack[]> {
 export async function findProjectDirs(workspace: string): Promise<ProjectDir[]> {
   const out: ProjectDir[] = [];
   const rootStacks = await detectStacks(workspace);
+  // A bare python project (tests/test_*.py, scripts in results/ or src/) has
+  // no manifest at the root; its tests must still run
+  if (!rootStacks.includes('python') && (await hasPythonTests(workspace))) rootStacks.push('python');
   if (rootStacks.length) out.push({ dir: workspace, rel: '.', stacks: rootStacks });
 
   const consider = async (abs: string, rel: string) => {

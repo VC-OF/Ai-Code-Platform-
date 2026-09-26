@@ -161,8 +161,14 @@ export function validateToolArgs(
   const result = schema.safeParse(args);
   
   if (!result.success) {
+    // Include what was actually sent: an enum message alone ("expected one
+    // of …") left models repeating the same wrong value
     const issues = result.error.issues
-      .map(i => `${i.path.join('.')}: ${i.message}`)
+      .map((i) => {
+        const received = i.path.reduce<unknown>((v, k) => (v && typeof v === 'object' ? (v as Record<string, unknown>)[String(k)] : undefined), args);
+        const shown = received === undefined ? '' : ` (received ${JSON.stringify(received).slice(0, 80)})`;
+        return `${i.path.join('.')}: ${i.message}${shown}`;
+      })
       .join('; ');
     return { success: false, error: `Validation failed: ${issues}` };
   }

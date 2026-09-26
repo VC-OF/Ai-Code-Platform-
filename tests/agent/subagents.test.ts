@@ -249,5 +249,32 @@ describe('spawn_agent inside the agent loop', () => {
     expect(meta.success).toBe(false);
     expect(meta.subagent.reason).toBe('max_steps');
     expect(meta.subagent.report).toContain('treat this report as partial');
+    // The child was warned before the cap (explore budget is 40 steps)
+    const warning = emitter.events.find((e) => e.type === 'subagent_event' && (e.event as { type: string }).type === 'budget_warning');
+    expect(warning).toBeTruthy();
+    expect((warning!.event as { stepIndex: number }).stepIndex).toBe(36);
+  }, 120_000);
+
+  it('a sub-agent that heeds the budget warning finishes with a report', async () => {
+    let warned = false;
+    state.responder = ({ isChild, last }) => {
+      if (!isChild) {
+        return last.role === 'user'
+          ? { calls: [{ id: 'c1', name: 'spawn_agent', args: { kind: 'explore', task: 'Read the file until told to stop.' } }] }
+          : { text: 'parent done' };
+      }
+      if (last.role === 'user' && String(last.content).includes('[Budget:')) warned = true;
+      if (warned) return { text: 'REPORT: wrapped up on request.' };
+      return { calls: [{ id: `r-${Date.now()}-${Math.random()}`, name: 'read_file', args: { path: 'src/math.ts' } }] };
+    };
+
+    const { emitter, promise } = run();
+    await promise;
+    const end = emitter.events.find((e) => e.type === 'tool_end' && e.toolName === 'spawn_agent')!;
+    const meta = (end.result as { success: boolean; subagent: { reason: string; report: string; steps: number } });
+    expect(meta.success).toBe(true);
+    expect(meta.subagent.reason).toBe('completed');
+    expect(meta.subagent.report).toContain('wrapped up on request');
+    expect(meta.subagent.steps).toBe(36);
   }, 120_000);
 });

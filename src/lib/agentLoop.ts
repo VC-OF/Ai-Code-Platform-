@@ -55,6 +55,7 @@ const MAX_NO_ACTION_NUDGES = 1;     // times we challenge a "done" reply from a 
 const MAX_TEXT_TOOL_NUDGES = 3;    // times we correct tool calls written as plain text
 const MAX_STOP_HOOK_NUDGES = 2;    // times a Stop hook (exit 2) may send the agent back to work
 const MAX_SUBAGENT_DEPTH = 1;      // sub-agents cannot spawn sub-agents
+const BUDGET_WARNING_STEPS = 5;    // steps before the cap at which the model is told to wrap up
 const COMPACT_AT   = 0.60;         // Compact at 60% context
 const COMPACT_TO   = 0.40;         // Compact down to 40%
 
@@ -305,6 +306,17 @@ export async function runAgentLoop(
       const queued = opts.drainQueuedMessages?.() ?? [];
       for (const text of queued) {
         messages.push({ role: 'user', content: text } as ContextMessage);
+      }
+
+      // ── Step budget warning: wrap up instead of running into the cap ──────
+      if (stepIndex === maxSteps - BUDGET_WARNING_STEPS + 1) {
+        const warning = nested
+          ? `[Budget: ${BUDGET_WARNING_STEPS} steps left for this sub-agent. Stop exploring now and write your final report with what you have — a partial report is far more useful than none.]`
+          : `[Budget: ${BUDGET_WARNING_STEPS} steps left in this turn. Bring the work to a safe point: update_plan with accurate statuses and summarize what is done and what remains; the next turn resumes from the plan.]`;
+        const msg = { role: 'user', content: warning } as ContextMessage;
+        alreadyPersisted.add(msg); // loop bookkeeping, not conversation
+        messages.push(msg);
+        emitter.emit({ type: 'budget_warning', stepIndex, stepsLeft: BUDGET_WARNING_STEPS, nested: Boolean(nested) });
       }
 
       // ── Context compaction ────────────────────────────────────────────────

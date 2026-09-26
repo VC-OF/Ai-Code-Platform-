@@ -41,7 +41,7 @@ RUN apt-get update \
 # .venv for their pinned dependencies.
 RUN python3 -m pip install --break-system-packages --no-cache-dir \
       numpy scipy sympy matplotlib pandas pint uncertainties h5py networkx tqdm \
-      jupyter nbconvert nbformat ipykernel \
+      jupyter nbconvert nbformat ipykernel pytest \
  && rm -rf /root/.cache
 ENV MPLBACKEND=Agg
 

@@ -19,6 +19,18 @@ let ws: TestWorkspace | null = null;
 afterEach(async () => { await ws?.cleanup(); ws = null; });
 
 describe('stack detection', () => {
+  it('treats a manifest-less folder with pytest tests as a python project', async () => {
+    ws = await createWorkspace({
+      'results/analysis.py': 'print(1)\n',
+      'tests/test_analysis.py': 'def test_ok():\n    assert 1 + 1 == 2\n',
+    });
+    const dirs = await findProjectDirs(ws.root);
+    expect(dirs).toHaveLength(1);
+    expect(dirs[0]).toMatchObject({ rel: '.', stacks: ['python'] });
+    const plan = await testPlan('python', ws.root, false);
+    expect('candidates' in plan).toBe(true);
+  });
+
   it('detects each stack from its manifest', async () => {
     ws = await createWorkspace({
       'Cargo.toml': '[package]\nname="x"', 'go.mod': 'module x', 'pom.xml': '<project/>',
