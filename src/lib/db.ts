@@ -55,6 +55,14 @@ function runMigrations(db: Database.Database) {
       'ALTER TABLE checkpoints ADD COLUMN keep_messages_through_turn INTEGER'
     );
   }
+
+  // Prompt tokens served from the provider's prompt cache (null = not reported)
+  const usageCols = db
+    .prepare(`PRAGMA table_info(usage_log)`)
+    .all() as { name: string }[];
+  if (!usageCols.some((c) => c.name === 'cached_tokens')) {
+    db.exec('ALTER TABLE usage_log ADD COLUMN cached_tokens INTEGER');
+  }
 }
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
@@ -195,6 +203,7 @@ export interface DbUsageLog {
   cost_usd: number;
   turn_index: number;
   created_at: number;
+  cached_tokens?: number | null;
 }
 
 // ─── Project queries ─────────────────────────────────────────────────────────
@@ -426,13 +435,14 @@ export const usageDb = {
       .prepare(`
         INSERT INTO usage_log
           (id, project_id, model, prompt_tokens, completion_tokens,
-           total_tokens, cost_usd, turn_index, created_at)
+           total_tokens, cost_usd, turn_index, created_at, cached_tokens)
         VALUES
           (@id, @project_id, @model, @prompt_tokens, @completion_tokens,
-           @total_tokens, @cost_usd, @turn_index, @created_at)
+           @total_tokens, @cost_usd, @turn_index, @created_at, @cached_tokens)
       `)
       .run({
         ...entry,
+        cached_tokens: entry.cached_tokens ?? null,
         id: crypto.randomUUID(),
         total_tokens: entry.prompt_tokens + entry.completion_tokens,
         cost_usd,

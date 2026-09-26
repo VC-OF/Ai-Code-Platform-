@@ -13,6 +13,7 @@ import { SCIENCE_TOOL_SCHEMAS, isScienceTool, executeScienceTool } from "./scien
 import { APP_TOOL_SCHEMAS, isAppTool, executeAppTool } from "./appTools";
 import { SPAWN_AGENT_SCHEMA } from "./subagents";
 import { parseNotebook, formatNotebook } from "./notebooks";
+import { directoryMemoryFor, formatDirectoryMemory } from "./memoryFiles";
 import { generateImage } from "./imageGen";
 import { getPreviewLogs, getPreviewStatus } from "./previewManager";
 import { callMcpTool, demangleName } from "./mcpClient";
@@ -554,6 +555,8 @@ export interface TurnContext {
   hasRunTests: boolean;
   /** Outcome of the most recent run_lint / run_tests / run_notebook this turn */
   lastVerification?: { tool: string; passed: boolean; summary: string };
+  /** Subdirectory memory files (e.g. "sub/CLAUDE.md") already surfaced by read_file this turn */
+  memoryFilesLoaded?: Set<string>;
 }
 
 export function createTurnContext(): TurnContext {
@@ -565,6 +568,7 @@ export function createTurnContext(): TurnContext {
     hasEdits: false,
     hasRunLint: false,
     hasRunTests: false,
+    memoryFilesLoaded: new Set(),
   };
 }
 
@@ -649,6 +653,13 @@ export async function executeTool(
         const content = await fs.readFile(filePath, "utf-8");
         const lines = content.split("\n").length;
         ctx.filesRead.add(args.path as string);
+        // A subdirectory's own CLAUDE.md / AGENTS.md rides along once per turn
+        let dirMemory = "";
+        try {
+          ctx.memoryFilesLoaded ??= new Set();
+          const found = directoryMemoryFor(workspace, String(args.path), ctx.memoryFilesLoaded);
+          if (found.length) dirMemory = `\n\n${formatDirectoryMemory(found)}`;
+        } catch {}
 
         // Notebooks: cells + outputs instead of raw JSON (mirrors notebook_edit indexes)
         if (/\.ipynb$/i.test(String(args.path))) {
@@ -656,7 +667,7 @@ export async function executeTool(
             const nb = parseNotebook(content);
             return {
               success: true,
-              output: truncate(formatNotebook(nb), MAX_READ_CHARS),
+              output: truncate(formatNotebook(nb), MAX_READ_CHARS) + dirMemory,
               summary: `Read notebook ${args.path} (${nb.cells.length} cells)`,
             };
           } catch {
@@ -682,14 +693,14 @@ export async function executeTool(
           const slice = all.slice(from - 1, to).map((l, i) => `${String(from + i).padStart(5)}| ${l}`).join("\n");
           return {
             success: true,
-            output: truncate(`Lines ${from}-${to} of ${all.length} in ${args.path}:\n${slice}`, MAX_READ_CHARS),
+            output: truncate(`Lines ${from}-${to} of ${all.length} in ${args.path}:\n${slice}`, MAX_READ_CHARS) + dirMemory,
             summary: `Read ${args.path} lines ${from}-${to} of ${all.length}`,
           };
         }
 
         return {
           success: true,
-          output: truncate(content, MAX_READ_CHARS),
+          output: truncate(content, MAX_READ_CHARS) + dirMemory,
           summary: `Read ${args.path} (${lines} lines)`,
         };
       }

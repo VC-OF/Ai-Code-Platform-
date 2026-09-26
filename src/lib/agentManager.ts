@@ -7,6 +7,7 @@ import { getModel, LLMMessage, type LLMTool } from '@/lib/llmClient';
 import { composeSystemPrompt, type OutputStyle } from '@/lib/promptComposer';
 import { TOOL_SCHEMAS } from '@/lib/tools';
 import { buildPromptParts } from '@/lib/contextBreakdown';
+import { resolveMentions } from '@/lib/mentions';
 
 export interface RunningAgent {
   projectId: string;
@@ -225,6 +226,20 @@ class AgentManager {
         }) as LLMMessage);
 
         const newMessages = lastMsg ? [{ role: lastMsg.role, content: convertToLLMContent(lastMsg.content) } as LLMMessage] : [];
+
+        // @path mentions → attach the referenced workspace files/directories
+        // (request-only: the stored message keeps the user's text as typed)
+        if (lastMsg?.role === 'user' && newMessages[0]) {
+          const first = newMessages[0];
+          try {
+            if (typeof first.content === 'string') {
+              first.content = (await resolveMentions(first.content, project.workspace)).text;
+            } else if (Array.isArray(first.content)) {
+              const textPart = first.content.find((p) => p.type === 'text') as { type: 'text'; text: string } | undefined;
+              if (textPart) textPart.text = (await resolveMentions(textPart.text, project.workspace)).text;
+            }
+          } catch {}
+        }
 
         // Persist the user's prompt before the background turn starts so a
         // browser refresh can restore the active request even before the

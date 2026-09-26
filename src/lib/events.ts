@@ -101,7 +101,7 @@ export class EventEmitter {
   usage(
     stepIndex: number,
     model: string,
-    usage: { prompt: number; completion: number },
+    usage: { prompt: number; completion: number; cached?: number },
     contextWindow: number,
     costUsd?: number
   ) {
@@ -111,6 +111,7 @@ export class EventEmitter {
       model,
       promptTokens: usage.prompt,
       completionTokens: usage.completion,
+      ...(usage.cached ? { cachedTokens: usage.cached } : {}),
       contextWindow,
       costUsd,
     });

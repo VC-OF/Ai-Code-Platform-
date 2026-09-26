@@ -2,10 +2,13 @@ import { formatHarnessForPrompt, type AgentHarness } from './harness';
 import { formatSkillsForPrompt, type SkillDefinition } from './skills';
 import type { OutputStyle } from './outputStyle';
 import { formatKnowledgeForPrompt, type KnowledgeItem } from './knowledge';
+import type { MemoryFile } from './memoryFiles';
 
 export interface PromptParts {
   basePrompt: string;
   agentsMemory?: string;
+  /** All memory files (AGENTS.md, CLAUDE.md, user-level…); supersedes agentsMemory */
+  memoryFiles?: MemoryFile[];
   harness: AgentHarness;
   skills?: SkillDefinition[];
   knowledgeItems?: KnowledgeItem[];
@@ -27,6 +30,17 @@ export function formatOutputStyleForPrompt(style?: OutputStyle): string {
   return '';
 }
 
+/** Memory section of the system prompt: every memory file labelled by name,
+ *  or the legacy AGENTS.md-only form. */
+export function formatMemorySection(parts: Pick<PromptParts, 'agentsMemory' | 'memoryFiles'>): string {
+  if (parts.memoryFiles?.length) {
+    return parts.memoryFiles
+      .map((f) => `## ${f.scope === 'user' ? 'User' : 'Project'} Memory (${f.name})\n${f.content}`)
+      .join('\n\n');
+  }
+  return parts.agentsMemory ? `## Project Memory (AGENTS.md)\n${parts.agentsMemory}` : '';
+}
+
 export function formatModeForPrompt(mode?: 'auto' | 'manual' | 'plan'): string {
   if (mode === 'manual') {
     return '## Execution Mode: Manual (Supervised)\nYou are running in Manual Supervision Mode. All modifying operations (file creations, edits, deletions, shell commands, and docker runs) will be submitted to the user for interactive approval. Clearly state what you intend to do before executing mutating tools.';
@@ -43,7 +57,7 @@ export function composeSystemPrompt(parts: PromptParts): string {
   return [
     parts.basePrompt,
     formatHarnessForPrompt(parts.harness),
-    parts.agentsMemory ? `## Project Memory (AGENTS.md)\n${parts.agentsMemory}` : '',
+    formatMemorySection(parts),
     formatKnowledgeForPrompt(parts.knowledgeItems ?? []),
     formatSkillsForPrompt(parts.skills ?? []),
     formatModeForPrompt(parts.mode),

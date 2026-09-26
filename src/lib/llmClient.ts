@@ -4,7 +4,7 @@ import type {
   ChatCompletionTool,
   ChatCompletionToolChoiceOption,
 } from 'openai/resources';
-import { resolveProvider, getContextWindow as registryContextWindow } from './models';
+import { resolveProvider, getContextWindow as registryContextWindow, supportsPromptCaching } from './models';
 import { getDecryptedEnv } from './settingsStore';
 
 export type LLMMessage = ChatCompletionMessageParam;
@@ -215,6 +215,72 @@ export function toApiMessages(messages: LLMMessage[]): LLMMessage[] {
   });
 }
 
+// ─── Prompt caching (Anthropic) ─────────────────────────────────────────────
+const CACHE_CONTROL = { type: 'ephemeral' } as const;
+const MAX_CACHE_BREAKPOINTS = 4;
+
+type ContentPart = { type: string; text?: string; cache_control?: { type: 'ephemeral' } } & Record<string, unknown>;
+
+/** Content as a part array with a cache marker on the last part, or null
+ *  when there is nothing to mark. */
+function markLastPart(content: unknown): ContentPart[] | null {
+  if (typeof content === 'string') {
+    return content ? [{ type: 'text', text: content, cache_control: CACHE_CONTROL }] : null;
+  }
+  if (Array.isArray(content) && content.length > 0) {
+    const parts = content.map((p) => ({ ...(p as ContentPart) }));
+    parts[parts.length - 1].cache_control = CACHE_CONTROL;
+    return parts;
+  }
+  return null;
+}
+
+/**
+ * Add Anthropic `cache_control` breakpoints (OpenRouter passes them
+ * through): the system prompt, plus the last two user/tool messages so the
+ * growing conversation prefix is read from cache on the next step. At most
+ * 4 breakpoints. Pure — the input is not modified.
+ */
+export function applyCacheBreakpoints(messages: LLMMessage[]): LLMMessage[] {
+  const out = messages.slice();
+  let used = 0;
+  const sysIdx = out.findIndex((m) => m.role === 'system');
+  if (sysIdx !== -1) {
+    const parts = markLastPart(out[sysIdx].content);
+    if (parts) {
+      out[sysIdx] = { ...out[sysIdx], content: parts } as LLMMessage;
+      used++;
+    }
+  }
+  let tail = 0;
+  for (let i = out.length - 1; i >= 0 && tail < 2 && used < MAX_CACHE_BREAKPOINTS; i--) {
+    const m = out[i];
+    if (m.role !== 'user' && m.role !== 'tool') continue;
+    const parts = markLastPart(m.content);
+    if (!parts) continue;
+    out[i] = { ...m, content: parts } as LLMMessage;
+    tail++;
+    used++;
+  }
+  return out;
+}
+
+/** Request messages for `model`: bookkeeping stripped, cache markers added
+ *  for providers that support prompt caching. */
+export function prepareMessages(model: string, messages: LLMMessage[]): LLMMessage[] {
+  const api = toApiMessages(messages);
+  return supportsPromptCaching(model) ? applyCacheBreakpoints(api) : api;
+}
+
+/** Prompt tokens served from cache: OpenAI/OpenRouter report
+ *  prompt_tokens_details.cached_tokens, Anthropic cache_read_input_tokens. */
+export function extractCachedTokens(usage: unknown): number {
+  if (!usage || typeof usage !== 'object') return 0;
+  const u = usage as { prompt_tokens_details?: { cached_tokens?: unknown }; cache_read_input_tokens?: unknown };
+  const n = Number(u.prompt_tokens_details?.cached_tokens ?? u.cache_read_input_tokens ?? 0);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 /** Send a request, dropping optional fields the provider rejects
  *  (max_tokens / reasoning_effort) and remembering that per provider. */
 async function requestWithOptionalFields<T>(
@@ -343,7 +409,7 @@ async function callOnce(
       const completion = await requestWithOptionalFields(provider, (fields) =>
         client.chat.completions.create({
           model: apiModel,
-          messages: toApiMessages(messages),
+          messages: prepareMessages(model, messages),
           tools: tools?.length ? tools : undefined,
           tool_choice: opts?.toolChoice,
           ...fields,
@@ -358,6 +424,7 @@ async function callOnce(
           prompt_tokens: completion.usage?.prompt_tokens ?? 0,
           completion_tokens: completion.usage?.completion_tokens ?? 0,
           total_tokens: completion.usage?.total_tokens ?? 0,
+          cached_tokens: extractCachedTokens(completion.usage),
         },
       };
     },
@@ -420,7 +487,7 @@ export async function* callLLMStream(
       stream = await requestWithOptionalFields(provider, (fields) =>
         client.chat.completions.create({
           model: apiModel,
-          messages: toApiMessages(messages),
+          messages: prepareMessages(model, messages),
           tools: tools?.length ? tools : undefined,
           tool_choice: opts?.toolChoice,
           stream: true,
@@ -448,7 +515,7 @@ export async function* callLLMStream(
     yield { type: 'fallback' as const, model: usedModel, reason: reason.slice(0, 300) };
   }
 
-  let usage = { prompt_tokens: 0, completion_tokens: 0 };
+  let usage = { prompt_tokens: 0, completion_tokens: 0, cached_tokens: 0 };
   let finishReason: string | null = null;
 
   const idleMs = envMs('LLM_STREAM_IDLE_MS', 180_000);
@@ -461,6 +528,7 @@ export async function* callLLMStream(
       usage = {
         prompt_tokens: chunk.usage.prompt_tokens ?? 0,
         completion_tokens: chunk.usage.completion_tokens ?? 0,
+        cached_tokens: extractCachedTokens(chunk.usage),
       };
     }
 

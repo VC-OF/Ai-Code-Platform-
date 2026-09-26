@@ -1,10 +1,9 @@
-import { readFileSync } from 'fs';
-import path from 'path';
 import { SYSTEM_PROMPT } from './systemPrompt';
 import { createHarness, formatHarnessForPrompt } from './harness';
 import {
   formatModeForPrompt,
   formatOutputStyleForPrompt,
+  formatMemorySection,
   type PromptParts,
   type OutputStyle,
 } from './promptComposer';
@@ -15,6 +14,7 @@ import { isDockerMode } from './safeExec';
 import { getMcpToolSchemas } from './mcpClient';
 import { projectDb, messageDb } from './db';
 import { getContextWindow } from './models';
+import { loadMemoryFiles } from './memoryFiles';
 import { estimateTokens, estimateMessageTokens, type ContextMessage } from './contextManager';
 
 export interface PromptProject {
@@ -36,10 +36,9 @@ export async function buildPromptParts(
   project: PromptProject,
   opts: { mode?: 'auto' | 'manual' | 'plan'; outputStyle?: OutputStyle } = {}
 ): Promise<BuiltPromptParts> {
-  let agentsMemory: string | undefined;
-  try {
-    agentsMemory = readFileSync(path.join(project.workspace, 'AGENTS.md'), 'utf-8');
-  } catch {}
+  // AGENTS.md, CLAUDE.md, CLAUDE.local.md, .claude/CLAUDE.md + user-level
+  const memoryFiles = loadMemoryFiles(project.workspace);
+  const agentsMemory = memoryFiles.find((f) => f.name === 'AGENTS.md')?.content;
 
   // MCP servers contribute extra tools (mcp_<server>_<tool>)
   const mcpTools = await getMcpToolSchemas().catch(() => [] as Record<string, unknown>[]);
@@ -61,6 +60,7 @@ export async function buildPromptParts(
     parts: {
       basePrompt,
       agentsMemory,
+      memoryFiles,
       harness: createHarness(project.kind as Parameters<typeof createHarness>[0]),
       skills,
       knowledgeItems,
@@ -115,7 +115,7 @@ export function computeBreakdownFromParts(input: BreakdownInput): ContextBreakdo
     formatOutputStyleForPrompt(parts.outputStyle),
   ].filter(Boolean).join('\n\n');
   const memoryText = [
-    parts.agentsMemory ? `## Project Memory (AGENTS.md)\n${parts.agentsMemory}` : '',
+    formatMemorySection(parts),
     formatKnowledgeForPrompt(parts.knowledgeItems ?? []),
   ].filter(Boolean).join('\n\n');
   const skillsText = formatSkillsForPrompt(parts.skills ?? []);
@@ -148,7 +148,9 @@ export function computeBreakdownFromParts(input: BreakdownInput): ContextBreakdo
     messageTokens,
     mcpTools: desc(input.mcpTools.map((t) => ({ name: mcpToolName(t), tokens: estimateTokens(JSON.stringify(t)) }))),
     memoryFiles: desc([
-      ...(parts.agentsMemory ? [{ name: 'AGENTS.md', tokens: estimateTokens(parts.agentsMemory) }] : []),
+      ...(parts.memoryFiles?.length
+        ? parts.memoryFiles.map((f) => ({ name: f.name, tokens: estimateTokens(f.content) }))
+        : parts.agentsMemory ? [{ name: 'AGENTS.md', tokens: estimateTokens(parts.agentsMemory) }] : []),
       ...(parts.knowledgeItems ?? []).map((ki) => ({
         name: ki.title,
         tokens: estimateTokens(`${ki.title}\n${ki.summary}\n${ki.content}`),

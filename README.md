@@ -162,6 +162,8 @@ the same list with comments.
 | `LLM_FALLBACKS` (or `FALLBACK_MODEL`) | — | Comma-separated models tried in order when the selected one fails or rate-limits before producing output. |
 | `LLM_MAX_OUTPUT_TOKENS` | `16384` | Output cap per reply; providers that reject it are retried without it. |
 | `LLM_REASONING_EFFORT` | off | `low` / `medium` / `high` — sent as `reasoning_effort` to reasoning models (DeepSeek, OpenAI o-series, OpenRouter, Groq); providers that reject the field are retried without it. Thinking tokens are shown in the chat either way. |
+| `LLM_PROMPT_CACHE` | auto | `1` / `0` forces Anthropic-style `cache_control` breakpoints on or off; default: on for `openrouter:anthropic/*` and `claude-*`. |
+| `OPEN_CODE_AUTO_MEMORY` | on | `0` disables the post-turn auto-memory proposal call. |
 | `LLM_VISION` | auto | `1` / `0` forces whether `view_image` attaches images to the model; default uses the model registry plus name heuristics (`gpt-4o`, `claude`, `gemma4`, `-vl`, `llava`, …). |
 | `LLM_TIMEOUT_MS`, `LLM_STREAM_IDLE_MS` | `180000` | Bounded wait for response headers / for the next streamed chunk. |
 | `CONTEXT_WINDOW` / `LLM_CONTEXT_WINDOW` | per model | Override the context size used for compaction (60 % triggers a summary). |
@@ -369,8 +371,32 @@ Four tools cover the gaps that showed up most in real runs
   `/name` command with `$ARGUMENTS` / `$1…$9` substitution, autocompleted
   in the composer and listed by `/agents`.
 - **Memory** — `save_memory` appends durable one-line facts to the
-  project's `AGENTS.md` under `## Memory`; `/memory` shows and edits the
-  same file, and it is part of every system prompt.
+  project's `AGENTS.md` under `## Memory`. The system prompt loads
+  `AGENTS.md`, `CLAUDE.md`, `CLAUDE.local.md` and `.claude/CLAUDE.md` from
+  the workspace root plus `~/.claude/CLAUDE.md` and `~/.open-code/AGENTS.md`,
+  each labelled by file. A line consisting of `@path` imports that file
+  (relative to the importing file, up to 5 levels deep, confined to the
+  workspace or `~/.claude`, cycles skipped). When `read_file` enters a
+  subdirectory with its own `CLAUDE.md` / `AGENTS.md`, that file is appended
+  to the result once per turn (`[Directory memory from sub/CLAUDE.md]`).
+  `/memory` lists every loaded memory file; `/memory <text>` appends to
+  `AGENTS.md`. `/context` counts each file separately.
+- **Auto-memory** — after a completed turn with 3+ tool calls, one cheap
+  model call proposes up to three durable project facts; new ones (deduped
+  against `## Memory`) are appended to `AGENTS.md` and reported as a
+  `memory_update` event. Failures never affect the turn; disable with
+  `OPEN_CODE_AUTO_MEMORY=0`.
+- **`@file` mentions** — typing `@` in the composer opens a fuzzy file
+  picker (↑/↓, Tab/Enter, Esc). On send, each `@path` that resolves inside
+  the workspace is attached below the message (file content capped at 20k
+  chars; directories as an entry list); paths outside the workspace are
+  rejected and unknown ones stay plain text.
+- **Prompt caching** — for Anthropic models (`openrouter:anthropic/*`,
+  `claude-*`) requests carry `cache_control: {type: 'ephemeral'}` breakpoints
+  on the system prompt and the last two user/tool messages, so each agent
+  step re-reads the growing prefix from cache. Cached prompt tokens are
+  reported as `cachedTokens` on usage events and stored in
+  `usage_log.cached_tokens`. Override with `LLM_PROMPT_CACHE=1|0`.
 - **Thinking** — the `reasoning` / `reasoning_content` stream of reasoning
   models is shown live and kept as a collapsible "Thought" block; set
   `LLM_REASONING_EFFORT=low|medium|high` to request more effort (providers

@@ -7,6 +7,8 @@ export function trackUsage(entry: {
   promptTokens: number;
   completionTokens: number;
   turnIndex: number;
+  /** Prompt tokens read from the provider's prompt cache, when reported */
+  cachedTokens?: number;
 }): { costUsd: number } {
   usageDb.insert({
     project_id: entry.projectId,
@@ -14,6 +16,7 @@ export function trackUsage(entry: {
     prompt_tokens: entry.promptTokens,
     completion_tokens: entry.completionTokens,
     turn_index: entry.turnIndex,
+    cached_tokens: entry.cachedTokens ?? null,
   });
 
   return {

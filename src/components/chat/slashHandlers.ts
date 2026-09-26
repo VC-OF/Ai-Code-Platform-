@@ -289,16 +289,25 @@ async function readAgentsMd(projectId: string): Promise<string> {
 
 async function handleMemory(args: string, ctx: SlashContext) {
   try {
-    const current = await readAgentsMd(ctx.projectId);
     if (!args) {
+      const { files } = await fetchJson<{ files: { name: string; scope: string; content: string; tokens: number }[] }>(
+        `/api/memory?${q(ctx.projectId)}`
+      ).catch(() => ({ files: [] }));
+      const footer = 'Append to AGENTS.md with `/memory <text>`, or edit it in Settings > Project memory (opened). Subdirectory CLAUDE.md / AGENTS.md files load when the agent reads a file there.';
       ctx.say(
-        current.trim()
-          ? `**AGENTS.md** (project memory)\n\n\`\`\`markdown\n${current.trim()}\n\`\`\`\n\nAppend with \`/memory <text>\`, or edit it in Settings > Project memory (opened).`
-          : 'AGENTS.md is empty. Append with `/memory <text>`, or edit it in Settings > Project memory (opened).'
+        files.length
+          ? [
+              `**Memory files** (${files.length}, loaded into the system prompt)`,
+              ...files.map((f) => `\n**${f.name}** (${f.scope}, ~${f.tokens} tokens)\n\n\`\`\`markdown\n${f.content.trim()}\n\`\`\``),
+              '',
+              footer,
+            ].join('\n')
+          : `No memory files (AGENTS.md, CLAUDE.md, CLAUDE.local.md, .claude/CLAUDE.md, ~/.claude/CLAUDE.md). ${footer}`
       );
       openSurface('settings');
       return;
     }
+    const current = await readAgentsMd(ctx.projectId);
     const line = `- ${args.replace(/\s*\n\s*/g, ' ').trim()}`;
     const next = current.trim() ? `${current.replace(/\s+$/, '')}\n${line}\n` : `# Project memory\n\n${line}\n`;
     await fetchJson('/api/files', {
