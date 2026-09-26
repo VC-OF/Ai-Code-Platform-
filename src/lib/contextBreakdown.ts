@@ -42,7 +42,7 @@ export async function buildPromptParts(
   } catch {}
 
   // MCP servers contribute extra tools (mcp_<server>_<tool>)
-  const mcpTools = await getMcpToolSchemas().catch(() => [] as Record<string, unknown>[]);
+  const mcpTools = await getMcpToolSchemas(project.workspace).catch(() => [] as Record<string, unknown>[]);
   const skills = await loadSkills(project.workspace, { includeGlobal: true });
   const knowledgeItems = await listKnowledgeItems(project.workspace).catch(() => [] as KnowledgeItem[]);
 

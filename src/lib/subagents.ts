@@ -24,6 +24,7 @@ const READ_ONLY_TOOLS = new Set([
   'read_file', 'list_files', 'glob_files', 'grep_files', 'load_skill',
   'web_search', 'fetch_url', 'view_image', 'query_data', 'review_changes',
   'read_preview_logs', 'fetch_preview', 'check_preview', 'docker_status',
+  'mcp_list_resources', 'mcp_read_resource',
   'browser_open', 'browser_snapshot', 'browser_scroll', 'browser_console', 'browser_wait', 'browser_close',
 ]);
 
@@ -142,7 +143,7 @@ export function subagentToolSet(kind: SubagentKind, tools: LLMTool[]): LLMTool[]
   return tools.filter((t) => {
     const name = toolName(t);
     if (!name || SUBAGENT_EXCLUDED_TOOLS.has(name)) return false;
-    if (name.startsWith('mcp_')) return kind === 'general';
+    if (name.startsWith('mcp_') && !READ_ONLY_TOOLS.has(name)) return kind === 'general';
     return spec.allows(name);
   });
 }

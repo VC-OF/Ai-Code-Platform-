@@ -1,33 +1,63 @@
-import crossSpawn from "cross-spawn";
-import type { ChildProcess } from "child_process";
 import fs from "fs/promises";
 import path from "path";
+import { getDecryptedEnv } from "./settingsStore";
+import {
+  createTransport,
+  type JsonRpcMessage,
+  type McpTransport,
+  type McpTransportKind,
+} from "./mcpTransports";
 
 /**
- * Minimal MCP (Model Context Protocol) client — stdio transport.
+ * Minimal MCP (Model Context Protocol) client.
  *
- * Config lives at .platform/mcp.json (override with MCP_CONFIG_PATH):
+ * Platform config lives at .platform/mcp.json (override with MCP_CONFIG_PATH):
  *   {
  *     "servers": {
- *       "my-server": { "command": "npx", "args": ["-y", "@some/mcp-server"], "env": {} }
+ *       "local":  { "command": "npx", "args": ["-y", "@some/mcp-server"], "env": {} },
+ *       "remote": { "type": "http", "url": "https://example.com/mcp",
+ *                   "headers": { "Authorization": "Bearer ${EXAMPLE_TOKEN}" } },
+ *       "legacy": { "type": "sse", "url": "https://example.com/sse" }
  *     }
  *   }
+ * A project workspace's Claude Code `.mcp.json` ({"mcpServers": {…}}, same
+ * entry shapes) is merged on top — project entries win on a name clash.
+ * `${VAR}` / `${VAR:-default}` in urls, headers, args and env resolve from
+ * process.env and the encrypted Settings vars (Settings win).
  *
  * Each server's tools are exposed to the agent as `mcp_<server>_<tool>`.
  * Server names may not contain underscores (they delimit the mangling).
+ * Servers advertising resources add `mcp_list_resources` / `mcp_read_resource`;
+ * prompts become `/mcp__<server>__<prompt>` slash commands in the chat.
  *
- * Protocol: newline-delimited JSON-RPC 2.0 over the child's stdio —
- * initialize → notifications/initialized → tools/list → tools/call.
+ * Protocol: JSON-RPC 2.0 over a transport (stdio | Streamable HTTP | legacy
+ * SSE) — initialize → notifications/initialized → tools/list (+
+ * resources/list, prompts/list when advertised) → tools/call etc.
  */
 
 const PROTOCOL_VERSION = "2024-11-05";
+const HTTP_PROTOCOL_VERSION = "2025-03-26";
 const INIT_TIMEOUT_MS = 8_000;
 const CALL_TIMEOUT_MS = 30_000;
+const MAX_LIST_PAGES = 10;
 
-export interface McpServerConfig {
+export interface McpStdioConfig {
+  type?: "stdio";
   command: string;
   args?: string[];
   env?: Record<string, string>;
+}
+
+export interface McpRemoteConfig {
+  type: "http" | "sse";
+  url: string;
+  headers?: Record<string, string>;
+}
+
+export type McpServerConfig = McpStdioConfig | McpRemoteConfig;
+
+function isRemote(config: McpServerConfig): config is McpRemoteConfig {
+  return config.type === "http" || config.type === "sse";
 }
 
 export interface McpToolInfo {
@@ -37,11 +67,25 @@ export interface McpToolInfo {
   inputSchema?: Record<string, unknown>;
 }
 
-interface JsonRpcResponse {
-  jsonrpc: "2.0";
-  id?: number;
-  result?: unknown;
-  error?: { code: number; message: string };
+export interface McpResourceInfo {
+  server: string;
+  uri: string;
+  name?: string;
+  description?: string;
+  mimeType?: string;
+}
+
+export interface McpPromptArgument {
+  name: string;
+  description?: string;
+  required?: boolean;
+}
+
+export interface McpPromptInfo {
+  server: string;
+  name: string;
+  description?: string;
+  arguments: McpPromptArgument[];
 }
 
 // ─── Config ──────────────────────────────────────────────────────────────────
@@ -53,100 +97,194 @@ function configPath(): string {
   );
 }
 
-export async function loadMcpConfig(): Promise<Record<string, McpServerConfig>> {
-  try {
-    const raw = await fs.readFile(configPath(), "utf8");
-    const parsed = JSON.parse(raw);
-    const servers: Record<string, McpServerConfig> = parsed?.servers ?? {};
-    // Underscores would break mcp_<server>_<tool> demangling
-    for (const name of Object.keys(servers)) {
-      if (!/^[a-zA-Z0-9-]+$/.test(name)) {
-        console.warn(`[mcp] ignoring server '${name}' — names must be alphanumeric/dashes`);
-        delete servers[name];
-      }
+/** Names that would collide with the built-in resource tools' mangling. */
+const RESERVED_SERVER_NAMES = new Set(["list", "read"]);
+
+function normalizeEntry(name: string, raw: unknown): McpServerConfig | null {
+  if (!/^[a-zA-Z0-9-]+$/.test(name) || RESERVED_SERVER_NAMES.has(name)) {
+    console.warn(`[mcp] ignoring server '${name}' — names must be alphanumeric/dashes`);
+    return null;
+  }
+  if (!raw || typeof raw !== "object") return null;
+  const e = raw as Record<string, unknown>;
+  const type = typeof e.type === "string" ? e.type : undefined;
+  const headers =
+    e.headers && typeof e.headers === "object" ? (e.headers as Record<string, string>) : undefined;
+  if (type === "http" || type === "streamable-http" || type === "sse") {
+    if (typeof e.url !== "string" || !e.url) {
+      console.warn(`[mcp] ignoring server '${name}' — ${type} entries need a url`);
+      return null;
     }
-    return servers;
+    return { type: type === "sse" ? "sse" : "http", url: e.url, headers };
+  }
+  if (type && type !== "stdio") {
+    console.warn(`[mcp] ignoring server '${name}' — unknown transport '${type}'`);
+    return null;
+  }
+  if (typeof e.command !== "string" || !e.command) return null;
+  return {
+    command: e.command,
+    args: Array.isArray(e.args) ? e.args.map(String) : undefined,
+    env: e.env && typeof e.env === "object" ? (e.env as Record<string, string>) : undefined,
+  };
+}
+
+async function readServers(file: string, key: string): Promise<Record<string, McpServerConfig>> {
+  try {
+    const parsed = JSON.parse(await fs.readFile(file, "utf8"));
+    const raw = parsed?.[key];
+    const out: Record<string, McpServerConfig> = {};
+    if (!raw || typeof raw !== "object") return out;
+    for (const [name, entry] of Object.entries(raw as Record<string, unknown>)) {
+      const cfg = normalizeEntry(name, entry);
+      if (cfg) out[name] = cfg;
+    }
+    return out;
   } catch {
     return {};
   }
 }
 
-// ─── Stdio JSON-RPC client ───────────────────────────────────────────────────
+/** Where each server came from, for /mcp. */
+export type McpConfigSource = "platform" | "project";
 
-class StdioMcpClient {
-  private proc: ChildProcess | null = null;
+/** Platform config merged with the workspace's `.mcp.json` (project wins). */
+export async function loadMcpConfigWithSources(
+  workspace?: string
+): Promise<Record<string, { config: McpServerConfig; source: McpConfigSource }>> {
+  const out: Record<string, { config: McpServerConfig; source: McpConfigSource }> = {};
+  for (const [name, config] of Object.entries(await readServers(configPath(), "servers"))) {
+    out[name] = { config, source: "platform" };
+  }
+  if (workspace) {
+    const project = await readServers(path.join(workspace, ".mcp.json"), "mcpServers");
+    for (const [name, config] of Object.entries(project)) {
+      out[name] = { config, source: "project" };
+    }
+  }
+  return out;
+}
+
+export async function loadMcpConfig(workspace?: string): Promise<Record<string, McpServerConfig>> {
+  const withSources = await loadMcpConfigWithSources(workspace);
+  return Object.fromEntries(Object.entries(withSources).map(([k, v]) => [k, v.config]));
+}
+
+/** `${VAR}` / `${VAR:-default}` substitution. Unknown vars become "". */
+export function substituteEnv(value: string, vars: Record<string, string | undefined>): string {
+  return value.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}/g, (_m, name: string, def?: string) => {
+    const v = vars[name];
+    if (v !== undefined && v !== "") return v;
+    return def ?? "";
+  });
+}
+
+function projectIdFromWorkspace(workspace?: string): string | undefined {
+  if (!workspace) return undefined;
+  const id = path.basename(workspace);
+  return /^[a-zA-Z0-9_-]+$/.test(id) ? id : undefined;
+}
+
+async function resolveConfig(config: McpServerConfig, workspace?: string): Promise<McpServerConfig> {
+  const secrets = await getDecryptedEnv(projectIdFromWorkspace(workspace)).catch(
+    () => ({} as Record<string, string>)
+  );
+  const vars: Record<string, string | undefined> = { ...process.env, ...secrets };
+  const sub = (v: string) => substituteEnv(v, vars);
+  const subMap = (m?: Record<string, string>) =>
+    m ? Object.fromEntries(Object.entries(m).map(([k, v]) => [k, sub(String(v))])) : undefined;
+  if (isRemote(config)) {
+    return { type: config.type, url: sub(config.url), headers: subMap(config.headers) };
+  }
+  return {
+    command: sub(config.command),
+    args: config.args?.map(sub),
+    env: subMap(config.env),
+  };
+}
+
+/** A URL safe to show: no credentials, query string or fragment. */
+export function redactUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.protocol}//${u.host}${u.pathname}`;
+  } catch {
+    return url.split(/[?#]/)[0];
+  }
+}
+
+// ─── JSON-RPC client (transport-agnostic) ────────────────────────────────────
+
+interface ServerCapabilities {
+  tools?: unknown;
+  resources?: unknown;
+  prompts?: unknown;
+}
+
+type ContentPart = {
+  type: string;
+  text?: string;
+  resource?: { uri?: string; text?: string; mimeType?: string };
+};
+
+function contentToText(parts: ContentPart[] | undefined): string {
+  return (parts ?? [])
+    .map((c) => {
+      if (c.type === "text") return c.text ?? "";
+      if (c.type === "resource" && c.resource?.text !== undefined) return c.resource.text;
+      return `[${c.type} content]`;
+    })
+    .join("\n");
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+class McpClient {
+  private transport: McpTransport | null = null;
   private nextId = 1;
   private pending = new Map<
     number,
     { resolve: (v: unknown) => void; reject: (e: Error) => void }
   >();
-  private buffer = "";
   private initialized: Promise<void> | null = null;
   tools: McpToolInfo[] = [];
+  resources: McpResourceInfo[] = [];
+  prompts: McpPromptInfo[] = [];
+  capabilities: ServerCapabilities = {};
 
   constructor(
     public readonly serverName: string,
-    private readonly config: McpServerConfig
+    public readonly config: McpServerConfig,
+    private readonly workspace?: string
   ) {}
 
+  get kind(): McpTransportKind {
+    return transportKind(this.config);
+  }
+
   get alive(): boolean {
-    return !!this.proc && this.proc.exitCode === null;
+    // Not started yet counts as healthy — ensureInitialized() will connect
+    return !this.transport || this.transport.alive;
   }
 
-  private spawnProc(): void {
-    const proc = crossSpawn(this.config.command, this.config.args ?? [], {
-      env: { ...process.env, ...this.config.env },
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    this.proc = proc;
-
-    // Writing to a server that already died emits EPIPE on stdin; without a
-    // listener that is an uncaught 'error' event that crashes the process
-    proc.stdin?.on("error", () => {});
-
-    proc.stdout?.on("data", (chunk: Buffer) => {
-      this.buffer += chunk.toString();
-      let idx: number;
-      while ((idx = this.buffer.indexOf("\n")) >= 0) {
-        const line = this.buffer.slice(0, idx).trim();
-        this.buffer = this.buffer.slice(idx + 1);
-        if (!line) continue;
-        try {
-          this.handleMessage(JSON.parse(line));
-        } catch {
-          // Non-JSON noise on stdout — ignore
-        }
-      }
-    });
-
-    proc.stderr?.on("data", () => {
-      // MCP servers log to stderr; keep quiet unless debugging
-    });
-
-    proc.on("exit", () => {
-      const err = new Error(`MCP server '${this.serverName}' exited`);
-      for (const { reject } of this.pending.values()) reject(err);
-      this.pending.clear();
-      this.proc = null;
-      this.initialized = null;
-    });
-
-    proc.on("error", (err) => {
-      const wrapped = new Error(
-        `MCP server '${this.serverName}' failed to start: ${err.message}`
-      );
-      for (const { reject } of this.pending.values()) reject(wrapped);
-      this.pending.clear();
-      this.proc = null;
-      this.initialized = null;
-    });
+  private failAll(err: Error): void {
+    for (const { reject } of this.pending.values()) reject(err);
+    this.pending.clear();
   }
 
-  private handleMessage(msg: JsonRpcResponse): void {
-    if (msg.id === undefined) return; // notification from server — ignore
-    const waiter = this.pending.get(msg.id);
+  private handleMessage(msg: JsonRpcMessage): void {
+    if (msg.id === undefined || msg.method) return; // notification/request from server — ignore
+    const waiter = this.pending.get(Number(msg.id));
     if (!waiter) return;
-    this.pending.delete(msg.id);
+    this.pending.delete(Number(msg.id));
     if (msg.error) {
       waiter.reject(new Error(`MCP ${this.serverName}: ${msg.error.message}`));
     } else {
@@ -154,8 +292,8 @@ class StdioMcpClient {
     }
   }
 
-  private send(msg: Record<string, unknown>): void {
-    this.proc?.stdin?.write(JSON.stringify(msg) + "\n");
+  private notify(method: string): void {
+    this.transport?.send({ jsonrpc: "2.0", method }).catch(() => {});
   }
 
   private request(
@@ -163,7 +301,8 @@ class StdioMcpClient {
     params: Record<string, unknown> | undefined,
     timeoutMs: number
   ): Promise<unknown> {
-    if (!this.alive) {
+    const transport = this.transport;
+    if (!transport?.alive) {
       return Promise.reject(new Error(`MCP server '${this.serverName}' is not running`));
     }
     const id = this.nextId++;
@@ -176,44 +315,113 @@ class StdioMcpClient {
         resolve: (v) => { clearTimeout(timer); resolve(v); },
         reject: (e) => { clearTimeout(timer); reject(e); },
       });
-      this.send({ jsonrpc: "2.0", id, method, params });
+      transport.send({ jsonrpc: "2.0", id, method, params }).catch((err: unknown) => {
+        const waiter = this.pending.get(id);
+        if (!waiter) return;
+        this.pending.delete(id);
+        waiter.reject(err instanceof Error ? err : new Error(String(err)));
+      });
     });
   }
 
-  /** Spawn (if needed), handshake, and list tools. Idempotent. */
+  /** Paginated list call (tools/list, resources/list, prompts/list). */
+  private async listAll<T>(method: string, key: string): Promise<T[]> {
+    const out: T[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < MAX_LIST_PAGES; page++) {
+      const result = (await this.request(method, cursor ? { cursor } : {}, INIT_TIMEOUT_MS)) as
+        Record<string, unknown> | undefined;
+      out.push(...((result?.[key] as T[] | undefined) ?? []));
+      cursor = typeof result?.nextCursor === "string" ? result.nextCursor : undefined;
+      if (!cursor) break;
+    }
+    return out;
+  }
+
+  /** Connect (if needed), handshake, and list tools/resources/prompts. Idempotent. */
   ensureInitialized(): Promise<void> {
     if (this.initialized) return this.initialized;
     this.initialized = (async () => {
-      this.spawnProc();
-      await this.request(
+      const resolved = await resolveConfig(this.config, this.workspace);
+      const transport = createTransport(this.serverName, resolved);
+      this.transport = transport;
+      transport.onmessage = (msg) => this.handleMessage(msg);
+      transport.onclose = (err) => {
+        if (this.transport !== transport) return;
+        this.failAll(err);
+        this.initialized = null;
+      };
+      await withTimeout(
+        transport.start(),
+        INIT_TIMEOUT_MS,
+        `MCP ${this.serverName}: connection timed out`
+      );
+
+      const init = (await this.request(
         "initialize",
         {
-          protocolVersion: PROTOCOL_VERSION,
+          protocolVersion: transport.kind === "http" ? HTTP_PROTOCOL_VERSION : PROTOCOL_VERSION,
           capabilities: {},
           clientInfo: { name: "open-code", version: "0.1.0" },
         },
         INIT_TIMEOUT_MS
-      );
-      this.send({ jsonrpc: "2.0", method: "notifications/initialized" });
+      )) as { protocolVersion?: string; capabilities?: ServerCapabilities } | undefined;
+      this.capabilities = init?.capabilities ?? {};
+      transport.setProtocolVersion(init?.protocolVersion ?? HTTP_PROTOCOL_VERSION);
+      this.notify("notifications/initialized");
 
-      const result = (await this.request("tools/list", {}, INIT_TIMEOUT_MS)) as {
-        tools?: { name: string; description?: string; inputSchema?: Record<string, unknown> }[];
-      };
-      this.tools = (result?.tools ?? []).map((t) => ({
-        server: this.serverName,
-        name: t.name,
-        description: t.description,
-        inputSchema: t.inputSchema,
-      }));
+      // Servers that don't advertise tools may still answer tools/list
+      try {
+        const tools = await this.listAll<{
+          name: string; description?: string; inputSchema?: Record<string, unknown>;
+        }>("tools/list", "tools");
+        this.tools = tools.map((t) => ({
+          server: this.serverName,
+          name: t.name,
+          description: t.description,
+          inputSchema: t.inputSchema,
+        }));
+      } catch (err) {
+        if (this.capabilities.tools) throw err;
+        this.tools = [];
+      }
+
+      this.resources = [];
+      if (this.capabilities.resources) {
+        const resources = await this.listAll<Omit<McpResourceInfo, "server">>(
+          "resources/list", "resources"
+        ).catch(() => []);
+        this.resources = resources.map((r) => ({ ...r, server: this.serverName }));
+      }
+
+      this.prompts = [];
+      if (this.capabilities.prompts) {
+        const prompts = await this.listAll<Omit<McpPromptInfo, "server">>(
+          "prompts/list", "prompts"
+        ).catch(() => []);
+        this.prompts = prompts.map((p) => ({
+          server: this.serverName,
+          name: p.name,
+          description: p.description,
+          arguments: Array.isArray(p.arguments) ? p.arguments : [],
+        }));
+      }
     })();
     this.initialized.catch(() => {
       this.initialized = null;
       // A server that failed the handshake (e.g. timed out) may still be
-      // running; kill it so the next attempt doesn't leak another process
-      try { this.proc?.kill(); } catch {}
-      this.proc = null;
+      // running; close it so the next attempt doesn't leak another process
+      this.close();
     });
     return this.initialized;
+  }
+
+  close(): void {
+    const t = this.transport;
+    this.transport = null;
+    this.initialized = null;
+    t?.close();
+    this.failAll(new Error(`MCP server '${this.serverName}' closed`));
   }
 
   async callTool(name: string, args: Record<string, unknown>): Promise<string> {
@@ -222,36 +430,73 @@ class StdioMcpClient {
       "tools/call",
       { name, arguments: args },
       CALL_TIMEOUT_MS
-    )) as {
-      content?: { type: string; text?: string }[];
-      isError?: boolean;
-    };
+    )) as { content?: ContentPart[]; isError?: boolean };
 
-    const text = (result?.content ?? [])
-      .map((c) => (c.type === "text" ? c.text ?? "" : `[${c.type} content]`))
-      .join("\n");
-
+    const text = contentToText(result?.content);
     if (result?.isError) {
       throw new Error(text || `MCP tool '${name}' reported an error`);
     }
     return text || "(empty result)";
   }
+
+  async readResource(uri: string): Promise<string> {
+    await this.ensureInitialized();
+    const result = (await this.request("resources/read", { uri }, CALL_TIMEOUT_MS)) as {
+      contents?: { uri?: string; mimeType?: string; text?: string; blob?: string }[];
+    };
+    const text = (result?.contents ?? [])
+      .map((c) =>
+        c.text !== undefined
+          ? c.text
+          : `[binary ${c.mimeType ?? "content"}, ${Math.floor(((c.blob ?? "").length * 3) / 4)} bytes]`
+      )
+      .join("\n\n");
+    return text || "(empty resource)";
+  }
+
+  async getPrompt(name: string, args: Record<string, string>): Promise<string> {
+    await this.ensureInitialized();
+    const result = (await this.request(
+      "prompts/get",
+      { name, arguments: args },
+      CALL_TIMEOUT_MS
+    )) as { messages?: { role: string; content: ContentPart | ContentPart[] }[] };
+    return (result?.messages ?? [])
+      .map((m) => {
+        const text = contentToText(Array.isArray(m.content) ? m.content : [m.content]);
+        return m.role === "user" ? text : `[${m.role}]\n${text}`;
+      })
+      .filter((t) => t.trim())
+      .join("\n\n");
+  }
+}
+
+function transportKind(config: McpServerConfig): McpTransportKind {
+  return config.type === "http" || config.type === "sse" ? config.type : "stdio";
 }
 
 // ─── Registry ────────────────────────────────────────────────────────────────
 
-const gm = globalThis as unknown as { __ocMcpClients?: Map<string, StdioMcpClient> };
-const clients = (gm.__ocMcpClients ??= new Map<string, StdioMcpClient>());
+const gm = globalThis as unknown as { __ocMcpClients?: Map<string, McpClient> };
+const clients = (gm.__ocMcpClients ??= new Map<string, McpClient>());
 
-async function getClient(serverName: string): Promise<StdioMcpClient | null> {
-  const existing = clients.get(serverName);
+/** One client per (server name, config, workspace) — two projects may define
+ *  the same name differently in their .mcp.json. Platform servers are shared. */
+function clientKey(serverName: string, config: McpServerConfig, source: McpConfigSource, workspace?: string): string {
+  return `${serverName}\0${JSON.stringify(config)}\0${source === "project" ? workspace ?? "" : ""}`;
+}
+
+async function getClient(serverName: string, workspace?: string): Promise<McpClient | null> {
+  const entry = (await loadMcpConfigWithSources(workspace))[serverName];
+  if (!entry) return null;
+  const key = clientKey(serverName, entry.config, entry.source, workspace);
+  const existing = clients.get(key);
   if (existing?.alive) return existing;
+  existing?.close();
 
-  const config = (await loadMcpConfig())[serverName];
-  if (!config) return null;
-
-  const client = new StdioMcpClient(serverName, config);
-  clients.set(serverName, client);
+  // Secrets for ${VAR} substitution are scoped to the configuring project
+  const client = new McpClient(serverName, entry.config, workspace);
+  clients.set(key, client);
   return client;
 }
 
@@ -264,76 +509,198 @@ export function demangleName(
   prefixed: string
 ): { server: string; tool: string } | null {
   if (!prefixed.startsWith("mcp_")) return null;
+  if (isMcpResourceTool(prefixed)) return null;
   const rest = prefixed.slice(4);
   const sep = rest.indexOf("_");
   if (sep <= 0) return null;
   return { server: rest.slice(0, sep), tool: rest.slice(sep + 1) };
 }
 
-/** OpenAI-style tool schemas for every tool on every configured server.
- *  Unreachable servers are skipped with a warning, never fatal. */
-export async function getMcpToolSchemas(): Promise<Record<string, unknown>[]> {
-  const config = await loadMcpConfig();
-  const schemas: Record<string, unknown>[] = [];
+/** Built-in agent tools over MCP resources (read-only). */
+export const MCP_RESOURCE_TOOLS = ["mcp_list_resources", "mcp_read_resource"] as const;
 
+export function isMcpResourceTool(name: string): boolean {
+  return (MCP_RESOURCE_TOOLS as readonly string[]).includes(name);
+}
+
+const MCP_RESOURCE_TOOL_SCHEMAS: Record<string, unknown>[] = [
+  {
+    type: "function",
+    function: {
+      name: "mcp_list_resources",
+      description:
+        "List resources (documents, files, records) exposed by connected MCP servers. Returns each resource's server, URI, name and MIME type. Read one with mcp_read_resource.",
+      parameters: {
+        type: "object",
+        properties: {
+          server: { type: "string", description: "Only list this server's resources" },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "mcp_read_resource",
+      description: "Read one MCP resource by server name and URI (from mcp_list_resources).",
+      parameters: {
+        type: "object",
+        properties: {
+          server: { type: "string", description: "MCP server name" },
+          uri: { type: "string", description: "Resource URI" },
+        },
+        required: ["server", "uri"],
+      },
+    },
+  },
+];
+
+/** Connect every configured server; unreachable ones are skipped with a warning. */
+async function connectedClients(workspace?: string): Promise<McpClient[]> {
+  const config = await loadMcpConfig(workspace);
+  const out: McpClient[] = [];
   for (const serverName of Object.keys(config)) {
     try {
-      const client = await getClient(serverName);
+      const client = await getClient(serverName, workspace);
       if (!client) continue;
       await client.ensureInitialized();
-      for (const tool of client.tools) {
-        schemas.push({
-          type: "function",
-          function: {
-            name: mangleName(serverName, tool.name),
-            description:
-              `[${serverName} MCP] ${tool.description ?? tool.name}`.slice(0, 1024),
-            parameters: tool.inputSchema ?? { type: "object", properties: {} },
-          },
-        });
-      }
+      out.push(client);
     } catch (err) {
       console.warn(`[mcp] server '${serverName}' unavailable:`, err);
     }
   }
+  return out;
+}
+
+/** OpenAI-style tool schemas for every tool on every configured server,
+ *  plus the resource tools when any server exposes resources. */
+export async function getMcpToolSchemas(workspace?: string): Promise<Record<string, unknown>[]> {
+  const schemas: Record<string, unknown>[] = [];
+  let anyResources = false;
+  for (const client of await connectedClients(workspace)) {
+    if (client.capabilities.resources) anyResources = true;
+    for (const tool of client.tools) {
+      schemas.push({
+        type: "function",
+        function: {
+          name: mangleName(client.serverName, tool.name),
+          description:
+            `[${client.serverName} MCP] ${tool.description ?? tool.name}`.slice(0, 1024),
+          parameters: tool.inputSchema ?? { type: "object", properties: {} },
+        },
+      });
+    }
+  }
+  if (anyResources) schemas.push(...MCP_RESOURCE_TOOL_SCHEMAS);
   return schemas;
 }
 
 export async function callMcpTool(
   prefixedName: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  workspace?: string
 ): Promise<string> {
   const parsed = demangleName(prefixedName);
   if (!parsed) throw new Error(`Not an MCP tool name: ${prefixedName}`);
-  const client = await getClient(parsed.server);
+  const client = await getClient(parsed.server, workspace);
   if (!client) {
     throw new Error(`MCP server '${parsed.server}' is not configured`);
   }
   return client.callTool(parsed.tool, args);
 }
 
-/** Status for the settings UI. */
-export async function getMcpStatus(): Promise<
-  { server: string; connected: boolean; tools: string[]; error?: string }[]
-> {
-  const config = await loadMcpConfig();
-  const out: { server: string; connected: boolean; tools: string[]; error?: string }[] = [];
+async function requireClient(server: string, workspace?: string): Promise<McpClient> {
+  const client = await getClient(server, workspace);
+  if (!client) throw new Error(`MCP server '${server}' is not configured`);
+  await client.ensureInitialized();
+  return client;
+}
 
-  for (const serverName of Object.keys(config)) {
+export async function listMcpResources(workspace?: string, server?: string): Promise<McpResourceInfo[]> {
+  const list = server ? [await requireClient(server, workspace)] : await connectedClients(workspace);
+  return list.flatMap((c) => c.resources);
+}
+
+export async function readMcpResource(server: string, uri: string, workspace?: string): Promise<string> {
+  return (await requireClient(server, workspace)).readResource(uri);
+}
+
+export async function listMcpPrompts(workspace?: string): Promise<McpPromptInfo[]> {
+  return (await connectedClients(workspace)).flatMap((c) => c.prompts);
+}
+
+/** prompts/get flattened to plain text (the chat sends it as the user message). */
+export async function getMcpPrompt(
+  server: string,
+  name: string,
+  args: Record<string, string>,
+  workspace?: string
+): Promise<string> {
+  return (await requireClient(server, workspace)).getPrompt(name, args);
+}
+
+/** Built-in resource tools, dispatched from executeTool. */
+export async function executeMcpResourceTool(
+  name: string,
+  args: Record<string, unknown>,
+  workspace?: string
+): Promise<string> {
+  if (name === "mcp_read_resource") {
+    return readMcpResource(String(args.server ?? ""), String(args.uri ?? ""), workspace);
+  }
+  const server = typeof args.server === "string" && args.server ? args.server : undefined;
+  const resources = await listMcpResources(workspace, server);
+  if (resources.length === 0) return "No MCP resources available.";
+  return resources
+    .map((r) =>
+      `- [${r.server}] ${r.uri}${r.name ? ` — ${r.name}` : ""}${r.mimeType ? ` (${r.mimeType})` : ""}${r.description ? `: ${r.description}` : ""}`
+    )
+    .join("\n");
+}
+
+export interface McpServerStatus {
+  server: string;
+  type: McpTransportKind;
+  /** Redacted (no credentials/query) for http/sse; the command for stdio */
+  target: string;
+  source: McpConfigSource;
+  connected: boolean;
+  tools: string[];
+  resources: number;
+  prompts: Omit<McpPromptInfo, "server">[];
+  error?: string;
+}
+
+/** Status for the settings UI and /mcp. */
+export async function getMcpStatus(workspace?: string): Promise<McpServerStatus[]> {
+  const config = await loadMcpConfigWithSources(workspace);
+  const out: McpServerStatus[] = [];
+
+  for (const [serverName, { config: cfg, source }] of Object.entries(config)) {
+    const base = {
+      server: serverName,
+      type: transportKind(cfg),
+      target: isRemote(cfg) ? redactUrl(cfg.url) : cfg.command,
+      source,
+    };
     try {
-      const client = await getClient(serverName);
+      const client = await getClient(serverName, workspace);
       if (!client) continue;
       await client.ensureInitialized();
       out.push({
-        server: serverName,
+        ...base,
         connected: true,
         tools: client.tools.map((t) => t.name),
+        resources: client.resources.length,
+        prompts: client.prompts.map(({ name, description, arguments: a }) => ({ name, description, arguments: a })),
       });
     } catch (err) {
       out.push({
-        server: serverName,
+        ...base,
         connected: false,
         tools: [],
+        resources: 0,
+        prompts: [],
         error: err instanceof Error ? err.message : String(err),
       });
     }

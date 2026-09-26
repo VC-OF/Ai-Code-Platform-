@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // Minimal MCP server over stdio (newline-delimited JSON-RPC) for tests.
-// Implements: initialize, tools/list, tools/call with one `echo` tool.
+// Implements: initialize, tools/list, tools/call with one `echo` tool,
+// resources/list + resources/read (one text resource) and prompts/list +
+// prompts/get (one `greet` prompt with a required `name` argument).
 
 let buffer = '';
 
@@ -25,7 +27,7 @@ function handle(msg) {
   if (msg.method === 'initialize') {
     reply(msg.id, {
       protocolVersion: '2024-11-05',
-      capabilities: { tools: {} },
+      capabilities: { tools: {}, resources: {}, prompts: {} },
       serverInfo: { name: 'mock-mcp', version: '1.0.0' },
     });
   } else if (msg.method === 'tools/list') {
@@ -54,6 +56,37 @@ function handle(msg) {
         isError: true,
       });
     }
+  } else if (msg.method === 'resources/list') {
+    reply(msg.id, {
+      resources: [
+        { uri: 'mock://readme', name: 'Readme', mimeType: 'text/plain', description: 'Mock readme' },
+      ],
+    });
+  } else if (msg.method === 'resources/read') {
+    const uri = msg.params?.uri;
+    reply(msg.id, {
+      contents: uri === 'mock://readme' ? [{ uri, mimeType: 'text/plain', text: 'mock readme body' }] : [],
+    });
+  } else if (msg.method === 'prompts/list') {
+    reply(msg.id, {
+      prompts: [
+        {
+          name: 'greet',
+          description: 'Greet someone',
+          arguments: [
+            { name: 'name', required: true },
+            { name: 'style', required: false },
+          ],
+        },
+      ],
+    });
+  } else if (msg.method === 'prompts/get') {
+    const a = msg.params?.arguments ?? {};
+    reply(msg.id, {
+      messages: [
+        { role: 'user', content: { type: 'text', text: `Say hello to ${a.name}${a.style ? ` (${a.style})` : ''}` } },
+      ],
+    });
   }
   // notifications (no id) are ignored
 }

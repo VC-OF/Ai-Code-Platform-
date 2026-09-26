@@ -21,6 +21,8 @@ export interface SlashCommandDefinition {
   /** True when the argument is mandatory (Enter completes instead of running) */
   argsRequired?: boolean;
   prompt?: (args: string) => string;
+  /** Set for `/mcp__<server>__<prompt>`: fetched via POST /api/mcp/prompt */
+  mcpPrompt?: { server: string; name: string; arguments: { name: string; required?: boolean }[] };
 }
 
 export interface ParsedSlashCommand {
@@ -152,6 +154,54 @@ export function expandCommandBody(body: string, args: string): string {
     .replace(/\$([1-9])\b/g, (_, n: string) => words[Number(n) - 1] ?? '');
   if (hasPlaceholder || !trimmed) return expanded.trim();
   return `${expanded.trim()}\n\n${trimmed}`;
+}
+
+// ─── MCP prompts ─────────────────────────────────────────────────────────────
+
+/** An MCP server's prompts as served by /api/mcp. */
+export interface McpPromptServerInfo {
+  server: string;
+  connected?: boolean;
+  prompts?: { name: string; description?: string; arguments?: { name: string; required?: boolean }[] }[];
+}
+
+/** MCP prompts become `/mcp__<server>__<prompt>` commands (Claude Code's naming). */
+export function mcpPromptDefinitions(servers: McpPromptServerInfo[]): SlashCommandDefinition[] {
+  return servers.flatMap((s) =>
+    (s.prompts ?? [])
+      .filter((p) => /^[\w-]+$/.test(p.name) && /^[\w-]+$/.test(s.server))
+      .map((p) => {
+        const args = p.arguments ?? [];
+        return {
+          name: `mcp__${s.server}__${p.name}`.toLowerCase(),
+          group: 'Project' as const,
+          kind: 'prompt' as const,
+          description: p.description || `${s.server} MCP prompt`,
+          args: args.length ? args.map((a) => (a.required ? `<${a.name}>` : `[${a.name}]`)).join(' ') : undefined,
+          argsRequired: args.some((a) => a.required),
+          mcpPrompt: { server: s.server, name: p.name, arguments: args },
+        };
+      })
+  );
+}
+
+/**
+ * Positional slash arguments → declared prompt arguments, in order (quotes
+ * respected). Extra words go to the last argument. Returns the names of
+ * missing required arguments alongside.
+ */
+export function mapMcpPromptArgs(
+  declared: { name: string; required?: boolean }[],
+  args: string
+): { values: Record<string, string>; missing: string[] } {
+  const words = args.trim().match(/"[^"]*"|'[^']*'|\S+/g)?.map((w) => w.replace(/^(["'])(.*)\1$/, '$2')) ?? [];
+  const values: Record<string, string> = {};
+  declared.forEach((a, i) => {
+    const last = i === declared.length - 1;
+    const v = last ? words.slice(i).join(' ') : words[i];
+    if (v) values[a.name] = v;
+  });
+  return { values, missing: declared.filter((a) => a.required && !values[a.name]).map((a) => a.name) };
 }
 
 /** Turn served project commands into registry entries (listed under "Project"). */

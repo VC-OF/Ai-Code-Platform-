@@ -15,7 +15,7 @@ import { SPAWN_AGENT_SCHEMA } from "./subagents";
 import { parseNotebook, formatNotebook } from "./notebooks";
 import { generateImage } from "./imageGen";
 import { getPreviewLogs, getPreviewStatus } from "./previewManager";
-import { callMcpTool, demangleName } from "./mcpClient";
+import { callMcpTool, demangleName, executeMcpResourceTool, isMcpResourceTool } from "./mcpClient";
 import { planDb, projectDb, type PlanTask } from "./db";
 import { getDockerStatus, execInDocker } from "./dockerService";
 
@@ -633,8 +633,16 @@ export async function executeTool(
         error: "spawn_agent must be run by the agent loop",
       };
     }
+    if (isMcpResourceTool(name)) {
+      const output = await executeMcpResourceTool(name, args, workspace);
+      return {
+        success: true,
+        output: truncate(output, 16_000),
+        summary: name === "mcp_read_resource" ? `Read MCP resource ${String(args.uri ?? "")}` : "Listed MCP resources",
+      };
+    }
     if (demangleName(name)) {
-      const output = await callMcpTool(name, args);
+      const output = await callMcpTool(name, args, workspace);
       return {
         success: true,
         output: truncate(output, 16_000),

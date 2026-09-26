@@ -138,6 +138,16 @@ const toolSchemas = {
   }),
   docker_status: z.object({}).optional(),
   spawn_agent: SPAWN_AGENT_ZOD,
+
+  mcp_list_resources: z.object({
+    server: z.string().max(100).optional(),
+  }),
+
+  mcp_read_resource: z.object({
+    server: z.string().min(1).max(100),
+    uri: z.string().min(1).max(2000),
+  }),
+
   ...SCIENCE_ZOD_SCHEMAS,
   ...APP_ZOD_SCHEMAS,
   ...BROWSER_ZOD_SCHEMAS,
@@ -151,7 +161,7 @@ export function validateToolArgs(
 ): { success: true; data: unknown } | { success: false; error: string } {
   // MCP tools carry their own JSON Schemas — the server validates; we only
   // require an object payload
-  if (toolName.startsWith('mcp_')) {
+  if (toolName.startsWith('mcp_') && !(toolName in toolSchemas)) {
     if (args !== null && typeof args === 'object' && !Array.isArray(args)) {
       return { success: true, data: args };
     }

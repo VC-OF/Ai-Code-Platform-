@@ -9,6 +9,7 @@ import {
   formatConversationMarkdown,
   formatSlashHelp,
   formatUsageReport,
+  mapMcpPromptArgs,
   matchModel,
   normalizeExportFilename,
   resolveCheckpoint,
@@ -96,8 +97,18 @@ const openSurface = (target: string) => window.dispatchEvent(new CustomEvent('oc
 
 interface GitStatus { branch?: string; changes?: { code: string; path: string }[] }
 interface DockerStatus { available?: boolean; version?: string; sandboxModeActive?: boolean; defaultImage?: string; polyglotImageBuilt?: boolean; sandboxHint?: string; error?: string }
-interface McpServer { server: string; connected: boolean; tools: string[]; error?: string }
-interface McpInfo { configured: number; configPath: string; servers: McpServer[] }
+interface McpServer {
+  server: string;
+  type?: 'stdio' | 'http' | 'sse';
+  target?: string;
+  source?: 'platform' | 'project';
+  connected: boolean;
+  tools: string[];
+  resources?: number;
+  prompts?: { name: string }[];
+  error?: string;
+}
+interface McpInfo { configured: number; configPath: string; projectConfigPath?: string; servers: McpServer[] }
 interface Skill {
   name: string;
   description: string;
@@ -238,19 +249,49 @@ async function handleStatus(ctx: SlashContext) {
 
 async function handleMcp(ctx: SlashContext) {
   try {
-    const data = await fetchJson<McpInfo>('/api/mcp');
+    const data = await fetchJson<McpInfo>(`/api/mcp?${q(ctx.projectId)}`);
     if (data.servers.length === 0) {
-      ctx.say(`No MCP servers configured. Add them to \`${data.configPath}\`.`);
+      ctx.say(`No MCP servers configured. Add them to \`${data.configPath}\` or the project's \`.mcp.json\`.`);
       return;
     }
-    const lines = data.servers.map((s) =>
-      s.connected
-        ? `- **${s.server}** — connected, ${s.tools.length} tool(s)${s.tools.length ? `: ${s.tools.map((t) => `\`${t}\``).join(', ')}` : ''}`
-        : `- **${s.server}** — not connected${s.error ? `: ${s.error}` : ''}`
-    );
-    ctx.say(`**MCP servers** (${data.configured} configured in \`${data.configPath}\`)\n\n${lines.join('\n')}`);
+    const lines = data.servers.map((s) => {
+      const where = `${s.type ?? 'stdio'}${s.target ? ` \`${s.target}\`` : ''}${s.source === 'project' ? ', from .mcp.json' : ''}`;
+      if (!s.connected) return `- **${s.server}** (${where}) — not connected${s.error ? `: ${s.error}` : ''}`;
+      const prompts = s.prompts ?? [];
+      return (
+        `- **${s.server}** (${where}) — connected, ${s.tools.length} tool(s), ${s.resources ?? 0} resource(s), ${prompts.length} prompt(s)` +
+        (s.tools.length ? `\n  - tools: ${s.tools.map((t) => `\`${t}\``).join(', ')}` : '') +
+        (prompts.length ? `\n  - prompts: ${prompts.map((p) => `\`/mcp__${s.server}__${p.name}\``).join(', ')}` : '')
+      );
+    });
+    ctx.say(`**MCP servers** (${data.configured} configured in \`${data.configPath}\`${data.projectConfigPath ? ` + \`${data.projectConfigPath}\`` : ''})\n\n${lines.join('\n')}`);
   } catch (err) {
     ctx.say(`Couldn’t load MCP status: ${errText(err)}`);
+  }
+}
+
+/** `/mcp__<server>__<prompt> args…` → prompts/get text, sent as the user message. */
+async function runMcpPrompt(command: SlashCommandDefinition, args: string, ctx: SlashContext): Promise<SlashResult> {
+  const spec = command.mcpPrompt!;
+  const { values, missing } = mapMcpPromptArgs(spec.arguments, args);
+  if (missing.length) {
+    ctx.say(`Missing argument(s): ${missing.map((m) => `\`${m}\``).join(', ')}. Usage: \`/${command.name}${command.args ? ` ${command.args}` : ''}\``);
+    return HANDLED;
+  }
+  try {
+    const data = await fetchJson<{ text: string }>('/api/mcp/prompt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectId: ctx.projectId, server: spec.server, name: spec.name, arguments: values }),
+    });
+    if (!data.text?.trim()) {
+      ctx.say(`MCP prompt \`${spec.name}\` returned no text.`);
+      return HANDLED;
+    }
+    return { type: 'prompt', text: data.text };
+  } catch (err) {
+    ctx.say(`Couldn’t run MCP prompt \`${spec.name}\`: ${errText(err)}`);
+    return HANDLED;
   }
 }
 
@@ -333,7 +374,7 @@ async function handleDoctor(ctx: SlashContext) {
     fetchJson<{ status: string; database?: { ok: boolean; error?: string } }>('/api/health').catch((e) => e as Error),
     fetchJson<DockerStatus>('/api/docker/status').catch((e) => e as Error),
     fetchJson<{ providers: ProviderStatus[] }>('/api/providers').catch((e) => e as Error),
-    fetchJson<McpInfo>('/api/mcp').catch((e) => e as Error),
+    fetchJson<McpInfo>(`/api/mcp?${q(ctx.projectId)}`).catch((e) => e as Error),
     fetchJson<WorkspaceInfo>(`/api/workspace/info?${q(ctx.projectId)}`).catch((e) => e as Error),
   ]);
 
@@ -573,7 +614,7 @@ async function handleAgents(ctx: SlashContext) {
 
 async function handlePlugin(ctx: SlashContext) {
   const [mcp, skills] = await Promise.all([
-    fetchJson<McpInfo>('/api/mcp').catch(() => null),
+    fetchJson<McpInfo>(`/api/mcp?${q(ctx.projectId)}`).catch(() => null),
     loadSkills(ctx.projectId).catch(() => null),
   ]);
   ctx.say([
@@ -713,6 +754,7 @@ export async function runSlashCommand(
   args: string,
   ctx: SlashContext
 ): Promise<SlashResult> {
+  if (command.mcpPrompt) return runMcpPrompt(command, args, ctx);
   switch (command.name) {
     case 'help': ctx.say(formatSlashHelp()); return HANDLED;
     case 'status': await handleStatus(ctx); return HANDLED;

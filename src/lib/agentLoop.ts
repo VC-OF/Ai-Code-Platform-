@@ -1313,6 +1313,8 @@ function toolStatusFor(toolName: string): AgentStatus {
     ask_user:     'waiting',
     execute_code: 'running',
     view_image:   'reading',
+    mcp_list_resources: 'reading',
+    mcp_read_resource:  'reading',
     notebook_edit: 'writing',
     run_notebook: 'running',
     save_memory:  'writing',
