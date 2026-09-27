@@ -10,9 +10,10 @@ import {
   parseCatalogParams,
   queryCatalog,
   savedKeyName,
-  toSavedKeySet,
+  toSavedKeys,
   withKeyStatus,
   type RawCatalogEntry,
+  type SavedKeys,
 } from '@/lib/publicApis/catalog';
 import { resolveIdeas } from '@/lib/publicApis/ideas';
 import { liveImages, liveMeals, livePokemon } from '@/lib/publicApis/liveItems';
@@ -34,12 +35,12 @@ const APIS = normalizeCatalog(catalog as RawCatalogEntry[]);
 const CATEGORIES = listCategories(APIS);
 const CATEGORY_NAMES = CATEGORIES.map((c) => c.name);
 
-async function savedKeyNames(): Promise<Set<string>> {
+async function savedKeyNames(): Promise<SavedKeys> {
   try {
     const vars = await listEnvVarsMasked();
-    return toSavedKeySet(vars.map((v) => v.key));
+    return toSavedKeys(vars.map((v) => v.key));
   } catch {
-    return new Set();
+    return new Map();
   }
 }
 

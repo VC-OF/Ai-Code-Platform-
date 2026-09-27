@@ -2,9 +2,10 @@ import {
   demoKeyFor,
   needsKey,
   savedKeyName,
-  toSavedKeySet,
+  toSavedKeys,
   type PublicApi,
   type PublicApiWithKey,
+  type SavedKeys,
 } from './catalog';
 
 /**
@@ -478,7 +479,7 @@ export const IDEA_BLUEPRINTS: IdeaBlueprint[] = [
  * saved (1), other no-key APIs over HTTPS (2) then plain HTTP (3), unusual
  * auth (4), unsaved API keys (5), OAuth with a saved credential (6), OAuth (7).
  */
-export function apiTier(api: PublicApi, saved: ReadonlySet<string>): number {
+export function apiTier(api: PublicApi, saved: SavedKeys): number {
   const keySaved = savedKeyName(api, saved) !== null;
   switch (api.authKind) {
     case 'none':
@@ -499,7 +500,7 @@ function compareText(a: string, b: string): number {
 }
 
 /** Deterministic best-first order; `shortlist` ranks curated names within a tier. */
-export function rankApis(apis: readonly PublicApi[], saved: ReadonlySet<string>, shortlist: readonly string[] = []): PublicApi[] {
+export function rankApis(apis: readonly PublicApi[], saved: SavedKeys, shortlist: readonly string[] = []): PublicApi[] {
   const listed = shortlist.map((name) => name.toLowerCase());
   const pos = (api: PublicApi) => {
     const i = listed.indexOf(api.name.toLowerCase());
@@ -535,9 +536,9 @@ function byCategory(catalog: readonly PublicApi[]): Map<string, PublicApi[]> {
 export function resolveIdea(
   blueprint: IdeaBlueprint,
   catalog: readonly PublicApi[],
-  savedKeyEnvs: Iterable<string> = []
+  savedKeyEnvs: Iterable<string> | SavedKeys = []
 ): ResolvedIdea {
-  const saved = toSavedKeySet(savedKeyEnvs);
+  const saved = toSavedKeys(savedKeyEnvs);
   const index = byCategory(catalog);
   const usedNames = new Set<string>();
   const apis: ResolvedIdeaApi[] = [];
@@ -588,9 +589,9 @@ export function resolveIdea(
 
 export function resolveIdeas(
   catalog: readonly PublicApi[],
-  savedKeyEnvs: Iterable<string> = [],
+  savedKeyEnvs: Iterable<string> | SavedKeys = [],
   blueprints: readonly IdeaBlueprint[] = IDEA_BLUEPRINTS
 ): ResolvedIdea[] {
-  const saved = toSavedKeySet(savedKeyEnvs);
+  const saved = toSavedKeys(savedKeyEnvs);
   return blueprints.map((blueprint) => resolveIdea(blueprint, catalog, saved));
 }

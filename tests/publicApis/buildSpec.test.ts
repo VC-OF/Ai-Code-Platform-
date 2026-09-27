@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import raw from '../../vendor/Public-Api-Live-Usage/apis_data.json';
-import { normalizeCatalog, normalizeEntry, toSavedKeySet, withKeyStatus, type RawCatalogEntry } from '@/lib/publicApis/catalog';
+import { normalizeCatalog, normalizeEntry, toSavedKeys, withKeyStatus, type RawCatalogEntry } from '@/lib/publicApis/catalog';
 import { resolveIdeas } from '@/lib/publicApis/ideas';
 import { PRODUCT_RECIPES } from '@/lib/publicApis/recipes';
 import {
@@ -20,7 +20,7 @@ function catalogApi(overrides: Partial<RawCatalogEntry>, saved: string[] = []) {
     { id: 1, name: 'Example', url: 'https://example.com/docs', category: 'Weather', description: 'Forecasts', auth: 'No', https: 'Yes', cors: 'Yes', ...overrides },
     0
   );
-  return withKeyStatus(api, toSavedKeySet(saved));
+  return withKeyStatus(api, toSavedKeys(saved));
 }
 
 describe('multi-API idea builds', () => {
@@ -104,9 +104,30 @@ describe('single-API builds', () => {
     expect(provided).not.toContain('process.env.WEATHERBIT_API_KEY');
   });
 
+  it('names a key saved in another case exactly as stored, never an unset upper-case variable', () => {
+    const target = targetFromApi(catalogApi({ name: 'Weatherbit', auth: 'apiKey' }, ['vite_weatherbit_api_key']));
+    expect(target.apis[0]).toMatchObject({ keySaved: true, keySavedAs: 'vite_weatherbit_api_key' });
+    const prompt = buildProductPrompt(target, 't');
+    // Vite only exposes names starting with exactly VITE_, so it stays server-side
+    expect(prompt).toContain('saved in global settings as vite_weatherbit_api_key');
+    expect(prompt).toContain('process.env.vite_weatherbit_api_key');
+    expect(prompt).not.toContain('import.meta.env.VITE_WEATHERBIT_API_KEY');
+    expect(prompt).not.toContain('saved in global settings as VITE_WEATHERBIT_API_KEY');
+
+    // A VITE_ name in another case reaches the browser under that exact name
+    const mixed = targetFromApi(catalogApi({ name: 'Weatherbit', auth: 'apiKey' }, ['VITE_Weatherbit_Api_Key']));
+    const mixedPrompt = buildProductPrompt(mixed, 't');
+    expect(mixedPrompt).toContain(
+      'Read it from import.meta.env.VITE_Weatherbit_Api_Key; it is already saved in global settings as VITE_Weatherbit_Api_Key'
+    );
+    expect(mixedPrompt).not.toContain('import.meta.env.VITE_WEATHERBIT_API_KEY');
+    // A key typed into the modal is saved under the canonical name and wins
+    expect(buildProductPrompt(mixed, 't', ['VITE_WEATHERBIT_API_KEY'])).toContain('import.meta.env.VITE_WEATHERBIT_API_KEY;');
+  });
+
   it('never points the app at the platform’s own LLM key', () => {
     const groq = CATALOG.find((api) => api.name === 'Groq')!;
-    const target = targetFromApi(withKeyStatus(groq, toSavedKeySet(['GROQ_API_KEY'])));
+    const target = targetFromApi(withKeyStatus(groq, toSavedKeys(['GROQ_API_KEY'])));
     expect(target.apis[0]).toMatchObject({ keyEnv: 'VITE_GROQ_API_KEY', keySaved: false });
     const prompt = buildProductPrompt(target, 't');
     expect(prompt.replaceAll('VITE_GROQ_API_KEY', '')).not.toContain('GROQ_API_KEY');

@@ -205,6 +205,11 @@ describe('GET /api/public-apis (browse)', () => {
     saveGlobal('VITE_OPENWEATHERMAP_API_KEY');
     const again = (await get('?search=openweathermap')).body.entries.find((e: Entry) => e.name === 'OpenWeatherMap');
     expect(again).toMatchObject({ keySaved: true, keySavedAs: 'VITE_OPENWEATHERMAP_API_KEY' });
+
+    // Matched case-insensitively, reported under the name actually stored
+    saveGlobal('vite_openweathermap_api_key');
+    const lower = (await get('?search=openweathermap')).body.entries.find((e: Entry) => e.name === 'OpenWeatherMap');
+    expect(lower).toMatchObject({ keySaved: true, keySavedAs: 'vite_openweathermap_api_key' });
   });
 
   it('treats an unreadable settings store as "nothing saved"', async () => {

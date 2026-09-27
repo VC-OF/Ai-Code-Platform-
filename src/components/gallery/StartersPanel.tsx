@@ -30,11 +30,16 @@ export default function StartersPanel({ recipes, live, error, onRetry, onBuildRe
 
   if (!recipes) {
     return (
-      <div className={`${styles.grid} ${styles.gridCompact}`} aria-busy="true" aria-label="Loading starters">
-        {Array.from({ length: 4 }, (_, i) => (
-          <div key={i} className={styles.skeleton} />
-        ))}
-      </div>
+      <>
+        <p role="status" className={styles.srOnly}>
+          Loading starters…
+        </p>
+        <div className={`${styles.grid} ${styles.gridCompact}`} aria-hidden="true">
+          {Array.from({ length: 4 }, (_, i) => (
+            <div key={i} className={styles.skeleton} />
+          ))}
+        </div>
+      </>
     );
   }
 

@@ -31,11 +31,16 @@ export default function IdeasPanel({ ideas, error, onRetry, onBuild }: IdeasPane
 
   if (!ideas) {
     return (
-      <div className={styles.grid} aria-busy="true" aria-label="Loading product ideas">
-        {Array.from({ length: 6 }, (_, i) => (
-          <div key={i} className={styles.skeleton} />
-        ))}
-      </div>
+      <>
+        <p role="status" className={styles.srOnly}>
+          Loading product ideas…
+        </p>
+        <div className={styles.grid} aria-hidden="true">
+          {Array.from({ length: 6 }, (_, i) => (
+            <div key={i} className={styles.skeleton} />
+          ))}
+        </div>
+      </>
     );
   }
 

@@ -192,9 +192,21 @@ function keyStatus(api: BuildApi, env: string, provided: ReadonlySet<string>): s
   return `it has not been provided yet (the user can add ${env} in Settings)`;
 }
 
+/**
+ * The variable the browser reads a key from: the key env, unless the key is
+ * only saved globally under another spelling of a VITE_ name
+ * (VITE_Weatherbit_Api_Key). Env names are case-sensitive, so that spelling is
+ * the variable that actually exists.
+ */
+function clientKeyEnv(api: BuildApi, env: string, provided: ReadonlySet<string>): string {
+  if (provided.has(env) || !api.keySaved || !api.keySavedAs || isServerSideKeyName(api.keySavedAs)) return env;
+  return api.keySavedAs;
+}
+
 function authLine(api: BuildApi, provided: ReadonlySet<string>): string {
   const env = api.keyEnv || DEFAULT_KEY_ENV;
   const serverKey = serverSideKey(api, provided);
+  const readEnv = clientKeyEnv(api, env, provided);
   switch (api.authKind) {
     case 'none':
       return 'Auth: none. Call it directly with fetch.';
@@ -203,13 +215,13 @@ function authLine(api: BuildApi, provided: ReadonlySet<string>): string {
     case 'apiKey': {
       const header = api.authLabel && /^x-/i.test(api.authLabel) ? ` Send it in the ${api.authLabel} header.` : '';
       if (serverKey) return `Auth: API key. ${serverKeyLine(serverKey, 'key')}${header}`;
-      return `Auth: API key. Read it from import.meta.env.${env}; ${keyStatus(api, env, provided)}.${header}`;
+      return `Auth: API key. Read it from import.meta.env.${readEnv}; ${keyStatus(api, env, provided)}.${header}`;
     }
     case 'oauth':
       if (serverKey) {
         return `Auth: OAuth. Follow the provider's OAuth flow from the docs. ${serverKeyLine(serverKey, 'OAuth credential')} Never put a client secret in browser code (use PKCE or a server route).`;
       }
-      return `Auth: OAuth. Follow the provider's OAuth flow from the docs and read the client ID from import.meta.env.${env}; ${keyStatus(api, env, provided)}. Never put a client secret in browser code (use PKCE or a server route).`;
+      return `Auth: OAuth. Follow the provider's OAuth flow from the docs and read the client ID from import.meta.env.${readEnv}; ${keyStatus(api, env, provided)}. Never put a client secret in browser code (use PKCE or a server route).`;
   }
 }
 

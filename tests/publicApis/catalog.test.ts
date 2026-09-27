@@ -17,8 +17,10 @@ import {
   parseCatalogParams,
   queryCatalog,
   safeHttpUrl,
+  needsKey,
   savedKeyName,
-  toSavedKeySet,
+  siteOf,
+  toSavedKeys,
   withKeyStatus,
   type RawCatalogEntry,
 } from '@/lib/publicApis/catalog';
@@ -96,8 +98,55 @@ describe('normalizeCatalog (bundled data)', () => {
     }
   });
 
+  it('gives every key-requiring provider its own key env', () => {
+    const sitesByEnv = new Map<string, Set<string>>();
+    for (const api of CATALOG.filter(needsKey)) {
+      const sites = sitesByEnv.get(api.keyEnv) ?? new Set<string>();
+      sitesByEnv.set(api.keyEnv, sites.add(siteOf(api.url)));
+    }
+    for (const [keyEnv, sites] of sitesByEnv) expect([...sites], keyEnv).toHaveLength(1);
+
+    // Two different providers listed as 'Bhagavad Gita' no longer share a slot
+    const gita = CATALOG.filter((api) => api.name === 'Bhagavad Gita');
+    expect(gita).toHaveLength(2);
+    expect(gita.map((api) => api.keyEnv)).toEqual([
+      'VITE_BHAGAVAD_GITA_BHAGAVADGITAAPI_IN_API_KEY',
+      'VITE_BHAGAVAD_GITA_BHAGAVADGITA_IO_API_KEY',
+    ]);
+    const saved = toSavedKeys(['VITE_BHAGAVAD_GITA_BHAGAVADGITA_IO_API_KEY']);
+    expect(gita.map((api) => withKeyStatus(api, saved).keySaved)).toEqual([false, true]);
+
+    // The same provider listed twice, or on its docs subdomain, keeps one slot
+    const github = CATALOG.filter((api) => api.name === 'GitHub');
+    expect(new Set(github.map((api) => api.url)).size).toBe(2);
+    expect(new Set(github.map((api) => api.keyEnv))).toEqual(new Set(['VITE_GITHUB_API_KEY']));
+    expect(CATALOG.filter((api) => api.name === 'Mapbox').every((api) => api.keyEnv === 'VITE_MAPBOX_API_KEY')).toBe(true);
+  });
+
+  it('qualifies colliding key envs by site, falling back to the id', () => {
+    const apis = normalizeCatalog([
+      entry({ id: 1, name: 'Twin', url: 'https://api.one.example.com', auth: 'apiKey' }),
+      entry({ id: 2, name: 'Twin', url: 'https://docs.one.example.com', auth: 'apiKey' }),
+      entry({ id: 3, name: 'Twin', url: 'https://two.co.uk/docs', auth: 'OAuth' }),
+      entry({ id: 4, name: 'Twin', url: 'not a url', auth: 'apiKey' }),
+      // No key needed: never competes for the slot
+      entry({ id: 5, name: 'Twin', url: 'https://three.dev', auth: 'No' }),
+    ]);
+    expect(apis.map((api) => api.keyEnv)).toEqual([
+      'VITE_TWIN_EXAMPLE_COM_API_KEY',
+      'VITE_TWIN_EXAMPLE_COM_API_KEY',
+      'VITE_TWIN_TWO_CO_UK_API_KEY',
+      'VITE_TWIN_API_4_API_KEY',
+      'VITE_TWIN_API_KEY',
+    ]);
+    expect(siteOf('https://docs.github.com/en/rest')).toBe('github.com');
+    expect(siteOf('https://datos.gob.mx/')).toBe('datos.gob.mx');
+    expect(siteOf('http://127.0.0.1:8080/')).toBe('127.0.0.1');
+    expect(siteOf('')).toBe('');
+  });
+
   it('counts auth kinds and categories', () => {
-    const stats = computeStats(CATALOG, new Set());
+    const stats = computeStats(CATALOG, new Map());
     expect(stats).toMatchObject({ total: 1885, noKey: 897, oauth: 149, savedKeys: 0, savedKeysUnlocking: 0 });
     expect(stats.noKey + stats.apiKey + stats.oauth + stats.other).toBe(1885);
 
@@ -115,20 +164,25 @@ describe('saved keys', () => {
   const keyed = normalizeEntry(entry({ name: 'OpenWeatherMap', auth: 'apiKey' }), 0);
   const free = normalizeEntry(entry({ name: 'Open-Meteo', auth: 'No' }), 1);
 
-  it('matches VITE_ and bare names case-insensitively', () => {
-    expect(savedKeyName(keyed, toSavedKeySet(['vite_openweathermap_api_key']))).toBe('VITE_OPENWEATHERMAP_API_KEY');
-    expect(savedKeyName(keyed, toSavedKeySet(['OPENWEATHERMAP_API_KEY']))).toBe('OPENWEATHERMAP_API_KEY');
-    expect(savedKeyName(keyed, toSavedKeySet(['OPENWEATHER_API_KEY']))).toBeNull();
-    expect(savedKeyName(free, toSavedKeySet(['VITE_OPEN_METEO_API_KEY']))).toBeNull();
-    expect(withKeyStatus(keyed, toSavedKeySet(['OPENWEATHERMAP_API_KEY']))).toMatchObject({
+  it('matches VITE_ and bare names case-insensitively, reporting the name as stored', () => {
+    // Settings are injected under the stored name, so that is the one to report
+    expect(savedKeyName(keyed, toSavedKeys(['vite_openweathermap_api_key']))).toBe('vite_openweathermap_api_key');
+    expect(savedKeyName(keyed, toSavedKeys([' OpenWeatherMap_Api_Key ']))).toBe('OpenWeatherMap_Api_Key');
+    expect(savedKeyName(keyed, toSavedKeys(['vite_openweathermap_api_key', 'VITE_OPENWEATHERMAP_API_KEY']))).toBe(
+      'VITE_OPENWEATHERMAP_API_KEY'
+    );
+    expect(savedKeyName(keyed, toSavedKeys(['OPENWEATHERMAP_API_KEY']))).toBe('OPENWEATHERMAP_API_KEY');
+    expect(savedKeyName(keyed, toSavedKeys(['OPENWEATHER_API_KEY']))).toBeNull();
+    expect(savedKeyName(free, toSavedKeys(['VITE_OPEN_METEO_API_KEY']))).toBeNull();
+    expect(withKeyStatus(keyed, toSavedKeys(['OPENWEATHERMAP_API_KEY']))).toMatchObject({
       keySaved: true,
       keySavedAs: 'OPENWEATHERMAP_API_KEY',
     });
-    expect(withKeyStatus(keyed, new Set())).not.toHaveProperty('keySavedAs');
+    expect(withKeyStatus(keyed, new Map())).not.toHaveProperty('keySavedAs');
   });
 
   it('reports how many APIs saved keys unlock', () => {
-    const saved = toSavedKeySet(['VITE_OPENWEATHERMAP_API_KEY', 'NASA_INSIGHT_API_KEY', 'UNRELATED_SETTING']);
+    const saved = toSavedKeys(['VITE_OPENWEATHERMAP_API_KEY', 'NASA_INSIGHT_API_KEY', 'UNRELATED_SETTING']);
     const expected = CATALOG.filter((api) =>
       ['VITE_OPENWEATHERMAP_API_KEY', 'VITE_NASA_INSIGHT_API_KEY'].includes(api.keyEnv)
     ).length;
@@ -142,13 +196,15 @@ describe('saved keys', () => {
     const groq = CATALOG.find((api) => api.name === 'Groq')!;
     expect(groq).toMatchObject({ authKind: 'apiKey', keyEnv: 'VITE_GROQ_API_KEY' });
 
-    const platformOnly = toSavedKeySet(['GROQ_API_KEY', 'OPENAI_API_KEY', 'GITHUB_TOKEN']);
+    const platformOnly = toSavedKeys(['GROQ_API_KEY', 'OPENAI_API_KEY', 'GITHUB_TOKEN']);
     expect(savedKeyName(groq, platformOnly)).toBeNull();
+    // Any spelling of a platform secret stays reserved
+    expect(savedKeyName(groq, toSavedKeys(['groq_api_key']))).toBeNull();
     expect(withKeyStatus(groq, platformOnly)).toMatchObject({ keySaved: false });
     expect(computeStats(CATALOG, platformOnly)).toMatchObject({ savedKeys: 0, savedKeysUnlocking: 0 });
 
     // A VITE_ name is an explicit choice to expose the key to the app
-    expect(savedKeyName(groq, toSavedKeySet(['VITE_GROQ_API_KEY']))).toBe('VITE_GROQ_API_KEY');
+    expect(savedKeyName(groq, toSavedKeys(['VITE_GROQ_API_KEY']))).toBe('VITE_GROQ_API_KEY');
   });
 
   it('reserves every LLM provider key the platform reads', () => {
@@ -165,6 +221,8 @@ describe('saved keys', () => {
   it('tells server-side (non-VITE_) names apart', () => {
     expect(isServerSideKeyName('NASA_API_KEY')).toBe(true);
     expect(isServerSideKeyName('VITE_NASA_API_KEY')).toBe(false);
+    // Vite's VITE_ prefix check is case-sensitive: this one never reaches the browser
+    expect(isServerSideKeyName('vite_nasa_api_key')).toBe(true);
     expect(isServerSideKeyName(undefined)).toBe(false);
     expect(isServerSideKeyName('')).toBe(false);
   });

@@ -41,6 +41,7 @@ export default function BuildProductModal({ target, onClose, onConfirm }: BuildP
 
   const dialogRef = useRef<HTMLDivElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
+  const keyInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const onCloseRef = useRef(onClose);
   const busyRef = useRef(false);
 
@@ -81,6 +82,13 @@ export default function BuildProductModal({ target, onClose, onConfirm }: BuildP
   }, []);
 
   const setKey = (keyEnv: string, value: string) => setKeyValues((prev) => ({ ...prev, [keyEnv]: value }));
+
+  // The "Use demo key" button goes away once the demo key is in, so hand focus
+  // to its input rather than letting it fall out of the modal
+  const applyDemoKey = (keyEnv: string, demoKey: string) => {
+    setKey(keyEnv, demoKey);
+    keyInputRefs.current[keyEnv]?.focus();
+  };
 
   const missingKeys = keyApis.filter((api) => !api.keySaved && !keyValues[api.keyEnv]?.trim()).length;
 
@@ -196,12 +204,19 @@ export default function BuildProductModal({ target, onClose, onConfirm }: BuildP
                           {api.name} {noun}
                         </label>
                         {api.demoKey && value !== api.demoKey && (
-                          <button type="button" className={styles.demoBtn} onClick={() => setKey(api.keyEnv, api.demoKey as string)}>
+                          <button
+                            type="button"
+                            className={styles.demoBtn}
+                            onClick={() => applyDemoKey(api.keyEnv, api.demoKey as string)}
+                          >
                             Use demo key
                           </button>
                         )}
                       </div>
                       <input
+                        ref={(el) => {
+                          keyInputRefs.current[api.keyEnv] = el;
+                        }}
                         id={inputId}
                         type="password"
                         value={value}

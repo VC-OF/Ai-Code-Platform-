@@ -42,8 +42,10 @@ function formatCount(n: number): string {
   return n.toLocaleString('en-US');
 }
 
-function StatsLine({ stats }: { stats: CatalogStats | null }) {
-  if (!stats) return <p className={styles.stats}>Loading the public API catalog…</p>;
+export function StatsLine({ stats, failed }: { stats: CatalogStats | null; failed: boolean }) {
+  if (!stats) {
+    return <p className={styles.stats}>{failed ? 'Catalog stats unavailable.' : 'Loading the public API catalog…'}</p>;
+  }
   const sep = (
     <span className={styles.statsSep} aria-hidden="true">
       ·
@@ -92,6 +94,8 @@ export default function PublicApiGallery({ onBuildProduct }: PublicApiGalleryPro
   const [ideasData, setIdeasData] = useState<IdeasResponse | null>(null);
   const [ideasError, setIdeasError] = useState(false);
   const [ideasToken, setIdeasToken] = useState(0);
+  // Tells the Browse panel to re-read key status for the entries it has loaded
+  const [keyStatusToken, setKeyStatusToken] = useState(0);
 
   const [activeTab, setActiveTab] = useState<TabId>('ideas');
   const [visited, setVisited] = useState<ReadonlySet<TabId>>(() => new Set<TabId>(['ideas']));
@@ -132,6 +136,7 @@ export default function PublicApiGallery({ onBuildProduct }: PublicApiGalleryPro
       lastRefresh = Date.now();
       setIdeasToken((t) => t + 1);
       setOverviewToken((t) => t + 1);
+      setKeyStatusToken((t) => t + 1);
     };
     window.addEventListener('focus', refreshKeyStatus);
     document.addEventListener('visibilitychange', refreshKeyStatus);
@@ -185,7 +190,7 @@ export default function PublicApiGallery({ onBuildProduct }: PublicApiGalleryPro
           <h2 id="api-gallery-title" className={styles.title}>
             Build from the open web
           </h2>
-          <StatsLine stats={stats} />
+          <StatsLine stats={stats} failed={overviewError && ideasError} />
         </div>
         <a
           href="https://github.com/VC-OF/Public-Api-Live-Usage"
@@ -261,6 +266,7 @@ export default function PublicApiGallery({ onBuildProduct }: PublicApiGalleryPro
               categories={overview?.categories ?? []}
               catalogSize={stats?.total ?? null}
               ideas={ideas}
+              refreshToken={keyStatusToken}
               onBuildApi={openApi}
               onBuildIdea={openIdea}
             />

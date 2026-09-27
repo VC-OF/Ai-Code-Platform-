@@ -4,7 +4,7 @@ import {
   listCategories,
   normalizeCatalog,
   normalizeEntry,
-  toSavedKeySet,
+  toSavedKeys,
   type PublicApi,
   type RawCatalogEntry,
 } from '@/lib/publicApis/catalog';
@@ -83,11 +83,11 @@ describe('rankApis', () => {
   const names = (list: PublicApi[]) => list.map((a) => a.name);
 
   it('prefers no-key HTTPS+CORS, then no-key, then API keys, then OAuth', () => {
-    expect(names(rankApis(all, new Set()))).toEqual(['Zeta', 'Beta', 'Aardvark', 'Alpha', 'Gamma', 'Delta']);
+    expect(names(rankApis(all, new Map()))).toEqual(['Zeta', 'Beta', 'Aardvark', 'Alpha', 'Gamma', 'Delta']);
   });
 
   it('moves an API whose key is saved ahead of other no-key APIs', () => {
-    const saved = toSavedKeySet(['VITE_GAMMA_API_KEY']);
+    const saved = toSavedKeys(['VITE_GAMMA_API_KEY']);
     expect(names(rankApis(all, saved))).toEqual(['Zeta', 'Gamma', 'Beta', 'Aardvark', 'Alpha', 'Delta']);
   });
 
@@ -95,13 +95,13 @@ describe('rankApis', () => {
     const b = api({ name: 'b-api' });
     const a = api({ name: 'a-api' });
     const aAgain = api({ name: 'a-api' });
-    expect(rankApis([b, aAgain, a], new Set()).map((x) => x.id)).toEqual([a.id, aAgain.id, b.id]);
-    expect(names(rankApis([a, b], new Set(), ['b-api']))).toEqual(['b-api', 'a-api']);
+    expect(rankApis([b, aAgain, a], new Map()).map((x) => x.id)).toEqual([a.id, aAgain.id, b.id]);
+    expect(names(rankApis([a, b], new Map(), ['b-api']))).toEqual(['b-api', 'a-api']);
   });
 
   it('does not depend on input order', () => {
     const reversed = [...all].reverse();
-    expect(names(rankApis(reversed, new Set()))).toEqual(names(rankApis(all, new Set())));
+    expect(names(rankApis(reversed, new Map()))).toEqual(names(rankApis(all, new Map())));
   });
 });
 

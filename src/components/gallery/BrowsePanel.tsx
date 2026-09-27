@@ -1,9 +1,16 @@
 'use client';
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import type { AuthKind, CategoryCount, CorsSupport, PublicApiWithKey } from '@/lib/publicApis/catalog';
+import {
+  MAX_PAGE_SIZE,
+  type AuthKind,
+  type CategoryCount,
+  type CorsSupport,
+  type PublicApiWithKey,
+} from '@/lib/publicApis/catalog';
 import type { ResolvedIdea } from '@/lib/publicApis/ideas';
 import { AuthBadge, CorsBadge, HttpsBadge, KeySavedMark } from './Badges';
+import { appendPage, browsePageUrl, withLatestEntries, type BrowseResults } from './browseResults';
 import { getJson, type BrowseResponse, type CategoriesResponse } from './types';
 import styles from './Gallery.module.css';
 
@@ -29,17 +36,20 @@ interface BrowsePanelProps {
   categories: CategoryCount[];
   catalogSize: number | null;
   ideas: ResolvedIdea[] | null;
+  /** Bumped when saved keys may have changed elsewhere; loaded entries then re-read their key status. */
+  refreshToken?: number;
   onBuildApi: (api: PublicApiWithKey) => void;
   onBuildIdea: (idea: ResolvedIdea) => void;
 }
 
-interface Results {
-  query: string;
-  total: number;
-  entries: PublicApiWithKey[];
-}
-
-export default function BrowsePanel({ categories, catalogSize, ideas, onBuildApi, onBuildIdea }: BrowsePanelProps) {
+export default function BrowsePanel({
+  categories,
+  catalogSize,
+  ideas,
+  refreshToken = 0,
+  onBuildApi,
+  onBuildIdea,
+}: BrowsePanelProps) {
   const ids = useId();
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -48,16 +58,24 @@ export default function BrowsePanel({ categories, catalogSize, ideas, onBuildApi
   const [httpsOnly, setHttpsOnly] = useState(false);
   const [cors, setCors] = useState<CorsSupport | 'any'>('any');
 
-  const [results, setResults] = useState<Results | null>(null);
+  const [results, setResults] = useState<BrowseResults | null>(null);
+  // Whether `results` came from the current query's own fetch. After a round
+  // trip (A → B → A) the old A results match the query string again, but stay
+  // dimmed, without "Load more", until A's refetch lands.
+  const [fresh, setFresh] = useState(false);
   const [failedQuery, setFailedQuery] = useState<string | null>(null);
   const [retryToken, setRetryToken] = useState(0);
+  const [retrying, setRetrying] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadMoreFailed, setLoadMoreFailed] = useState(false);
   const [ownCategories, setOwnCategories] = useState<CategoriesResponse | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const retryRef = useRef<HTMLButtonElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
-  const focusIndexRef = useRef<number | null>(null);
   // Aborted when the query changes, cancelling that query's "Load more" too
   const requestRef = useRef<AbortController | null>(null);
+  // The current results, for the key-status refresh (which must not refetch on every page)
+  const currentRef = useRef<BrowseResults | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search.trim()), SEARCH_DEBOUNCE_MS);
@@ -79,7 +97,9 @@ export default function BrowsePanel({ categories, catalogSize, ideas, onBuildApi
   const [statusQuery, setStatusQuery] = useState(query);
   if (statusQuery !== query) {
     setStatusQuery(query);
+    setFresh(false);
     setFailedQuery(null);
+    setRetrying(false);
     setLoadingMore(false);
     setLoadMoreFailed(false);
   }
@@ -87,14 +107,26 @@ export default function BrowsePanel({ categories, catalogSize, ideas, onBuildApi
   useEffect(() => {
     const controller = new AbortController();
     requestRef.current = controller;
-    getJson<BrowseResponse>(`/api/public-apis?${query}${query ? '&' : ''}offset=0&limit=${PAGE_SIZE}`, controller.signal)
+    getJson<BrowseResponse>(browsePageUrl(query, 0, PAGE_SIZE), controller.signal)
       .then((data) => {
-        focusIndexRef.current = null;
-        setResults({ query, total: data.total, entries: data.entries });
+        if (controller.signal.aborted) return;
+        // "Try again" gives way to "Clear filters" now; don't leave focus on a removed button
+        const retryFocused = retryRef.current !== null && document.activeElement === retryRef.current;
+        if (retryFocused && !data.entries.length) searchRef.current?.focus();
+        setResults({
+          query,
+          total: data.total,
+          entries: data.entries,
+          focusIndex: retryFocused && data.entries.length ? 0 : undefined,
+        });
+        setFresh(true);
+        setRetrying(false);
         setLoadMoreFailed(false);
       })
       .catch(() => {
-        if (!controller.signal.aborted) setFailedQuery(query);
+        if (controller.signal.aborted) return;
+        setFailedQuery(query);
+        setRetrying(false);
       });
     return () => controller.abort();
   }, [query, retryToken]);
@@ -111,15 +143,14 @@ export default function BrowsePanel({ categories, catalogSize, ideas, onBuildApi
     return () => controller.abort();
   }, [needCategories, retryToken]);
 
-  // After "Load more", move focus to the first new card for keyboard users
+  // After "Load more" (or a retry), move focus to the first new card for keyboard users
   useEffect(() => {
-    const index = focusIndexRef.current;
-    if (index === null) return;
-    focusIndexRef.current = null;
+    const index = results?.focusIndex;
+    if (index === undefined) return;
     resultsRef.current?.querySelectorAll<HTMLElement>('[data-api-card]')[index]?.focus();
   }, [results]);
 
-  const current = results?.query === query ? results : null;
+  const current = fresh && results?.query === query ? results : null;
   const failed = !current && failedQuery === query;
   const loading = !current && !failed;
   // Earlier results stay (dimmed) while loading, but never under an error
@@ -128,23 +159,42 @@ export default function BrowsePanel({ categories, catalogSize, ideas, onBuildApi
   const categoryOptions = categories.length ? categories : (ownCategories?.categories ?? []);
   const allCount = catalogSize ?? ownCategories?.total ?? null;
 
+  useEffect(() => {
+    currentRef.current = current;
+  });
+
+  // Saved keys can change elsewhere: re-read the key status of every loaded
+  // entry in place, keeping the pages already loaded (and the scroll position)
+  useEffect(() => {
+    const base = currentRef.current;
+    if (!refreshToken || !base?.entries.length) return;
+    const controller = new AbortController();
+    const pages: Promise<BrowseResponse>[] = [];
+    for (let offset = 0; offset < base.entries.length; offset += MAX_PAGE_SIZE) {
+      pages.push(getJson<BrowseResponse>(browsePageUrl(base.query, offset, MAX_PAGE_SIZE), controller.signal));
+    }
+    Promise.all(pages)
+      .then((responses) => {
+        if (controller.signal.aborted) return;
+        const latest = responses.flatMap((page) => page.entries);
+        setResults((prev) => withLatestEntries(prev, base.query, latest));
+      })
+      .catch(() => {
+        // Keep the statuses on screen; the next refresh tries again
+      });
+    return () => controller.abort();
+  }, [refreshToken]);
+
   const loadMore = async () => {
     const signal = requestRef.current?.signal;
-    if (!current || loadingMore || !signal || signal.aborted) return;
+    const base = current;
+    if (!base || loadingMore || !signal || signal.aborted) return;
     setLoadingMore(true);
     setLoadMoreFailed(false);
     try {
-      const data = await getJson<BrowseResponse>(
-        `/api/public-apis?${query}${query ? '&' : ''}offset=${current.entries.length}&limit=${PAGE_SIZE}`,
-        signal
-      );
+      const data = await getJson<BrowseResponse>(browsePageUrl(base.query, base.entries.length, PAGE_SIZE), signal);
       if (signal.aborted) return;
-      focusIndexRef.current = current.entries.length;
-      setResults((prev) => {
-        if (!prev || prev.query !== current.query) return prev;
-        const seen = new Set(prev.entries.map((api) => api.id));
-        return { ...prev, total: data.total, entries: [...prev.entries, ...data.entries.filter((api) => !seen.has(api.id))] };
-      });
+      setResults((prev) => appendPage(prev, base, data));
     } catch {
       if (!signal.aborted) setLoadMoreFailed(true);
     } finally {
@@ -152,7 +202,11 @@ export default function BrowsePanel({ categories, catalogSize, ideas, onBuildApi
     }
   };
 
+  // "Try again" stays mounted (inert) until the retry settles, so a double
+  // click or a repeated Enter cannot land on "Clear filters" in its place
   const retry = () => {
+    if (retrying) return;
+    setRetrying(true);
     setFailedQuery(null);
     setRetryToken((t) => t + 1);
   };
@@ -177,6 +231,7 @@ export default function BrowsePanel({ categories, catalogSize, ideas, onBuildApi
             Search APIs
           </label>
           <input
+            ref={searchRef}
             id={`${ids}-search`}
             type="search"
             className={styles.input}
@@ -266,16 +321,34 @@ export default function BrowsePanel({ categories, catalogSize, ideas, onBuildApi
               : current && current.total === 0
                 ? 'No APIs match these filters.'
                 : current
-                  ? `Showing ${current.entries.length.toLocaleString()} of ${current.total.toLocaleString()} API${current.total === 1 ? '' : 's'}`
+                  ? `Showing ${current.entries.length.toLocaleString()} of ${current.total.toLocaleString()} API${current.total === 1 ? '' : 's'}${loadMoreFailed ? '. Couldn’t load more.' : ''}`
                   : ''}
         </span>
-        {failed ? (
-          <button type="button" className={styles.linkBtn} onClick={retry}>
+        {/* Distinct keys: never one DOM button that changes meaning under the pointer or focus */}
+        {failed || retrying ? (
+          <button
+            key="retry"
+            ref={retryRef}
+            type="button"
+            className={styles.linkBtn}
+            onClick={retry}
+            aria-disabled={retrying || undefined}
+          >
             Try again
           </button>
         ) : (
           filtersActive && (
-            <button type="button" className={styles.linkBtn} onClick={clearFilters}>
+            <button
+              key="clear"
+              type="button"
+              className={styles.linkBtn}
+              onClick={(e) => {
+                // Ignore the second click of a double-click that began on "Try again":
+                // a fast retry swaps this button into the same spot
+                if (e.detail > 1) return;
+                clearFilters();
+              }}
+            >
               Clear filters
             </button>
           )
@@ -300,7 +373,8 @@ export default function BrowsePanel({ categories, catalogSize, ideas, onBuildApi
 
       {current && remaining > 0 && (
         <div className={styles.moreRow}>
-          <button type="button" className={styles.secondaryBtn} onClick={loadMore} disabled={loadingMore}>
+          {/* aria-disabled, not disabled: a disabled button would drop keyboard focus mid-load */}
+          <button type="button" className={styles.secondaryBtn} onClick={loadMore} aria-disabled={loadingMore || undefined}>
             {loadingMore
               ? 'Loading…'
               : loadMoreFailed

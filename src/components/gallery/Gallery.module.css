@@ -473,13 +473,15 @@
   cursor: pointer;
 }
 
-.secondaryBtn:hover:not(:disabled) {
+.secondaryBtn:hover:not(:disabled):not([aria-disabled='true']) {
   border-color: var(--border-strong);
   background: var(--bg-hover);
   color: var(--text-primary);
 }
 
-.secondaryBtn:disabled {
+/* aria-disabled marks a busy button that keeps keyboard focus */
+.secondaryBtn:disabled,
+.secondaryBtn[aria-disabled='true'] {
   opacity: 0.6;
   cursor: progress;
 }
@@ -494,6 +496,11 @@
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+.linkBtn[aria-disabled='true'] {
+  opacity: 0.6;
+  cursor: progress;
 }
 
 /* ── Browse ─────────────────────────────────────────────────────────────── */

@@ -32,7 +32,10 @@ export interface PublicApi {
   authLabel: string;
   https: boolean;
   cors: CorsSupport;
-  /** Env var the generated app reads its key from, e.g. VITE_OPENWEATHERMAP_API_KEY. */
+  /**
+   * Env var the generated app reads its key from, e.g. VITE_OPENWEATHERMAP_API_KEY.
+   * Site-qualified when two providers share a name (see normalizeCatalog).
+   */
   keyEnv: string;
 }
 
@@ -156,12 +159,79 @@ export function normalizeEntry(raw: RawCatalogEntry, index: number): PublicApi {
   };
 }
 
+// Generic second-level labels under a country TLD (co.uk, com.au, gob.mx…)
+const GENERIC_SLDS = new Set(['ac', 'co', 'com', 'edu', 'gob', 'gov', 'net', 'org']);
+
+/**
+ * The registrable part of a URL's host, so a provider's docs subdomain counts
+ * as the same site: 'https://docs.github.com/x' → 'github.com'. '' for no URL.
+ */
+export function siteOf(url: string): string {
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase().replace(/\.$/, '');
+  } catch {
+    return '';
+  }
+  // IPv4 and bracketed IPv6 hosts have no registrable part
+  if (/^[\d.]+$/.test(host) || host.startsWith('[')) return host;
+  const labels = host.split('.');
+  const keep =
+    labels.length >= 3 && labels[labels.length - 1].length === 2 && GENERIC_SLDS.has(labels[labels.length - 2]) ? 3 : 2;
+  return labels.slice(-keep).join('.');
+}
+
+function envSlug(value: string): string {
+  return value
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+/**
+ * The key env is derived from the display name, so two providers listed under
+ * one name (the catalog has two different 'Bhagavad Gita' APIs) would share a
+ * key slot, and a key saved for one would be offered to the other. Key-requiring
+ * entries whose name collides across sites get a site-qualified env instead
+ * (VITE_BHAGAVAD_GITA_BHAGAVADGITA_IO_API_KEY). The same provider listed twice,
+ * or once under its docs subdomain, keeps a single slot.
+ */
+function disambiguateKeyEnvs(apis: PublicApi[]): PublicApi[] {
+  // keyEnv → site → id of the first entry on that site
+  const sitesByEnv = new Map<string, Map<string, number>>();
+  for (const api of apis) {
+    if (!needsKey(api)) continue;
+    const sites = sitesByEnv.get(api.keyEnv) ?? new Map<string, number>();
+    const site = siteOf(api.url);
+    if (!sites.has(site)) sites.set(site, api.id);
+    sitesByEnv.set(api.keyEnv, sites);
+  }
+
+  const taken = new Set(apis.map((api) => api.keyEnv));
+  const renamed = new Map<string, string>();
+  for (const [keyEnv, sites] of sitesByEnv) {
+    if (sites.size < 2) continue;
+    const base = keyEnv.replace(/_API_KEY$/, '');
+    for (const [site, firstId] of sites) {
+      let env = `${base}_${(site && envSlug(site)) || `API_${firstId}`}_API_KEY`;
+      if (taken.has(env)) env = `${base}_API_${firstId}_API_KEY`;
+      taken.add(env);
+      renamed.set(`${keyEnv} ${site}`, env);
+    }
+  }
+  if (!renamed.size) return apis;
+  return apis.map((api) => {
+    const env = needsKey(api) ? renamed.get(`${api.keyEnv} ${siteOf(api.url)}`) : undefined;
+    return env ? { ...api, keyEnv: env } : api;
+  });
+}
+
 export function normalizeCatalog(raw: readonly RawCatalogEntry[]): PublicApi[] {
   const out: PublicApi[] = [];
   raw.forEach((entry, index) => {
     if (entry && typeof entry === 'object') out.push(normalizeEntry(entry, index));
   });
-  return out;
+  return disambiguateKeyEnvs(out);
 }
 
 // ─── Saved keys ─────────────────────────────────────────────────────────────
@@ -183,11 +253,23 @@ export function needsKey(api: Pick<PublicApi, 'authKind'>): boolean {
   return api.authKind === 'apiKey' || api.authKind === 'oauth';
 }
 
-/** Setting names are matched case-insensitively. */
-export function toSavedKeySet(names: Iterable<string>): Set<string> {
-  const out = new Set<string>();
-  for (const name of names) {
-    if (typeof name === 'string' && name.trim()) out.add(name.trim().toUpperCase());
+/**
+ * Saved setting names, keyed by their upper-cased form so matching is
+ * case-insensitive, mapped to the name exactly as stored. Settings are injected
+ * under the stored name, so that is the one a prompt must point at.
+ */
+export type SavedKeys = ReadonlyMap<string, string>;
+
+/** Indexes setting names; an exact upper-case spelling wins over other spellings of it. */
+export function toSavedKeys(names: Iterable<string> | SavedKeys): SavedKeys {
+  if (names instanceof Map) return names;
+  const out = new Map<string, string>();
+  for (const raw of names) {
+    if (typeof raw !== 'string') continue;
+    const name = raw.trim();
+    if (!name) continue;
+    const upper = name.toUpperCase();
+    if (!out.has(upper) || name === upper) out.set(upper, name);
   }
   return out;
 }
@@ -220,27 +302,31 @@ export function isPlatformSecretName(name: string): boolean {
 
 /**
  * The saved setting satisfying this API's key: VITE_X_API_KEY, or the bare
- * X_API_KEY unless that name is one of the platform's own secrets.
+ * X_API_KEY unless that name is one of the platform's own secrets. Matched
+ * case-insensitively; returns the name as stored.
  */
-export function savedKeyName(
-  api: Pick<PublicApi, 'authKind' | 'keyEnv'>,
-  saved: ReadonlySet<string>
-): string | null {
+export function savedKeyName(api: Pick<PublicApi, 'authKind' | 'keyEnv'>, saved: SavedKeys): string | null {
   if (!needsKey(api)) return null;
-  const candidates = [api.keyEnv, api.keyEnv.replace(/^VITE_/, '')];
-  return candidates.find((name) => saved.has(name) && !isPlatformSecretName(name)) ?? null;
+  for (const candidate of [api.keyEnv, api.keyEnv.replace(/^VITE_/i, '')]) {
+    const stored = saved.get(candidate.toUpperCase());
+    if (stored && !isPlatformSecretName(candidate)) return stored;
+  }
+  return null;
 }
 
-/** A saved name without the VITE_ prefix: Vite keeps it out of the browser, so it must stay server-side. */
+/**
+ * A saved name without the exact VITE_ prefix: Vite only exposes names that
+ * start with 'VITE_' (case-sensitive), so this one must stay server-side.
+ */
 export function isServerSideKeyName(name: string | undefined): name is string {
-  return typeof name === 'string' && name !== '' && !/^VITE_/i.test(name);
+  return typeof name === 'string' && name !== '' && !name.startsWith('VITE_');
 }
 
-export function isKeySaved(api: Pick<PublicApi, 'authKind' | 'keyEnv'>, saved: ReadonlySet<string>): boolean {
+export function isKeySaved(api: Pick<PublicApi, 'authKind' | 'keyEnv'>, saved: SavedKeys): boolean {
   return savedKeyName(api, saved) !== null;
 }
 
-export function withKeyStatus(api: PublicApi, saved: ReadonlySet<string>): PublicApiWithKey {
+export function withKeyStatus(api: PublicApi, saved: SavedKeys): PublicApiWithKey {
   const savedAs = savedKeyName(api, saved);
   return savedAs ? { ...api, keySaved: true, keySavedAs: savedAs } : { ...api, keySaved: false };
 }
@@ -256,7 +342,7 @@ export function listCategories(apis: readonly PublicApi[], order: 'name' | 'coun
   );
 }
 
-export function computeStats(apis: readonly PublicApi[], saved: ReadonlySet<string>): CatalogStats {
+export function computeStats(apis: readonly PublicApi[], saved: SavedKeys): CatalogStats {
   const stats: CatalogStats = {
     total: apis.length,
     noKey: 0,
