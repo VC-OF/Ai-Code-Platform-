@@ -17,6 +17,7 @@ import CompletionDialog from '@/components/CompletionDialog';
 import ToolModal        from '@/components/ToolModal';
 import ChangesReviewModal from '@/components/editor/ChangesReviewModal';
 import PublicApiGallery, { type BuildProductSpec } from '@/components/PublicApiGallery';
+import { collectSpecKeys } from '@/lib/publicApis/buildSpec';
 import { useIsMobile }  from '@/hooks/useMobile';
 import { useGlobalKeyboard, useShortcuts } from '@/hooks/useKeyboard';
 import { useAppCommands } from '@/components/command/useAppCommands';
@@ -1041,20 +1042,19 @@ function WelcomeScreen({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to create project');
 
-      // 2. Save API key in project encrypted settings if supplied
-      if (spec.apiKey && spec.apiKey.trim()) {
+      // 2. Save each supplied API key as its own encrypted project setting.
+      // Sequential on purpose: the settings store is a read-modify-write JSON
+      // file per project, so parallel POSTs could drop keys.
+      for (const { keyEnv, value } of collectSpecKeys(spec)) {
         try {
-          await fetch('/api/settings', {
+          const saved = await fetch('/api/settings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              key: spec.keyEnv || 'VITE_API_KEY',
-              value: spec.apiKey.trim(),
-              projectId: data.project.id,
-            }),
+            body: JSON.stringify({ key: keyEnv, value, projectId: data.project.id }),
           });
+          if (!saved.ok) console.warn(`Failed to save project setting ${keyEnv}: HTTP ${saved.status}`);
         } catch (settingsErr) {
-          console.warn('Failed to save project API key setting:', settingsErr);
+          console.warn(`Failed to save project setting ${keyEnv}:`, settingsErr);
         }
       }
 
