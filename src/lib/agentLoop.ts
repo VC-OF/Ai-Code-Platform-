@@ -1,5 +1,6 @@
 import { APPROVAL_REQUIRED_TOOLS, PLAN_MODE_TOOLS, PLAN_MODE_SUBAGENT_KINDS, PLAN_MODE_REFUSAL } from './permissions';
 import { loadPermissionRules, decide as decidePermission, EMPTY_PERMISSION_RULES, type PermissionRules } from './permissionRules';
+import { upgradeToolGuard } from './upgrade/guard';
 import { execSync } from 'child_process';
 import {
   callLLM,
@@ -1046,6 +1047,18 @@ Stay in plan mode, refine the plan, and call exit_plan_mode again.`;
               emitter.status(stepIndex, 'planning');
             }
             messages.push({ role: 'tool' as const, tool_call_id: toolCallId, tool_name: toolName, content } as ContextMessage);
+            continue;
+          }
+
+          // ── Upgrade OpenCode: protected core + controller-owned git ─────
+          const upgradeVerdict = upgradeToolGuard(workspaceRoot, toolName, toolArgs);
+          if (!upgradeVerdict.allowed) {
+            emitter.toolStart(stepIndex, toolCallId, toolName, toolArgs);
+            emitter.toolError(stepIndex, toolCallId, toolName, upgradeVerdict.reason!, true);
+            messages.push({
+              role: 'tool' as const, tool_call_id: toolCallId, tool_name: toolName,
+              content: `Error: ${upgradeVerdict.reason}. The tool was not run.`,
+            } as ContextMessage);
             continue;
           }
 
