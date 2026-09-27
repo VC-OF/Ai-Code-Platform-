@@ -59,3 +59,8 @@ workspaces/*/.next/
 # Playwright output (uploaded as a CI artifact)
 /e2e/results/
 /e2e/screenshots/
+
+# Upgrade OpenCode → Discover: settings, cache and daily digests (local data)
+.platform/discover.json
+.platform/discover-cache.json
+.platform/discover-digests/

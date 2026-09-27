@@ -252,6 +252,9 @@ export function ensureSchedulerStarted(): void {
     runDueSchedules().catch((err) => console.error('[scheduler] tick failed:', err));
   }, TICK_MS);
   shared.__ocSchedulerTimer.unref?.();
+  // Daily "Today in AI" digest (Upgrade OpenCode → Discover) — a plain job,
+  // not an agent turn, so it runs on its own timer
+  void import('./discover/digest').then((m) => m.startDigestScheduler(process.cwd())).catch(() => {});
 }
 
 export function stopScheduler(): void {

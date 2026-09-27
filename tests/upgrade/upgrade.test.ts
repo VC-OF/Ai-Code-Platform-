@@ -4,7 +4,7 @@ import os from 'os';
 import path from 'path';
 import { execFileSync } from 'child_process';
 import { isProtectedPath, upgradeToolGuard, upgradeWorktreeRoot, findSkipMarkers, isTestFile } from '@/lib/upgrade/guard';
-import { combine, compareTests, parseVitestJson, countTsErrors } from '@/lib/upgrade/gate';
+import { combine, compareTests, parseVitestJson, countTsErrors, runFile, runCmd } from '@/lib/upgrade/gate';
 import { parseAnalysis, parseReview } from '@/lib/upgrade/parse';
 import { createCandidateWorktree, candidateDiff, removeWorktree } from '@/lib/upgrade/worktree';
 
@@ -117,6 +117,34 @@ describe('gate decisions', () => {
       .toEqual({ passed: 4, failed: 1, skipped: 0, total: 5, ran: true });
     expect(parseVitestJson('not json').ran).toBe(false);
     expect(countTsErrors('a.ts(1,2): error TS2322: x\nb.ts(3,4): error TS7006: y')).toBe(2);
+  });
+});
+
+describe('running commands with untrusted text', () => {
+  // Upgrade goals can quote third-party text (e.g. a public issue title) and
+  // end up in `gh pr create --title`. runFile must never let a shell see it.
+  const hostile = 'Crash on %PROBE_SECRET% $(echo INJECTED) `echo X` "q" & echo AMP';
+
+  it('runFile passes shell syntax through literally', async () => {
+    process.env.PROBE_SECRET = 'leaked-value';
+    try {
+      const r = await runFile(process.execPath, ['-e', 'process.stdout.write(process.argv[1])', hostile], process.cwd(), 20_000);
+      expect(r.code).toBe(0);
+      expect(r.output).toBe(hostile);
+      expect(r.output).not.toContain('leaked-value');
+    } finally {
+      delete process.env.PROBE_SECRET;
+    }
+  });
+
+  it('runCmd is a real shell (why untrusted text must not reach it)', async () => {
+    process.env.PROBE_SECRET = 'leaked-value';
+    try {
+      const probe = process.platform === 'win32' ? 'echo %PROBE_SECRET%' : 'echo $PROBE_SECRET';
+      expect((await runCmd(probe, process.cwd(), 20_000)).output).toContain('leaked-value');
+    } finally {
+      delete process.env.PROBE_SECRET;
+    }
   });
 });
 
