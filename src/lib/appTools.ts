@@ -592,6 +592,9 @@ async function git(workspace: string, argv: string[]): Promise<string> {
   return stdout;
 }
 
+/** Hash of git's empty tree — a diff base for repos without commits. */
+const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
 async function reviewChanges(args: Record<string, unknown>, workspace: string): Promise<AppToolResult> {
   const base = typeof args.base === "string" && args.base ? args.base : "HEAD";
   const maxChars = Math.min(40_000, Math.max(1000, Number(args.max_chars) || 12_000));
@@ -605,11 +608,17 @@ async function reviewChanges(args: Record<string, unknown>, workspace: string): 
   } catch {
     return fail("This workspace is not a git repository.", "No git repo", "Run `git init` with run_command to start tracking changes.");
   }
+  // A fresh repo (new blank project) has no commits, so HEAD does not resolve:
+  // compare against git's empty tree instead — everything shows as untracked
+  let against = base;
+  if (base === "HEAD" && !(await git(workspace, ["rev-parse", "--verify", "-q", "HEAD"]).then(() => true, () => false))) {
+    against = EMPTY_TREE;
+  }
   try {
     const [status, stat, diff] = await Promise.all([
       git(workspace, ["status", "--porcelain=v1", "--untracked-files=all", ...scope]),
-      git(workspace, ["diff", "--stat", base, ...scope]),
-      git(workspace, ["diff", base, ...scope]),
+      git(workspace, ["diff", "--stat", against, ...scope]),
+      git(workspace, ["diff", against, ...scope]),
     ]);
     const untracked = status.split("\n").filter((l) => l.startsWith("??")).map((l) => l.slice(3));
     const changed = status.split("\n").filter((l) => l.trim() && !l.startsWith("??")).length;

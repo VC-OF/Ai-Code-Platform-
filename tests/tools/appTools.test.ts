@@ -210,6 +210,19 @@ describe('app tools: execution', () => {
     expect(badCol.output).toMatch(/Unknown column/);
   }, 120_000);
 
+  it('review_changes works in a repo without any commits yet', async () => {
+    const fresh = await createWorkspace({}); // git init, no commit
+    try {
+      await fresh.write('src/a.ts', 'export const a = 1;\n');
+      const r = await executeAppTool('review_changes', {}, fresh.root, createTurnContext(), fresh.projectId);
+      expect(r.success, r.output).toBe(true);
+      expect(r.output).toContain('src/a.ts');
+      expect(r.extra).toMatchObject({ untracked: 1, base: 'HEAD' });
+    } finally {
+      await fresh.cleanup();
+    }
+  }, 30_000);
+
   it('review_changes reports the diff, stat and untracked files', async () => {
     await ws.write('src/app.js', 'module.exports = () => 2;\n');
     await ws.write('src/new.js', 'export const x = 1;\n');
