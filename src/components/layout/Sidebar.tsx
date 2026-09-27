@@ -104,6 +104,17 @@ export default function Sidebar({
             <span>New project</span>
           </button>
         )}
+        <button
+          onClick={() => window.dispatchEvent(new CustomEvent('oc-open', { detail: { target: 'upgrade' } }))}
+          className="sidebar-new-btn sidebar-upgrade-btn"
+          title="Improve OpenCode's own source in an isolated worktree"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>
+          </svg>
+          <span>Upgrade OpenCode</span>
+        </button>
       </div>
 
       {/* Search Projects */}
@@ -188,6 +199,16 @@ export default function Sidebar({
         }
         .sidebar-new-btn:hover {
           background: var(--accent-dim);
+        }
+        .sidebar-upgrade-btn {
+          margin-top: 6px;
+          background: transparent;
+          border: 1px solid var(--border-base);
+          color: var(--text-secondary);
+        }
+        .sidebar-upgrade-btn:hover {
+          background: var(--bg-hover);
+          color: var(--text-primary);
         }
         .sidebar-new-form {
           display: flex;

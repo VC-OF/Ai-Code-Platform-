@@ -10,6 +10,7 @@ import SettingsPanel    from '@/components/settings/SettingsPanel';
 import TerminalPanel    from '@/components/terminal/TerminalPanel';
 import ResizeHandle     from '@/components/layout/ResizeHandle';
 import CommandPalette   from '@/components/command/CommandPalette';
+import UpgradePanel     from '@/components/upgrade/UpgradePanel';
 import MobileLayout     from '@/components/mobile/MobileLayout';
 import FileExplorer     from '@/components/FileExplorer';
 import CompletionDialog from '@/components/CompletionDialog';
@@ -57,6 +58,7 @@ export default function App() {
   const [editorOpen,    setEditorOpen]    = useState(true);
   const [previewOpen,   setPreviewOpen]   = useState(false);
   const [settingsOpen,  setSettingsOpen]  = useState(false);
+  const [upgradeOpen,   setUpgradeOpen]   = useState(false);
   const [terminalOpen,  setTerminalOpen]  = useState(false);
   const [isResizing,    setIsResizing]    = useState(false);
   const workspaceColumnsRef = useRef<HTMLDivElement | null>(null);
@@ -139,6 +141,8 @@ export default function App() {
         setSettingsOpen(true);
       } else if (target === 'terminal') {
         setTerminalOpen(true);
+      } else if (target === 'upgrade') {
+        setUpgradeOpen(true);
       }
     };
     window.addEventListener('oc-open', onOpen);
@@ -338,16 +342,19 @@ export default function App() {
 
   if (isMobile) {
     return (
-      <MobileLayout
-        activeProject={activeProject}
-        onProjectSelect={setActiveProject}
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        activeFile={activeFile}
-        onFileSelect={handleFileSelect}
-        filesChanged={filesChanged}
-        onFilesChanged={handleFilesChanged}
-      />
+      <>
+        <MobileLayout
+          activeProject={activeProject}
+          onProjectSelect={setActiveProject}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          activeFile={activeFile}
+          onFileSelect={handleFileSelect}
+          filesChanged={filesChanged}
+          onFilesChanged={handleFilesChanged}
+        />
+        {upgradeOpen && <UpgradePanel onClose={() => setUpgradeOpen(false)} />}
+      </>
     );
   }
 
@@ -663,6 +670,8 @@ export default function App() {
 
       {/* Command Palette */}
       <CommandPalette />
+
+      {upgradeOpen && <UpgradePanel onClose={() => setUpgradeOpen(false)} />}
 
       {/* Completion Dialog — appears after agent finishes */}
       {showCompletion && activeProject && (

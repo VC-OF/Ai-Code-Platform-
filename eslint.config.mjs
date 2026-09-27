@@ -16,6 +16,8 @@ const eslintConfig = defineConfig([
     "workspaces/**",
     ".platform/**",
     "e2e/**",
+    // Agent and upgrade worktrees: full copies of this repo
+    ".claude/**",
   ]),
 ]);
 
