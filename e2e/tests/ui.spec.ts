@@ -3,6 +3,10 @@ import { test, expect, type Page } from '@playwright/test';
 /**
  * UI smoke suite against the real workspace: welcome screen, project
  * creation, workspace panels, settings views, and deletion.
+ *
+ * Selectors use accessible roles and visible text where the UI provides
+ * them (panel toggles, settings views and the chat input have no stable
+ * class names — several are CSS-module hashed).
  */
 
 async function createProjectViaUi(page: Page, name: string): Promise<string> {
@@ -32,64 +36,63 @@ test.describe('UI', () => {
 
   test('create project → workspace panels render → sidebar delete', async ({ page }) => {
     const name = `e2e-ui-${Date.now()}`;
-    await createProjectViaUi(page, name);
+    const id = await createProjectViaUi(page, name);
+    try {
+      // Live agent status in the footer (not a fake progress bar)
+      await expect(page.locator('.app-footer').getByText('Idle', { exact: true })).toBeVisible();
+      // Chat input ready
+      await expect(page.getByRole('combobox', { name: 'Message' })).toBeEnabled();
+      // Panel toggles in the top bar
+      for (const label of ['Toggle code editor', 'Toggle live preview', 'Toggle settings']) {
+        await expect(page.getByRole('button', { name: label }).first()).toBeVisible();
+      }
+      // Prompt template shortcuts (short label, description in the title)
+      await expect(page.getByTitle('Debug and fix an issue')).toBeVisible();
 
-    // Live agent status (not the old fake progress bar)
-    await expect(page.locator('.progress-row')).toContainText('Idle');
-    // Chat input ready
-    await expect(page.locator('.input-textarea')).toBeEnabled();
-    // Tab bar with the three panels
-    for (const label of ['Code', 'Preview', 'Settings']) {
-      await expect(
-        page.locator('.tabbar-tab', { hasText: label })
-      ).toBeVisible();
+      // Sidebar fetches on mount — reload so the new project is listed,
+      // then exercise the UI delete flow (confirm dialog)
+      await page.reload();
+      const item = page.locator('.project-item', { hasText: name }).first();
+      await expect(item).toBeVisible({ timeout: 10_000 });
+      await item.hover();
+      page.once('dialog', (d) => d.accept());
+      // Scoped to the sidebar item: the welcome screen's recent list has its own delete button
+      await item.getByRole('button', { name: `Delete ${name}` }).click();
+      await expect(page.locator('.project-item', { hasText: name })).toHaveCount(0);
+    } finally {
+      await deleteProjectViaApi(page, id);
     }
-    // Prompt template pills
-    await expect(page.locator('.slash-pill').first()).toBeVisible();
-
-    // Sidebar fetches on mount — reload so the new project is listed,
-    // then exercise the UI delete flow
-    await page.reload();
-    const item = page.locator('.project-item', { hasText: name }).first();
-    await expect(item).toBeVisible({ timeout: 10_000 });
-    await item.hover();
-    page.once('dialog', (d) => d.accept());
-    await item.locator('.project-delete').click();
-    await expect(
-      page.locator('.project-item', { hasText: name })
-    ).toHaveCount(0);
   });
 
-  test('settings tab shows providers with live status', async ({ page }) => {
-    const name = `e2e-settings-ui-${Date.now()}`;
-    const id = await createProjectViaUi(page, name);
+  test('settings panel shows model providers with live status', async ({ page }) => {
+    const id = await createProjectViaUi(page, `e2e-settings-ui-${Date.now()}`);
+    try {
+      await page.getByRole('button', { name: 'Toggle settings' }).first().click();
+      await page.getByRole('button', { name: 'Models & MCP' }).click();
 
-    await page.locator('.tabbar-tab', { hasText: 'Settings' }).click();
-    await page.locator('.sn-item', { hasText: 'AI Providers' }).click();
-
-    // Registry providers listed with live status
-    await expect(page.locator('.provider-row').first()).toBeVisible({ timeout: 10_000 });
-    for (const label of ['Groq', 'OpenRouter', 'Ollama', 'LM Studio']) {
-      await expect(
-        page.locator('.provider-name', { hasText: label }).first()
-      ).toBeVisible();
+      const heading = page.getByRole('heading', { name: 'Model providers' });
+      await expect(heading).toBeVisible({ timeout: 10_000 });
+      const section = page.locator('section').filter({ has: heading });
+      for (const label of ['Groq', 'OpenRouter', 'Ollama', 'LM Studio']) {
+        await expect(section).toContainText(label);
+      }
+      // Each provider reports its live state (configured, running, or not)
+      await expect(section).toContainText(/Not configured\.|Configured \(|Running at |Not detected at /);
+    } finally {
+      await deleteProjectViaApi(page, id);
     }
-
-    await deleteProjectViaApi(page, id);
   });
 
-  test('preview tab shows honest offline state and sub-tabs', async ({ page }) => {
-    const name = `e2e-preview-ui-${Date.now()}`;
-    const id = await createProjectViaUi(page, name);
-
-    await page.locator('.tabbar-tab', { hasText: 'Preview' }).click();
-    await expect(page.locator('.preview-offline-title')).toContainText(
-      'Preview server offline'
-    );
-    // Sub-tab switch hides the browser layout
-    await page.locator('.pst', { hasText: 'Database' }).click();
-    await expect(page.locator('.preview-layout')).toHaveCount(0);
-
-    await deleteProjectViaApi(page, id);
+  test('preview panel shows honest offline state and sub-tabs', async ({ page }) => {
+    const id = await createProjectViaUi(page, `e2e-preview-ui-${Date.now()}`);
+    try {
+      await page.getByRole('button', { name: 'Toggle live preview' }).first().click();
+      await expect(page.locator('.preview-offline-title')).toContainText('Preview server offline');
+      // Sub-tab switch hides the browser layout
+      await page.getByRole('tab', { name: 'Database' }).click();
+      await expect(page.locator('.preview-layout')).toHaveCount(0);
+    } finally {
+      await deleteProjectViaApi(page, id);
+    }
   });
 });

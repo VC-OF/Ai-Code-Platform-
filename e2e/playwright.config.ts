@@ -1,3 +1,4 @@
+import path from 'path';
 import { defineConfig, devices } from '@playwright/test';
 
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:3000';
@@ -26,18 +27,24 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      // System Chrome — no separate browser download needed
-      use: { ...devices['Desktop Chrome'], channel: 'chrome' },
+      // Locally: system Chrome, no browser download needed. CI installs
+      // Playwright's bundled Chromium (`playwright install chromium`).
+      use: IS_CI ? { ...devices['Desktop Chrome'] } : { ...devices['Desktop Chrome'], channel: 'chrome' },
     },
   ],
 
-  webServer: IS_CI
+  // CI serves the production build downloaded from the Build job; locally
+  // an already-running dev server is reused. BASE_URL pointing elsewhere
+  // (a deployed instance) skips starting a server.
+  webServer: process.env.BASE_URL
     ? undefined
     : {
-        command: 'npm run dev',
-        url: BASE_URL,
-        reuseExistingServer: true,
-        timeout: 90_000,
+        command: IS_CI ? 'npm run start' : 'npm run dev',
+        cwd: path.join(__dirname, '..'),
+        url: `${BASE_URL}/api/health`,
+        reuseExistingServer: !IS_CI,
+        timeout: 120_000,
+        stdout: 'pipe',
       },
 
   outputDir: 'results/artifacts',
