@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
@@ -42,6 +42,22 @@ describe('Build Mode', () => {
 
     it('rejects the bare home directory root', async () => {
       await expect(validateBuildModePath(os.homedir())).rejects.toThrow(/home directory root/);
+    });
+
+    it('names the home directory root even when the platform lives inside it (CI layout)', async () => {
+      // e.g. GitHub runners: home /home/runner, checkout /home/runner/work/<repo>
+      const home = path.join(os.tmpdir(), 'oc-ci-home');
+      const work = path.join(home, 'work');
+      const homeSpy = vi.spyOn(os, 'homedir').mockReturnValue(home);
+      const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(path.join(work, 'platform'));
+      try {
+        await expect(validateBuildModePath(home)).rejects.toThrow(/home directory root/);
+        // Other ancestors of the platform are still refused as the platform's directory
+        await expect(validateBuildModePath(work)).rejects.toThrow(/platform's own directory/);
+      } finally {
+        cwdSpy.mockRestore();
+        homeSpy.mockRestore();
+      }
     });
 
     it('rejects known system directories', async () => {
