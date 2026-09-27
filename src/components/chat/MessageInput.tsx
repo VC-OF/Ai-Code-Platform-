@@ -9,6 +9,11 @@ import {
   type SlashCommandDefinition,
 } from '@/lib/slashCommands';
 import { getMentionQuery, fuzzyMatchPaths, completeMention } from '@/lib/mentionMatch';
+import { getSpeechRecognition, type SpeechRecognitionLike } from '../voice/speechRecognition';
+import VoiceControls from '../voice/VoiceControls';
+import VoiceStatusBar from '../voice/VoiceStatusBar';
+import VoiceSettings from '../voice/VoiceSettings';
+import type { VoiceConversation } from '../voice/useVoiceConversation';
 
 export const VIM_STORAGE_KEY = 'oc-vim-mode';
 export const VIM_TOGGLE_EVENT = 'oc-vim-toggle';
@@ -51,32 +56,6 @@ interface Attachment {
   content: string; // base64 for images, raw text for files
 }
 
-interface SpeechRecognitionResultEventLike extends Event {
-  results: { length: number; [index: number]: { [index: number]: { transcript: string } } };
-}
-
-interface SpeechRecognitionLike {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  start: () => void;
-  stop: () => void;
-  onresult: ((event: SpeechRecognitionResultEventLike) => void) | null;
-  onerror: (() => void) | null;
-  onend: (() => void) | null;
-}
-
-interface SpeechRecognitionConstructorLike {
-  new (): SpeechRecognitionLike;
-}
-
-declare global {
-  interface Window {
-    SpeechRecognition?: SpeechRecognitionConstructorLike;
-    webkitSpeechRecognition?: SpeechRecognitionConstructorLike;
-  }
-}
-
 interface MessageInputProps {
   value:         string;
   onChange:      (v: string) => void;
@@ -89,6 +68,8 @@ interface MessageInputProps {
   extraCommands?: SlashCommandDefinition[];
   /** Enables `@file` autocomplete over the project's workspace files */
   projectId?: string;
+  /** Hands-free voice mode (owned by ChatPanel) */
+  voice?: VoiceConversation;
 }
 
 export default function MessageInput({
@@ -101,12 +82,25 @@ export default function MessageInput({
   disabled,
   extraCommands,
   projectId,
+  voice,
 }: MessageInputProps) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const [voiceSettingsOpen, setVoiceSettingsOpen] = useState(false);
+  const voiceActive = !!voice?.active;
+
+  // Voice mode takes over the microphone
+  useEffect(() => {
+    if (voiceActive) recognitionRef.current?.stop();
+  }, [voiceActive]);
+
+  const toggleVoiceSettings = () => {
+    if (!voiceSettingsOpen) voice?.refreshProviders();
+    setVoiceSettingsOpen((open) => !open);
+  };
 
   // ── Vim keybindings (toggled by /vim, persisted in localStorage) ─────────
   const [vimEnabled, setVimEnabled] = useState(false);
@@ -362,7 +356,7 @@ export default function MessageInput({
       return;
     }
 
-    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const Recognition = getSpeechRecognition();
     if (!Recognition) {
       onChange(`${value}${value ? ' ' : ''}[Voice input is not supported by this browser]`);
       return;
@@ -461,6 +455,10 @@ export default function MessageInput({
 
   return (
     <div className="input-area">
+      {voice && voiceSettingsOpen && (
+        <VoiceSettings voice={voice} onClose={() => setVoiceSettingsOpen(false)} />
+      )}
+
       {popoverOpen && (
         <div className="slash-popover" role="listbox" id="slash-command-listbox" aria-label="Slash commands">
           {slashMatches.map((command, index) => {
@@ -561,6 +559,8 @@ export default function MessageInput({
         </div>
       )}
 
+      {voice && <VoiceStatusBar voice={voice} />}
+
       <textarea
         ref={ref}
         value={value}
@@ -571,9 +571,11 @@ export default function MessageInput({
         onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
         onKeyDown={handleKeyDown}
         placeholder={
-          isStreaming
-            ? 'Reply, steer, or answer the agent…'
-            : 'Describe what to build…'
+          voiceActive
+            ? 'Voice mode is on: talk, or type here…'
+            : isStreaming
+              ? 'Reply, steer, or answer the agent…'
+              : 'Describe what to build…'
         }
         disabled={disabled}
         rows={1}
@@ -620,21 +622,30 @@ export default function MessageInput({
                 <path d="M8 4l1-2h6l1 2" />
               </svg>
             </button>
-            <button
-              type="button"
-              onClick={toggleVoice}
-              className={`btn-attach ${isListening ? 'btn-attach--active' : ''}`}
-              title={isListening ? 'Stop voice input' : 'Start voice input'}
-              aria-label={isListening ? 'Stop voice input' : 'Start voice input'}
-              aria-pressed={isListening}
-              disabled={disabled}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={14} height={14}>
-                <rect x="9" y="2" width="6" height="12" rx="3" />
-                <path d="M5 11a7 7 0 0014 0M12 18v4M8 22h8" />
-              </svg>
-            </button>
           </>
+        )}
+        {/* Dictation stays available while the agent runs (to steer it) */}
+        <button
+          type="button"
+          onClick={toggleVoice}
+          className={`btn-attach ${isListening ? 'btn-attach--active' : ''}`}
+          title={voiceActive ? 'Dictation is off while voice mode is on' : isListening ? 'Stop dictation' : 'Dictate a message'}
+          aria-label={isListening ? 'Stop voice input' : 'Start voice input'}
+          aria-pressed={isListening}
+          disabled={disabled || voiceActive}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={14} height={14}>
+            <rect x="9" y="2" width="6" height="12" rx="3" />
+            <path d="M5 11a7 7 0 0014 0M12 18v4M8 22h8" />
+          </svg>
+        </button>
+        {voice && (
+          <VoiceControls
+            voice={voice}
+            settingsOpen={voiceSettingsOpen}
+            onToggleSettings={toggleVoiceSettings}
+            disabled={disabled}
+          />
         )}
 
         {vimEnabled && (
@@ -925,6 +936,9 @@ export default function MessageInput({
         .input-shortcut-hint {
           margin-left: auto;
           margin-right: 6px;
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
           font-size: 11px;
           color: var(--text-disabled);
           white-space: nowrap;

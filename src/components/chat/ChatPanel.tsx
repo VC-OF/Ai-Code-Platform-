@@ -24,6 +24,8 @@ import {
   STATUSLINE_STORAGE_KEY,
   type SlashContext,
 } from './slashHandlers';
+import { useVoiceConversation, type SteerOutcome } from '../voice/useVoiceConversation';
+import SpeakButton from '../voice/SpeakButton';
 
 type Role = 'user' | 'assistant';
 
@@ -232,6 +234,8 @@ export default function ChatPanel({
     ts: number; question: string; options?: string[];
   } | null>(null);
   const [answerText, setAnswerText] = useState('');
+  // A spoken request that arrived while the finished turn's stream was closing
+  const [queuedVoicePrompt, setQueuedVoicePrompt] = useState<string | null>(null);
   const [historyReloadKey, setHistoryReloadKey] = useState(0);
   const [plan, setPlan] = useState<PlanTask[]>([]);
   const [planCollapsed, setPlanCollapsed] = useState(false);
@@ -416,6 +420,7 @@ export default function ChatPanel({
           } catch {
             continue;
           }
+          voice.narrate(event);
 
           if (event.type === 'status') {
             updateStatus(event.status as AgentStatus);
@@ -539,14 +544,13 @@ export default function ChatPanel({
       }
     } catch (err) {
       sawError = true;
-      setTimeline((t) => [
-        ...t,
-        {
-          type:    'error',
-          message: err instanceof Error ? err.message : String(err),
-          ts:      Date.now(),
-        },
-      ]);
+      const errorEvent: TimelineItem = {
+        type:    'error',
+        message: err instanceof Error ? err.message : String(err),
+        ts:      Date.now(),
+      };
+      voice.narrate(errorEvent);
+      setTimeline((t) => [...t, errorEvent]);
     } finally {
       setLoading(false);
       setStreamingText('');
@@ -578,6 +582,7 @@ export default function ChatPanel({
   const reconnectStream = async () => {
     setLoading(true);
     updateStatus('planning');
+    voice.beginTurn({ replay: true });
     const resPromise = fetch('/api/chat', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -588,11 +593,17 @@ export default function ChatPanel({
     await processStream(resPromise);
   };
 
-  const executePrompt = async (text: string, baseHistory: Message[] = []) => {
-    setInput('');
+  const executePrompt = async (
+    text: string,
+    baseHistory: Message[] = [],
+    opts: { keepInput?: boolean } = {}
+  ) => {
+    // Spoken requests leave whatever is typed in the composer alone
+    if (!opts.keepInput) setInput('');
     setLoading(true);
     setLastDoneReason(null);
     updateStatus('planning');
+    voice.beginTurn();
 
     const content = JSON.stringify({ text, attachments: [] });
     const nextHistory = [...baseHistory, { role: 'user' as const, content }];
@@ -701,15 +712,65 @@ export default function ChatPanel({
     return () => window.removeEventListener('oc-element-picked', onPick);
   }, []);
 
-  const cancelRun = async () => {
+  /** Cancel the running turn; false when the request failed (e.g. rate limited). */
+  const cancelRun = async (): Promise<boolean> => {
     try {
-      await fetch('/api/chat/cancel', {
+      const res = await fetch('/api/chat/cancel', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ projectId }),
       });
-    } catch {}
+      return res.ok;
+    } catch {
+      return false;
+    }
   };
+
+  /** Queue a message into the running turn. Its bubble is taken back unless the run took it. */
+  const steerRunning = async (text: string): Promise<SteerOutcome> => {
+    const bubble: TimelineItem = { type: 'message', role: 'user', content: text, ts: Date.now() };
+    setTimeline((t) => [...t, bubble]);
+    let outcome: SteerOutcome = 'failed';
+    try {
+      const res = await fetch('/api/chat/queue', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ projectId, content: text }),
+      });
+      if (res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { queued?: boolean };
+        outcome = data.queued === false ? 'no-run' : 'delivered';
+      }
+    } catch {}
+    if (outcome !== 'delivered') setTimeline((t) => t.filter((item) => item !== bubble));
+    return outcome;
+  };
+
+  /** A spoken request starts the next turn (after the current stream closes). */
+  const startVoicePrompt = (text: string) => {
+    if (loading) setQueuedVoicePrompt(text);
+    else executePrompt(text, history, { keepInput: true });
+  };
+
+  const voice = useVoiceConversation({
+    running: loading,
+    pendingQuestion,
+    onStop: cancelRun,
+    onAnswer: answerQuestion,
+    onSteer: steerRunning,
+    onPrompt: startVoicePrompt,
+  });
+
+  useEffect(() => {
+    if (loading || !queuedVoicePrompt) return;
+    const text = queuedVoicePrompt;
+    const id = setTimeout(() => {
+      setQueuedVoicePrompt(null);
+      executePrompt(text, history, { keepInput: true });
+    }, 0);
+    return () => clearTimeout(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, queuedVoicePrompt]);
 
   const say = (content: string) => {
     setTimeline((t) => [...t, { type: 'message', role: 'assistant', content, ts: Date.now() }]);
@@ -867,17 +928,8 @@ export default function ChatPanel({
         await answerQuestion(text);
         return;
       }
-      setTimeline((t) => [
-        ...t,
-        { type: 'message', role: 'user', content: text, ts: Date.now() },
-      ]);
-      try {
-        await fetch('/api/chat/queue', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ projectId, content: text }),
-        });
-      } catch {}
+      // Not delivered: give the text back rather than losing it
+      if ((await steerRunning(text)) !== 'delivered') setInput((current) => current || text);
       return;
     }
 
@@ -885,6 +937,7 @@ export default function ChatPanel({
     setLoading(true);
     setLastDoneReason(null);
     updateStatus('planning');
+    voice.beginTurn();
 
     const content = JSON.stringify({ text, attachments });
 
@@ -960,6 +1013,14 @@ export default function ChatPanel({
                       <span className="msg-text">{textContent}</span>
                     ) : (
                       <Markdown text={textContent ?? ''} projectId={projectId} />
+                    )}
+                    {!isUser && textContent?.trim() && (
+                      <div className={`msg-actions ${voice.speech.currentTag === `msg-${i}` ? 'msg-actions--active' : ''}`}>
+                        <SpeakButton
+                          active={voice.speech.currentTag === `msg-${i}`}
+                          onClick={() => voice.readAloud(textContent ?? '', `msg-${i}`)}
+                        />
+                      </div>
                     )}
                   </div>
                 </div>
@@ -1295,6 +1356,7 @@ export default function ChatPanel({
           isStreaming={loading}
           activeFile={activeFilePath}
           projectId={projectId}
+          voice={voice}
         />
       </div>
 
@@ -1384,6 +1446,22 @@ export default function ChatPanel({
         }
         .msg-text {
           white-space: pre-wrap;
+        }
+        .msg-actions {
+          display: flex;
+          margin-top: 2px;
+          opacity: 0;
+          transition: opacity var(--transition-fast);
+        }
+        .timeline-msg--assistant:hover .msg-actions,
+        .msg-actions:focus-within,
+        .msg-actions--active {
+          opacity: 1;
+        }
+        @media (hover: none) {
+          .msg-actions {
+            opacity: 1;
+          }
         }
         .msg-attachments {
           display: flex;

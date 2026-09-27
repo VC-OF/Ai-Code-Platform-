@@ -30,7 +30,7 @@ const SUPPORTED_KEYS: KeyConfig[] = [
     name: 'OpenAI API Key',
     envKey: 'OPENAI_API_KEY',
     placeholder: 'sk-proj-...',
-    description: 'Direct OpenAI access for GPT-4o, GPT-4o-mini, o1, and o3-mini.',
+    description: 'Direct OpenAI access for GPT-4o, GPT-4o-mini, o1, and o3-mini. Also enables natural OpenAI voices in voice mode.',
     docUrl: 'https://platform.openai.com/api-keys',
   },
   {
@@ -56,6 +56,22 @@ const SUPPORTED_KEYS: KeyConfig[] = [
     placeholder: 'sk-...',
     description: 'Direct official API for DeepSeek R1 reasoning & DeepSeek V3 chat.',
     docUrl: 'https://platform.deepseek.com/api_keys',
+  },
+  {
+    id: 'elevenlabs',
+    name: 'ElevenLabs API Key',
+    envKey: 'ELEVENLABS_API_KEY',
+    placeholder: 'sk_...',
+    description: 'Optional: lifelike ElevenLabs voices for voice mode (the agent speaking its progress and replies).',
+    docUrl: 'https://elevenlabs.io/app/settings/api-keys',
+  },
+  {
+    id: 'openai-tts',
+    name: 'OpenAI Voice Key',
+    envKey: 'OPENAI_TTS_API_KEY',
+    placeholder: 'sk-proj-...',
+    description: 'Optional: an OpenAI key used only for voice mode. Needed when OPENAI_API_KEY is for a custom endpoint (LLM_BASE_URL or OPENAI_API_BASE).',
+    docUrl: 'https://platform.openai.com/api-keys',
   },
 ];
 
