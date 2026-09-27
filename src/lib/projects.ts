@@ -188,19 +188,22 @@ export async function validateBuildModePath(rawPath: string): Promise<string> {
     throw new Error("Refusing to open a filesystem root — choose a specific project folder");
   }
 
+  // The bare home directory — subfolders are fine, but the root holds
+  // .ssh/.aws/browser profiles/etc. alongside everything else. Checked before
+  // the platform-directory rule: when the platform lives under the home
+  // directory (e.g. /home/runner/work/... on CI), home is also its ancestor,
+  // and this is the more specific message.
+  if (resolved === path.resolve(os.homedir())) {
+    throw new Error(
+      "Refusing to open your home directory root — choose a project folder inside it"
+    );
+  }
+
   // The platform's own directory (or an ancestor containing it) — opening
   // it would let the agent edit its own source, .env.local, and DB
   const cwd = path.resolve(process.cwd());
   if (resolved === cwd || cwd.startsWith(resolved + path.sep)) {
     throw new Error("Refusing to open the platform's own directory");
-  }
-
-  // The bare home directory — subfolders are fine, but the root holds
-  // .ssh/.aws/browser profiles/etc. alongside everything else
-  if (resolved === path.resolve(os.homedir())) {
-    throw new Error(
-      "Refusing to open your home directory root — choose a project folder inside it"
-    );
   }
 
   const lower = resolved.toLowerCase();
