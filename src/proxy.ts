@@ -45,13 +45,21 @@ function rateLimit(
 // Sized for a local single-page app that legitimately polls status
 // endpoints (preview every 2s, health every 15s) — the limits guard
 // against runaway loops and remote abuse, not normal UI behavior.
+//
+// `reads` gives GET/HEAD their own, larger bucket where the strict limit
+// exists for the writes (creating/deleting projects, starting LLM turns).
+// Every page load reads /api/projects several times, so with one shared
+// bucket ~10 reloads a minute locked the project list (429). Routes without
+// `reads` count every method against `limit` — /api/download (its GET builds
+// a zip) and /api/git (its GETs spawn git processes and create workspace
+// dirs, and GETs are reachable cross-origin).
 const ROUTE_LIMITS: Record<
   string,
-  { limit: number; windowMs: number }
+  { limit: number; windowMs: number; reads?: number }
 > = {
-  '/api/chat':        { limit: 20,  windowMs: 60_000  }, // starts LLM turns
+  '/api/chat':        { limit: 20,  windowMs: 60_000, reads: 300 }, // POST starts LLM turns
   '/api/files':       { limit: 300, windowMs: 60_000  },
-  '/api/projects':    { limit: 60,  windowMs: 60_000  },
+  '/api/projects':    { limit: 60,  windowMs: 60_000, reads: 300 },
   '/api/git':         { limit: 30,  windowMs: 60_000  },
   '/api/preview':     { limit: 240, windowMs: 60_000  }, // 2s status polling
   '/api/command':     { limit: 30,  windowMs: 60_000  },
@@ -186,11 +194,14 @@ export function proxy(req: NextRequest) {
   const routeKey = Object.keys(ROUTE_LIMITS).find(
     (r) => r !== 'default' && pathname.startsWith(r)
   );
-  const { limit, windowMs } =
-    ROUTE_LIMITS[routeKey ?? 'default'];
+  const route = ROUTE_LIMITS[routeKey ?? 'default'];
+  const isRead = req.method === 'GET' || req.method === 'HEAD';
+  const separateReads = isRead && route.reads !== undefined;
+  const limit = separateReads ? route.reads! : route.limit;
+  const { windowMs } = route;
 
   const { allowed, retryAfter } = rateLimit(
-    `${ip}:${routeKey ?? 'default'}`,
+    `${ip}:${routeKey ?? 'default'}${separateReads ? ':read' : ''}`,
     limit,
     windowMs
   );
