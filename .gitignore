@@ -55,3 +55,7 @@ workspaces/*/.next/
 .platform/*.db-shm
 .platform/*.db-wal
 .platform/*.migrated
+
+# Playwright output (uploaded as a CI artifact)
+/e2e/results/
+/e2e/screenshots/
