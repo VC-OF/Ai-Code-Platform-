@@ -7,8 +7,7 @@ on:
   workflow_dispatch:
 
 env:
-  REGISTRY:   ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  REGISTRY: ghcr.io
 
 jobs:
   build-push:
@@ -17,9 +16,22 @@ jobs:
     permissions:
       contents: read
       packages: write
+      security-events: write   # upload-sarif (Trivy results → code scanning)
 
     steps:
       - uses: actions/checkout@v4
+
+      # The repository is "Ai-Code-Platform-": lowercased that is
+      # "vc-of/ai-code-platform-", and an image name may not end in a
+      # separator ("invalid reference format"). Lowercase and trim trailing
+      # '-', '_' and '.' → ghcr.io/vc-of/ai-code-platform
+      - name: Image name
+        id: image
+        run: |
+          name="${GITHUB_REPOSITORY,,}"
+          name="$(printf '%s' "$name" | sed -E 's/[-_.]+$//')"
+          echo "ref=${REGISTRY}/${name}" >> "$GITHUB_OUTPUT"
+          echo "Image: ${REGISTRY}/${name}"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -35,13 +47,13 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ steps.image.outputs.ref }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=sha,prefix=sha-
+            type=sha,prefix=sha-,format=long
 
       - name: Build and push
         uses: docker/build-push-action@v5
@@ -58,9 +70,13 @@ jobs:
             VERSION=${{ github.ref_name }}
 
       - name: Scan for vulnerabilities
-        uses: aquasecurity/trivy-action@master
+        # Pinned: this step runs with a token that can push packages and
+        # write security events, so no floating @master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+          # Matches the type=sha,format=long tag above (the default short
+          # format produced sha-<7 chars>, so this ref never existed)
+          image-ref: ${{ steps.image.outputs.ref }}:sha-${{ github.sha }}
           format:    sarif
           output:    trivy-results.sarif
 
