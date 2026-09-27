@@ -16,6 +16,13 @@ export type AgentEventType =
   | 'usage'
   | 'mode_change';
 
+/**
+ * Stream marker (not an agent event): a subscriber gets it right after the
+ * events it was replayed, so clients can tell history from live events
+ * without comparing server timestamps with their own clock.
+ */
+export const REPLAY_DONE_EVENT = 'replay_done';
+
 export type AgentStatus = 'planning' | 'reading' | 'writing' | 'linting' | 'testing' | 'running' | 'waiting' | 'done' | 'error' | 'compacting';
 
 export type DoneReason = 'completed' | 'timeout' | 'max_steps' | 'user_cancelled' | 'error';

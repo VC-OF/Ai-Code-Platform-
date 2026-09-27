@@ -58,12 +58,22 @@ const ROUTE_LIMITS: Record<
   { limit: number; windowMs: number; reads?: number }
 > = {
   '/api/chat':        { limit: 20,  windowMs: 60_000, reads: 300 }, // POST starts LLM turns
+  // Sub-routes get their own buckets (the longest matching prefix wins):
+  // status and context are polled, and stop/steer/answer must still work
+  // when the turn bucket is spent
+  '/api/chat/status':  { limit: 240, windowMs: 60_000 }, // 2s polling
+  '/api/chat/context': { limit: 240, windowMs: 60_000 }, // refetched as the timeline grows
+  '/api/chat/cancel':  { limit: 60,  windowMs: 60_000 },
+  '/api/chat/queue':   { limit: 60,  windowMs: 60_000 },
+  '/api/chat/input':   { limit: 60,  windowMs: 60_000 },
+  '/api/chat/compact': { limit: 10,  windowMs: 60_000 }, // one LLM summary each
   '/api/files':       { limit: 300, windowMs: 60_000  },
   '/api/projects':    { limit: 60,  windowMs: 60_000, reads: 300 },
   '/api/git':         { limit: 30,  windowMs: 60_000  },
   '/api/preview':     { limit: 240, windowMs: 60_000  }, // 2s status polling
   '/api/command':     { limit: 30,  windowMs: 60_000  },
   '/api/download':    { limit: 5,   windowMs: 60_000  },
+  '/api/voice/tts':   { limit: 120, windowMs: 60_000  }, // paid TTS calls, one per spoken chunk
   default:            { limit: 300, windowMs: 60_000  },
 };
 
@@ -190,10 +200,10 @@ export function proxy(req: NextRequest) {
   // ── Rate limit ──
   const ip = clientKey(req);
 
-  // Find matching route limit
-  const routeKey = Object.keys(ROUTE_LIMITS).find(
-    (r) => r !== 'default' && pathname.startsWith(r)
-  );
+  // The most specific (longest) matching route prefix wins
+  const routeKey = Object.keys(ROUTE_LIMITS)
+    .filter((r) => r !== 'default' && pathname.startsWith(r))
+    .sort((a, b) => b.length - a.length)[0];
   const route = ROUTE_LIMITS[routeKey ?? 'default'];
   const isRead = req.method === 'GET' || req.method === 'HEAD';
   const separateReads = isRead && route.reads !== undefined;

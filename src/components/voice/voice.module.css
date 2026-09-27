@@ -1,0 +1,443 @@
+/* Voice mode: composer toggle, status bar, settings panel, speak buttons */
+
+.controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  margin-left: 2px;
+}
+
+.modeBtn {
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px 0 7px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.modeBtn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.modeBtnOn,
+.modeBtnOn:hover:not(:disabled) {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+}
+
+.iconBtn {
+  width: 24px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.iconBtn:hover,
+.iconBtnOn {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.modeBtn:focus-visible,
+.iconBtn:focus-visible,
+.barBtn:focus-visible,
+.dismiss:focus-visible,
+.speakBtn:focus-visible,
+.panel button:focus-visible,
+.panel select:focus-visible,
+.panel input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ── Status bar above the textarea ─────────────────────────────────────── */
+
+.statusBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 4px 6px 4px 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  min-width: 0;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--text-muted);
+}
+
+.dotListening {
+  background: var(--success);
+  animation: voice-pulse 1.4s ease-in-out infinite;
+}
+
+.dotSpeaking {
+  background: var(--accent);
+  animation: voice-pulse 0.8s ease-in-out infinite;
+}
+
+.dotThinking {
+  background: var(--info);
+  animation: voice-pulse 2s ease-in-out infinite;
+}
+
+.dotError {
+  background: var(--error);
+}
+
+.dotUnsupported {
+  background: var(--warning);
+}
+
+@keyframes voice-pulse {
+  50% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+}
+
+.phaseLabel {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.transcript {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.interim {
+  color: var(--text-primary);
+  font-style: italic;
+}
+
+.heardKind {
+  color: var(--text-muted);
+}
+
+.hint {
+  color: var(--text-muted);
+}
+
+.barBtn {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.barBtn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 6px 5px 8px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  border-radius: var(--radius-md);
+}
+
+.noticeError {
+  color: var(--error);
+  background: var(--error-dim);
+}
+
+.noticeWarning {
+  color: var(--warning);
+  background: var(--warning-dim);
+}
+
+.noticeText {
+  flex: 1;
+  min-width: 0;
+}
+
+.dismiss {
+  flex-shrink: 0;
+  padding: 0 4px;
+  font-size: 13px;
+  line-height: 1.2;
+  color: inherit;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  opacity: 0.8;
+}
+
+.dismiss:hover {
+  opacity: 1;
+}
+
+/* ── Settings panel ────────────────────────────────────────────────────── */
+
+.panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 25;
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 14px 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  color: var(--text-primary);
+  font-size: 12.5px;
+}
+
+.panel:focus {
+  outline: none;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.label {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.select,
+.input {
+  width: 100%;
+  min-width: 0;
+  padding: 5px 8px;
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-md);
+}
+
+.select:disabled {
+  opacity: 0.6;
+}
+
+.input {
+  font-family: var(--font-mono);
+}
+
+.input::placeholder {
+  font-family: var(--font-sans);
+  color: var(--text-muted);
+}
+
+.input[aria-invalid='true'] {
+  border-color: var(--error);
+}
+
+.rangeRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.range {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+
+.rangeValue {
+  width: 42px;
+  flex-shrink: 0;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.check input {
+  margin-top: 2px;
+  accent-color: var(--accent);
+}
+
+.fieldHint {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.fieldError {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--error);
+}
+
+.panelActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.primaryBtn,
+.secondaryBtn {
+  padding: 5px 12px;
+  font-size: 12.5px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.primaryBtn {
+  color: var(--text-on-accent);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+.primaryBtn:hover {
+  background: var(--accent-dim);
+}
+
+.secondaryBtn {
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-base);
+}
+
+.secondaryBtn:hover {
+  background: var(--bg-hover);
+}
+
+/* ── Read-aloud button on assistant messages ───────────────────────────── */
+
+.speakBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.speakBtn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.speakBtnOn,
+.speakBtnOn:hover {
+  color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+/*
+ * Phones (the mobile layout, below 768px): the space above the composer is
+ * too short for the popover, and the chat drawer clips whatever sticks out,
+ * which hid the panel's close button and first controls. The panel becomes a
+ * sheet along the bottom edge instead, sized from the space it has. Fixed
+ * positioning resolves against the viewport, or against the chat drawer
+ * (which is transformed); either way 100% is the visible height.
+ */
+@media (max-width: 767px) {
+  .panel {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    bottom: max(8px, env(safe-area-inset-bottom, 0px));
+    max-height: calc(100% - 16px);
+    box-shadow: var(--shadow-lg);
+    overscroll-behavior: contain;
+  }
+}
+
+@media (max-width: 420px) {
+  .modeLabel {
+    display: none;
+  }
+
+  .modeBtn {
+    padding: 0 6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dotListening,
+  .dotSpeaking,
+  .dotThinking {
+    animation: none;
+  }
+}

@@ -1,7 +1,7 @@
 import { runAgentLoop } from '@/lib/agentLoop';
 import { streamRegistry } from '@/lib/cancellation';
 import { workspaceLocks } from '@/lib/workspaceLock';
-import { EventEmitter, type AgentStatus } from '@/lib/events';
+import { EventEmitter, REPLAY_DONE_EVENT, type AgentStatus } from '@/lib/events';
 import { projectDb, messageDb, planDb } from '@/lib/db';
 import { getModel, LLMMessage, type LLMTool } from '@/lib/llmClient';
 import { composeSystemPrompt, type OutputStyle } from '@/lib/promptComposer';
@@ -89,6 +89,12 @@ class AgentManager {
           } catch (err) {
             console.error('Error replaying event to controller:', err);
           }
+        }
+        // Everything after this line is live (start() runs synchronously, so no event slips in between)
+        try {
+          controller.enqueue(new TextEncoder().encode(JSON.stringify({ type: REPLAY_DONE_EVENT }) + '\n'));
+        } catch (err) {
+          console.error('Error replaying event to controller:', err);
         }
       },
       cancel() {
