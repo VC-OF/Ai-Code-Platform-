@@ -53,14 +53,24 @@ function tone(st: Status | string | null): string {
   return s.toneMuted;
 }
 
+// The panel can remount (mobile/desktop layouts each render it), so the
+// selection and an unsent goal survive in sessionStorage
+const KEY = 'oc-upgrade-panel';
+function readSaved(): { selected: string | null; goal: string } {
+  try { return { selected: null, goal: '', ...JSON.parse(sessionStorage.getItem(KEY) ?? '{}') }; } catch { return { selected: null, goal: '' }; }
+}
+function save(v: { selected: string | null; goal: string }) {
+  try { sessionStorage.setItem(KEY, JSON.stringify(v)); } catch {}
+}
+
 const parseList = (v: string | null): string[] => { try { return v ? JSON.parse(v) : []; } catch { return []; } };
 
 export default function UpgradePanel({ onClose }: { onClose: () => void }) {
   const [list, setList] = useState<Upgrade[]>([]);
   const [base, setBase] = useState<{ commit: string; branch: string }>({ commit: '', branch: '' });
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(() => readSaved().selected);
   const [detail, setDetail] = useState<Detail | null>(null);
-  const [goal, setGoal] = useState('');
+  const [goal, setGoal] = useState(() => readSaved().goal);
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
   const [diff, setDiff] = useState<string | null>(null);
@@ -79,7 +89,10 @@ export default function UpgradePanel({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     fetch('/api/upgrade').then((x) => x.json()).then((r) => { if (r?.upgrades) { setList(r.upgrades); setBase(r.base); } }).catch(() => {});
+    const saved = readSaved().selected;
+    if (saved) fetch(`/api/upgrade?id=${encodeURIComponent(saved)}`).then((x) => x.json()).then((r) => { if (r?.upgrade) setDetail(r); else setSelected(null); }).catch(() => {});
   }, []);
+  useEffect(() => { save({ selected, goal }); }, [selected, goal]);
 
   const select = (id: string | null) => {
     setDiff(null); setConfirmPush(false); setConfirmDiscard(false); setError('');
@@ -108,7 +121,11 @@ export default function UpgradePanel({ onClose }: { onClose: () => void }) {
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || `Request failed (${r.status})`);
       await loadList();
-      if (j.upgrade?.id) { setSelected(j.upgrade.id); await loadDetail(j.upgrade.id); }
+      if (j.upgrade?.id) {
+        if (payload.action === 'start') setGoal('');
+        setSelected(j.upgrade.id);
+        await loadDetail(j.upgrade.id);
+      }
       return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -351,7 +368,8 @@ function DetailView(props: {
       <div className={s.actions}>
         {(d.changes.length > 0 || u.candidate_commit) && <button className={s.btn} onClick={props.onDiff}>View diff</button>}
         {u.status === 'analyzed' && <button className={`${s.btn} ${s.btnPrimary}`} disabled={pending} onClick={() => props.onAct({ action: 'develop', id: u.id })}>Approve plan &amp; develop</button>}
-        {(u.status === 'rejected' || u.status === 'inconclusive') && <button className={s.btn} disabled={pending} onClick={() => props.onAct({ action: 'develop', id: u.id })}>Develop again</button>}
+        {u.status === 'failed' && !u.analysis && <button className={`${s.btn} ${s.btnPrimary}`} disabled={pending} onClick={() => props.onAct({ action: 'analyze', id: u.id })}>Retry analysis</button>}
+        {(u.status === 'rejected' || u.status === 'inconclusive' || (u.status === 'failed' && !!u.analysis)) && <button className={s.btn} disabled={pending} onClick={() => props.onAct({ action: 'develop', id: u.id })}>Develop again</button>}
         {['ready', 'rejected', 'inconclusive'].includes(u.status) && <button className={s.btn} disabled={pending} onClick={() => props.onAct({ action: 'gate', id: u.id })}>Re-run gate</button>}
         {u.status === 'ready' && <button className={`${s.btn} ${s.btnPrimary}`} disabled={pending} onClick={() => props.onAct({ action: 'commit', id: u.id })}>Commit</button>}
         {u.status === 'committed' && !props.confirmPush && <button className={`${s.btn} ${s.btnPrimary}`} onClick={() => props.setConfirmPush(true)}>Push contribution</button>}

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { upgradeStore } from '@/lib/upgrade/store';
 import { git } from '@/lib/upgrade/worktree';
 import {
-  startUpgrade, developUpgrade, rerunGate, commitUpgrade, pushUpgrade, discardUpgrade,
+  startUpgrade, retryAnalysis, developUpgrade, rerunGate, commitUpgrade, pushUpgrade, discardUpgrade,
   upgradeLog, isBusy,
 } from '@/lib/upgrade/controller';
 
@@ -43,12 +43,13 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ upgrades: upgradeStore.list(), base: { commit: head, branch } });
 }
 
-/** POST { action: 'start', goal } | { action: 'develop'|'gate'|'commit'|'discard', id } | { action: 'push', id, branch, commit } */
+/** POST { action: 'start', goal } | { action: 'analyze'|'develop'|'gate'|'commit'|'discard', id } | { action: 'push', id, branch, commit } */
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   try {
     switch (body.action) {
       case 'start': return NextResponse.json({ upgrade: await startUpgrade(String(body.goal ?? '')) });
+      case 'analyze': return NextResponse.json({ upgrade: retryAnalysis(String(body.id)) });
       case 'develop': return NextResponse.json({ upgrade: developUpgrade(String(body.id)) });
       case 'gate': return NextResponse.json({ upgrade: rerunGate(String(body.id)) });
       case 'commit': return NextResponse.json({ upgrade: await commitUpgrade(String(body.id)) });

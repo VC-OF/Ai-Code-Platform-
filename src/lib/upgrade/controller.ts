@@ -223,26 +223,42 @@ export async function startUpgrade(goal: string): Promise<UpgradeRecord> {
   projectDb.create({ id, name: `Upgrade ${id}: ${g.slice(0, 60)}`, workspace: dir, description: `Upgrade OpenCode — ${g}`, kind: 'build' });
   const rec = upgradeStore.create({ id, goal: g, status: 'analyzing', base_commit: base, base_branch: baseBranch, candidate_branch: branch, worktree: dir, project_id: id });
   log(id, `Created worktree ${dir} on ${branch} from ${baseBranch} @ ${base.slice(0, 8)}`);
+  analyze(rec);
+  return rec;
+}
 
-  background(id, async () => {
-    log(id, 'Analyze: read-only investigation started');
-    const text = await runStage(rec, analyzePrompt(g), 'plan');
+function analyze(rec: UpgradeRecord) {
+  background(rec.id, async () => {
+    log(rec.id, 'Analyze: read-only investigation started');
+    const text = await runStage(rec, analyzePrompt(rec.goal), 'plan');
     const a = parseAnalysis(text);
-    if (!a.analysis) throw new Error('The Analyze stage produced no analysis.');
-    upgradeStore.update(id, {
-      status: 'analyzed', analysis: a.analysis, affected_areas: JSON.stringify(a.affected_areas),
+    if (!a.analysis) throw new Error('The Analyze stage produced no analysis (check the model/provider in the upgrade chat).');
+    upgradeStore.update(rec.id, {
+      status: 'analyzed', error: null, analysis: a.analysis, affected_areas: JSON.stringify(a.affected_areas),
       proposed_plan: JSON.stringify(a.proposed_plan), risk: a.risk,
     });
-    log(id, `Analyze: done (${a.proposed_plan.length} plan steps, risk ${a.risk})`);
+    log(rec.id, `Analyze: done (${a.proposed_plan.length} plan steps, risk ${a.risk})`);
   });
-  return rec;
+}
+
+/** Re-run the Analyze stage of an upgrade that failed before producing an analysis. */
+export function retryAnalysis(id: string): UpgradeRecord {
+  const rec = upgradeStore.get(id);
+  if (!rec) throw new Error('Upgrade not found');
+  if (busy.has(id)) throw new Error('This upgrade is already running a stage.');
+  if (rec.status !== 'failed' || rec.analysis) throw new Error('Only an upgrade that failed during Analyze can retry it.');
+  if (!fs.existsSync(rec.worktree)) throw new Error('The worktree no longer exists. Start a new upgrade.');
+  const updated = upgradeStore.update(id, { status: 'analyzing', error: null });
+  analyze(updated);
+  return updated;
 }
 
 export function developUpgrade(id: string): UpgradeRecord {
   const rec = upgradeStore.get(id);
   if (!rec) throw new Error('Upgrade not found');
   if (busy.has(id)) throw new Error('This upgrade is already running a stage.');
-  if (!['analyzed', 'rejected', 'inconclusive'].includes(rec.status)) throw new Error(`Cannot develop from status "${rec.status}".`);
+  const retryable = ['analyzed', 'rejected', 'inconclusive'].includes(rec.status) || (rec.status === 'failed' && !!rec.analysis);
+  if (!retryable) throw new Error(`Cannot develop from status "${rec.status}".`);
   const updated = upgradeStore.update(id, { status: 'developing', error: null, gate_result: null, gate_checks: null, gate_diff_hash: null });
 
   background(id, async () => {

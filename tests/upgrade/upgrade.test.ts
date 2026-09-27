@@ -160,6 +160,11 @@ describe('upgrade worktrees (real git)', () => {
     fs.writeFileSync(path.join(dir, 'a.ts'), 'export const a = 2;\nexport const b = 3;\n');
     fs.writeFileSync(path.join(dir, 'b.ts'), 'new\n');
     fs.rmSync(path.join(dir, 'tests', 'a.test.ts'));
+    // Platform-written workspace data is not part of the candidate
+    fs.mkdirSync(path.join(dir, '.knowledge'));
+    fs.writeFileSync(path.join(dir, '.knowledge', 'ki_seed.json'), '{}');
+    fs.mkdirSync(path.join(dir, '.open-code'));
+    fs.writeFileSync(path.join(dir, '.open-code', 'out.txt'), 'x');
     const { files, diff } = await candidateDiff(dir, base);
     expect(files).toEqual([
       { path: 'a.ts', status: 'M', additions: 2, deletions: 1 },

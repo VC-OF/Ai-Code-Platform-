@@ -80,9 +80,15 @@ export interface CandidateDiff {
   files: { path: string; status: string; additions: number; deletions: number }[];
 }
 
+/** Per-workspace data the platform itself writes into any project folder
+ *  (knowledge seeds, saved outputs, job logs) — never part of a candidate. */
+export const PLATFORM_DATA_DIRS = ['.knowledge', '.open-code'];
+
 /** Stage everything in the worktree (index only) and diff it against `base`. */
 export async function candidateDiff(dir: string, base: string): Promise<CandidateDiff> {
-  await git(dir, ['add', '-A']);
+  // Unstage platform data an earlier run may have staged, then stage the rest
+  await git(dir, ['reset', '-q', '--', ...PLATFORM_DATA_DIRS]).catch(() => {});
+  await git(dir, ['add', '-A', '--', '.', ...PLATFORM_DATA_DIRS.map((d) => `:(exclude)${d}`)]);
   const [diff, numstat, nameStatus] = await Promise.all([
     git(dir, ['diff', '--cached', base]),
     git(dir, ['diff', '--cached', '--numstat', base]),
