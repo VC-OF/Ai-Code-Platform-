@@ -55,3 +55,8 @@ workspaces/*/.next/
 .platform/*.db-shm
 .platform/*.db-wal
 .platform/*.migrated
+
+# Upgrade OpenCode → Discover: settings, cache and daily digests (local data)
+.platform/discover.json
+.platform/discover-cache.json
+.platform/discover-digests/

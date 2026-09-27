@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import DiscoverView from './DiscoverView';
 import s from './upgrade.module.css';
 
 type Status =
@@ -56,18 +57,32 @@ function tone(st: Status | string | null): string {
 // The panel can remount (mobile/desktop layouts each render it), so the
 // selection and an unsent goal survive in sessionStorage
 const KEY = 'oc-upgrade-panel';
-function readSaved(): { selected: string | null; goal: string } {
-  try { return { selected: null, goal: '', ...JSON.parse(sessionStorage.getItem(KEY) ?? '{}') }; } catch { return { selected: null, goal: '' }; }
+type Tab = 'upgrades' | 'discover';
+interface Saved { selected: string | null; goal: string; tab: Tab }
+function readSaved(): Saved {
+  const empty: Saved = { selected: null, goal: '', tab: 'upgrades' };
+  try { return { ...empty, ...JSON.parse(sessionStorage.getItem(KEY) ?? '{}') }; } catch { return empty; }
 }
-function save(v: { selected: string | null; goal: string }) {
+function save(v: Saved) {
   try { sessionStorage.setItem(KEY, JSON.stringify(v)); } catch {}
 }
+
+/** One-click goals for common OpenCode maintenance; the user edits them before starting. */
+const STARTERS: { label: string; goal: string }[] = [
+  { label: 'Fix failing CI', goal: 'Find why the failing CI checks on main fail (GitHub Actions logs, .github/workflows) and fix the cause so they pass.' },
+  { label: 'Raise test coverage', goal: 'Find the least-tested module under src/lib that the agent loop depends on and add focused tests for its untested behaviour.' },
+  { label: 'Speed up the agent loop', goal: 'Profile one agent turn (prompt building, context compaction, tool dispatch) and remove the largest avoidable latency, with a test that guards it.' },
+  { label: 'Add a tool', goal: 'Add a new agent tool: <describe it>. Register it in tools.ts with a zod schema, handle errors, and add tests.' },
+  { label: 'Improve an error message', goal: 'Find a confusing error a user can hit in <area> and make it say what went wrong and how to fix it, with a test.' },
+  { label: 'Update the docs', goal: 'Bring README.md and CLAUDE.md up to date with the current features (Upgrade OpenCode, Discover, MCP, plugins, scheduler).' },
+];
 
 const parseList = (v: string | null): string[] => { try { return v ? JSON.parse(v) : []; } catch { return []; } };
 
 export default function UpgradePanel({ onClose }: { onClose: () => void }) {
   const [list, setList] = useState<Upgrade[]>([]);
   const [base, setBase] = useState<{ commit: string; branch: string }>({ commit: '', branch: '' });
+  const [tab, setTab] = useState<Tab>(() => readSaved().tab);
   const [selected, setSelected] = useState<string | null>(() => readSaved().selected);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [goal, setGoal] = useState(() => readSaved().goal);
@@ -92,13 +107,42 @@ export default function UpgradePanel({ onClose }: { onClose: () => void }) {
     const saved = readSaved().selected;
     if (saved) fetch(`/api/upgrade?id=${encodeURIComponent(saved)}`).then((x) => x.json()).then((r) => { if (r?.upgrade) setDetail(r); else setSelected(null); }).catch(() => {});
   }, []);
-  useEffect(() => { save({ selected, goal }); }, [selected, goal]);
+  useEffect(() => { save({ selected, goal, tab }); }, [selected, goal, tab]);
 
   const select = (id: string | null) => {
     setDiff(null); setConfirmPush(false); setConfirmDiscard(false); setError('');
     setDetail(null);
     setSelected(id);
     if (id) void loadDetail(id);
+  };
+
+  // After a tab switch, move keyboard focus to where the user continues
+  const focusNext = useRef<'goal' | 'discover' | null>(null);
+  const setFocusTarget = (t: 'goal' | 'discover') => { focusNext.current = t; };
+  useEffect(() => {
+    const target = focusNext.current;
+    if (!target) return;
+    focusNext.current = null;
+    const el = document.getElementById(target === 'goal' ? 'upgrade-goal' : 'upgrade-tab-discover') as HTMLTextAreaElement | HTMLButtonElement | null;
+    el?.focus();
+    if (el instanceof HTMLTextAreaElement) el.setSelectionRange(el.value.length, el.value.length);
+  }, [tab, selected, goal]);
+
+  // Discover → "Use as upgrade goal": prefill the new-upgrade form
+  const applyGoal = (g: string) => {
+    select(null);
+    setGoal(g);
+    setTab('upgrades');
+    setFocusTarget('goal');
+  };
+
+  const tabKeys = (e: ReactKeyboardEvent) => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft' || e.key === 'Home' || e.key === 'End') {
+      e.preventDefault();
+      const next: Tab = e.key === 'Home' ? 'upgrades' : e.key === 'End' ? 'discover' : tab === 'upgrades' ? 'discover' : 'upgrades';
+      setTab(next);
+      document.getElementById(`upgrade-tab-${next}`)?.focus();
+    }
   };
 
   const live = !!detail && (detail.busy || ACTIVE.includes(detail.upgrade.status));
@@ -109,7 +153,13 @@ export default function UpgradePanel({ onClose }: { onClose: () => void }) {
   }, [selected, live, loadDetail, loadList]);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      // Escape in a filled text field clears/leaves the field, not the whole dialog
+      const t = e.target as HTMLElement | null;
+      if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) && (t as HTMLInputElement).value) return;
+      onClose();
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
@@ -158,7 +208,21 @@ export default function UpgradePanel({ onClose }: { onClose: () => void }) {
           <button className={s.iconBtn} onClick={onClose} aria-label="Close">✕</button>
         </header>
 
-        <div className={s.body}>
+        <div className={s.tabs} role="tablist" aria-label="Upgrade OpenCode sections" onKeyDown={tabKeys}>
+          <button role="tab" id="upgrade-tab-upgrades" aria-selected={tab === 'upgrades'} aria-controls="upgrade-panel-upgrades" tabIndex={tab === 'upgrades' ? 0 : -1}
+            className={`${s.tab} ${tab === 'upgrades' ? s.tabActive : ''}`} onClick={() => setTab('upgrades')}>Upgrades</button>
+          <button role="tab" id="upgrade-tab-discover" aria-selected={tab === 'discover'} aria-controls="upgrade-panel-discover" tabIndex={tab === 'discover' ? 0 : -1}
+            className={`${s.tab} ${tab === 'discover' ? s.tabActive : ''}`} onClick={() => setTab('discover')}
+            title="What's new in AI, research, new tools, dependency updates, and OpenCode's open issues and CI">Discover</button>
+        </div>
+
+        {/* Discover stays mounted so its view, filters and scroll survive a tab switch */}
+        <div id="upgrade-panel-discover" role="tabpanel" aria-labelledby="upgrade-tab-discover" className={s.discoverBody} hidden={tab !== 'discover'}>
+          <DiscoverView onUseGoal={applyGoal} />
+        </div>
+
+        {tab === 'upgrades' && (
+        <div id="upgrade-panel-upgrades" role="tabpanel" aria-labelledby="upgrade-tab-upgrades" className={s.body}>
           <aside className={s.history}>
             <button className={`${s.btn} ${selected === null ? s.btnPrimary : ''}`} onClick={() => select(null)}>New upgrade</button>
             <div className={s.histLabel}>Upgrade history</div>
@@ -182,6 +246,12 @@ export default function UpgradePanel({ onClose }: { onClose: () => void }) {
                 <label htmlFor="upgrade-goal" className={s.label}>What should OpenCode improve?</label>
                 <textarea id="upgrade-goal" className={s.textarea} rows={4} value={goal} onChange={(e) => setGoal(e.target.value)}
                   placeholder="Improve OpenCode's repository understanding and context selection" />
+                <div className={s.starters} role="group" aria-label="Starter goals (replace the goal above)">
+                  {STARTERS.map((st) => (
+                    <button key={st.label} type="button" className={s.starter} onClick={() => { setGoal(st.goal); setFocusTarget('goal'); }} title={st.goal}>{st.label}</button>
+                  ))}
+                  <button type="button" className={s.starter} onClick={() => { setTab('discover'); setFocusTarget('discover'); }} title="Ideas from AI news, research, new tools, dependency updates and OpenCode's issues">More ideas in Discover →</button>
+                </div>
                 <dl className={s.meta}>
                   <div><dt>Base</dt><dd className={s.mono}>{base.branch || '—'} @ {base.commit.slice(0, 7) || '—'}</dd></div>
                   <div><dt>Worktree</dt><dd className={s.mono}>.claude/worktrees/upgrade-{nextId}</dd></div>
@@ -207,6 +277,7 @@ export default function UpgradePanel({ onClose }: { onClose: () => void }) {
             )}
           </main>
         </div>
+        )}
       </div>
     </div>
   );
