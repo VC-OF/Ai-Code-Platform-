@@ -230,11 +230,38 @@ describe('echo detection', () => {
     expect(isLikelyEcho('what is happening', [], heard())).toBe(false);
   });
 
-  it('never treats commands and short replies as echo, even when they repeat the agent', () => {
-    expect(isLikelyEcho('do that', [said('Want me to do that?')], heard())).toBe(false);
-    expect(isLikelyEcho('yes', [said('yes')], heard())).toBe(false);
+  it('never treats "stop" or "be quiet" as echo, even when they repeat the agent', () => {
     expect(isLikelyEcho('stop', [said('Stop.', 200)], heard())).toBe(false);
     expect(isLikelyEcho('be quiet', [said('Be quiet.')], heard())).toBe(false);
+    expect(isLikelyEcho('stop talking', [said('Say stop talking to silence me.')], heard(500))).toBe(false);
+  });
+
+  it('does not let the agent answer its own question', () => {
+    const question = [said('Should I proceed? Yes or no.')];
+    expect(isLikelyEcho('yes', question, heard(500))).toBe(true);
+    expect(isLikelyEcho('proceed', question, heard(500))).toBe(true);
+    expect(isLikelyEcho('Yes or no', question, heard(500))).toBe(true);
+    expect(isLikelyEcho('do that', [said('Want me to do that?')], heard())).toBe(true);
+    expect(isLikelyEcho('approve', [said('Option 1: Approve. Option 2: Reject.', 300)], heard(200))).toBe(true);
+    expect(isLikelyEcho('continue', [said('Say "continue" to keep going.', 1_000)], heard(500))).toBe(true);
+  });
+
+  it("lets the user's own replies through", () => {
+    const question = [said('Should I proceed? Yes or no.')];
+    // Words the agent did not say, or not in that order
+    expect(isLikelyEcho('no', [said('Should I proceed?')], heard(500))).toBe(false);
+    expect(isLikelyEcho('yes go ahead', [said('Should I go ahead? Yes or no.')], heard(500))).toBe(false);
+    expect(isLikelyEcho('yes proceed', question, heard(500))).toBe(false);
+    // After the echo window, even the agent's exact words are the user's
+    expect(isLikelyEcho('yes', [said('Should I proceed? Yes or no.', 5_000)], heard(1_000))).toBe(false);
+  });
+
+  it('lets a prompt reply through once the voice has stopped (the agent asks for these words)', () => {
+    // The voice ended 2 s ago; the user started answering 1.5 s after it ended
+    expect(isLikelyEcho('continue', [said('I hit the step limit. Say "continue" to keep going.', 2_000)], heard(500))).toBe(false);
+    expect(isLikelyEcho('yes', [said('Should I proceed? Yes or no.', 1_700)], heard(500))).toBe(false);
+    // …while the same word starting during playback is still the echo
+    expect(isLikelyEcho('yes', [said('Should I proceed? Yes or no.')], heard(500))).toBe(true);
   });
 
   it("catches the narrator's one-word lines coming back, whatever their length", () => {

@@ -251,16 +251,25 @@ export function isSilenceCommand(text: string): boolean {
 }
 
 /**
- * A command or a bare reply ("stop", "be quiet", "yes", "do that"): what the
- * user says to the agent, so it is never discarded as the agent's own echo.
+ * "Stop" or "be quiet": obeying one by mistake only cuts the agent short, so
+ * it is never discarded as the agent's own echo.
  */
-export function isCommandOrReply(text: string): boolean {
+export function isFailSafeCommand(text: string): boolean {
   const n = normalizeUtterance(text);
   if (!n) return false;
   const core = coreCommand(n);
-  return [n, core].some(
-    (t) => STOP_PHRASES.has(t) || SILENCE_PHRASES.has(t) || AFFIRMATIVE.has(t) || NEGATIVE.has(t) || BARE_REPLIES.has(t)
-  );
+  return [n, core].some((t) => STOP_PHRASES.has(t) || SILENCE_PHRASES.has(t));
+}
+
+/**
+ * A bare reply ("yes", "no", "proceed", "do that"): it can answer a pending
+ * question or approve a plan, so hearing it back from the speakers matters.
+ */
+export function isBareReply(text: string): boolean {
+  const n = normalizeUtterance(text);
+  if (!n) return false;
+  const core = coreCommand(n);
+  return [n, core].some((t) => AFFIRMATIVE.has(t) || NEGATIVE.has(t) || BARE_REPLIES.has(t));
 }
 
 /** Decide what a final speech transcript should do. */

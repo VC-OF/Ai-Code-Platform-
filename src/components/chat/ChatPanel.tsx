@@ -24,6 +24,7 @@ import {
   STATUSLINE_STORAGE_KEY,
   type SlashContext,
 } from './slashHandlers';
+import { REPLAY_DONE_EVENT } from '@/lib/events';
 import { useVoiceConversation, type SteerOutcome } from '../voice/useVoiceConversation';
 import SpeakButton from '../voice/SpeakButton';
 
@@ -549,6 +550,8 @@ export default function ChatPanel({
         message: err instanceof Error ? err.message : String(err),
         ts:      Date.now(),
       };
+      // Raised here, not replayed: a reconnect that broke off before its history ended still says so
+      voice.narrate({ type: REPLAY_DONE_EVENT });
       voice.narrate(errorEvent);
       setTimeline((t) => [...t, errorEvent]);
     } finally {

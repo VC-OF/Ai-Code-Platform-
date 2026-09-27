@@ -126,6 +126,8 @@ export default function ApiKeyModal({ onClose }: ApiKeyModalProps) {
           [envKey]: `${rawVal.slice(0, 3)}••••••••${rawVal.slice(-4)}`,
         }));
         setKeys((prev) => ({ ...prev, [envKey]: '' }));
+        // Let features that depend on keys (e.g. server voices) refresh now
+        window.dispatchEvent(new CustomEvent('oc-settings-changed', { detail: { key: envKey } }));
         setTimeout(() => {
           setSavedSuccess((prev) => ({ ...prev, [envKey]: false }));
         }, 2500);
@@ -154,6 +156,7 @@ export default function ApiKeyModal({ onClose }: ApiKeyModalProps) {
           delete next[envKey];
           return next;
         });
+        window.dispatchEvent(new CustomEvent('oc-settings-changed', { detail: { key: envKey } }));
       }
     } catch (err) {
       alert(`Error deleting: ${String(err)}`);

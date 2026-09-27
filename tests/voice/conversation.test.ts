@@ -118,6 +118,32 @@ describe('ConversationController: echo of the agent itself (barge-in on)', () =>
     controller.handleFinal('add tests for the parser');
     expect(calls.steers).toEqual(['add tests for the parser']);
   });
+
+  it('does not answer its own question with the "yes" it just said', () => {
+    const question = 'Should I proceed? Yes or no.';
+    const { controller, speech, calls } = setup({ bargeIn: true, running: true, pendingQuestion: { question } });
+    speech.records = [{ text: question, start: Date.now(), end: Date.now() + 2_000 }];
+    advance(1_500);
+    controller.handleInterim('yes');
+    advance(300);
+    controller.handleFinal('yes');
+    expect(calls.answers).toEqual([]);
+    expect(calls.heard).toEqual([]);
+    // The user answering once the voice has died away is heard
+    advance(4_000);
+    controller.handleInterim('yes');
+    controller.handleFinal('yes');
+    expect(calls.answers).toEqual(['yes']);
+  });
+
+  it('still obeys "stop" even when the agent just said it', async () => {
+    const { controller, speech, calls } = setup({ bargeIn: true, running: true });
+    speech.records = [{ text: 'Say stop to cancel.', start: Date.now(), end: null }];
+    advance(500);
+    controller.handleFinal('stop');
+    await flush();
+    expect(calls.stops).toBe(1);
+  });
 });
 
 describe('ConversationController: be quiet and stop', () => {
@@ -262,6 +288,17 @@ describe('ConversationController: questions and turns', () => {
     const c = setup({ running: true });
     c.controller.narrate({ type: 'user_input_request', question: 'Which port?' }, narrationLevel(false, { level: 'replies', readReplies: true }));
     expect(c.speech.said).toEqual([{ text: 'Which port?', priority: 'high' }]);
+  });
+
+  it('stays quiet through a reconnect replay, then narrates live events', () => {
+    const c = setup({ running: true });
+    c.controller.beginTurn({ replay: true });
+    // Server timestamps say nothing about the client's clock
+    c.controller.narrate({ type: 'user_input_request', question: 'Old question?', ts: Date.now() + 60_000 }, 'everything');
+    // The marker counts even while nothing is being narrated
+    c.controller.narrate({ type: 'replay_done' }, null);
+    c.controller.narrate({ type: 'user_input_request', question: 'New question?', ts: Date.now() - 60_000 }, 'everything');
+    expect(c.said()).toEqual(['New question?']);
   });
 
   it('keeps only the newest progress line when releasing held speech', () => {

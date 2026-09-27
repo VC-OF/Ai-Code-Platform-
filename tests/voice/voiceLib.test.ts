@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { enqueueSpeech, nextSpeech, MAX_QUEUE, type QueuedSpeech, type SpeechPriority } from '@/lib/voice/speechQueue';
 import {
   DEFAULT_VOICE_SETTINGS,
+  missingVoiceReason,
+  parseVoiceIdInput,
   parseVoiceSettings,
   pickDefaultVoice,
   resolveProviderVoice,
+  serverVoicePicker,
   sortBrowserVoices,
 } from '@/lib/voice/settings';
 import {
@@ -162,6 +165,51 @@ describe('voice settings', () => {
     expect(resolveProviderVoice({ ...base, engine: 'elevenlabs', elevenlabsVoice: 'v2' }, providers)).toBe('v2');
     expect(resolveProviderVoice({ ...base, engine: 'elevenlabs', elevenlabsVoice: 'gone' }, providers)).toBe('v1');
     expect(resolveProviderVoice({ ...base, engine: 'elevenlabs', elevenlabsVoice: '' }, null)).toBe('');
+  });
+
+  describe('server voice picker', () => {
+    const base = { ...DEFAULT_VOICE_SETTINGS, engine: 'elevenlabs' as const };
+    const withElevenLabs = (info: Partial<VoiceProviderInfo>): VoiceProviderInfo[] => [
+      { id: 'elevenlabs', label: 'ElevenLabs', available: true, voices: [], ...info },
+    ];
+    const listError = 'Could not list voices. ElevenLabs rejected the API key (HTTP 401).';
+
+    it('lists voices when there are some, and falls back to typing a voice ID when there are none', () => {
+      expect(serverVoicePicker(base, withElevenLabs({ voices: [{ id: 'v1', label: 'One' }] }), null)).toEqual({
+        kind: 'list',
+        voices: [{ id: 'v1', label: 'One' }],
+      });
+      expect(serverVoicePicker(base, withElevenLabs({ error: listError }), null)).toEqual({ kind: 'manual' });
+      expect(serverVoicePicker(base, withElevenLabs({}), null)).toEqual({ kind: 'manual' });
+      expect(serverVoicePicker(base, null, 'Could not list voices (HTTP 500).')).toEqual({ kind: 'manual' });
+      expect(serverVoicePicker(base, null, null)).toEqual({ kind: 'loading' });
+      expect(serverVoicePicker(base, withElevenLabs({ available: false }), null)).toEqual({ kind: 'no-key' });
+      // OpenAI's voices are known without asking
+      expect(serverVoicePicker({ ...base, engine: 'openai' }, null, 'Could not list voices (HTTP 500).').kind).toBe('list');
+    });
+
+    it('accepts only valid typed voice IDs', () => {
+      expect(parseVoiceIdInput('  21m00Tcm4TlvDq8ikWAM ')).toBe('21m00Tcm4TlvDq8ikWAM');
+      expect(parseVoiceIdInput('')).toBe('');
+      expect(parseVoiceIdInput('not a voice/id')).toBeNull();
+    });
+
+    it('explains a missing voice by its cause, not with "pick a voice"', () => {
+      const hint = 'Add ELEVENLABS_API_KEY in Settings → API keys to use ElevenLabs voices.';
+      expect(missingVoiceReason(base, withElevenLabs({ available: false, hint }), null)).toBe(hint);
+      expect(missingVoiceReason(base, withElevenLabs({ error: listError }), null)).toBe(
+        `${listError} To use ElevenLabs anyway, enter a voice ID in voice settings.`
+      );
+      expect(missingVoiceReason(base, null, 'Could not list voices (HTTP 500).')).toBe(
+        'Could not list voices (HTTP 500). To use ElevenLabs anyway, enter a voice ID in voice settings.'
+      );
+      expect(missingVoiceReason(base, withElevenLabs({}), null)).toContain('ElevenLabs did not list any voices.');
+      expect(missingVoiceReason(base, null, null)).toBe('ElevenLabs voices are still loading.');
+      // A voice to use: nothing to explain
+      expect(missingVoiceReason({ ...base, elevenlabsVoice: 'typed_id' }, withElevenLabs({ error: listError }), null)).toBeNull();
+      expect(missingVoiceReason(base, withElevenLabs({ voices: [{ id: 'v1', label: 'One' }] }), null)).toBeNull();
+      expect(missingVoiceReason({ ...base, engine: 'browser' }, null, null)).toBeNull();
+    });
   });
 });
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SpeechEngine, type SpeechEngineConfig } from '@/components/voice/speechEngine';
+import { NO_BROWSER_SPEECH_MESSAGE, SpeechEngine, type SpeechEngineConfig } from '@/components/voice/speechEngine';
 
 class FakeUtterance {
   voice: unknown = null;
@@ -217,5 +217,63 @@ describe('SpeechEngine', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(synth.spoken.map((u) => u.text)).toEqual(['Hello.']);
     expect(errors).toEqual(['Pick a voice for ElevenLabs in voice settings. Using the browser voice for now.']);
+  });
+
+  it('says why there is no server voice instead of asking to pick one', () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const missingVoice = 'Add ELEVENLABS_API_KEY in Settings → API keys to use ElevenLabs voices.';
+    const { engine, errors } = setup({ ...openaiConfig, engine: 'elevenlabs', voice: '', missingVoice });
+    engine.speak('Hello.');
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(errors).toEqual([`${missingVoice} Using the browser voice for now.`]);
+  });
+
+  it('tries a blocked server voice again once unblocked (a key was added)', async () => {
+    let status = 400;
+    const fetchSpy = vi.fn(async () =>
+      status === 200
+        ? new Response(new Uint8Array([1]), { status: 200, headers: { 'Content-Type': 'audio/mpeg' } })
+        : Response.json({ error: 'Add OPENAI_API_KEY in Settings → API keys to use OpenAI voices.' }, { status })
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+    const { engine, synth, states } = setup(openaiConfig);
+    engine.speak('One.');
+    await vi.waitFor(() => expect(synth.spoken).toHaveLength(1));
+    await vi.waitFor(() => expect(states.at(-1)?.speaking).toBe(false));
+    engine.speak('Two.');
+    await vi.waitFor(() => expect(synth.spoken).toHaveLength(2));
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(states.at(-1)?.speaking).toBe(false));
+
+    status = 200;
+    engine.unblock();
+    engine.speak('Three.');
+    await vi.waitFor(() => expect(FakeAudio.played).toHaveLength(1));
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(synth.spoken).toHaveLength(2);
+  });
+
+  it('reports that the browser cannot speak instead of doing nothing', () => {
+    vi.stubGlobal('window', {});
+    const errors: string[] = [];
+    const engine = new SpeechEngine(browserConfig, { onSpeakingChange: () => {}, onError: (message) => errors.push(message) });
+    engine.speak('Read this reply.', { tag: 'msg-1' });
+    expect(errors).toEqual([NO_BROWSER_SPEECH_MESSAGE]);
+  });
+
+  it('does not promise the browser voice as a fallback when there is none', async () => {
+    vi.stubGlobal('window', {});
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'OpenAI rejected the API key (HTTP 401).', code: 'auth' }, { status: 502 })));
+    const errors: string[] = [];
+    const engine = new SpeechEngine(openaiConfig, { onSpeakingChange: () => {}, onError: (message) => errors.push(message) });
+    engine.speak('One.');
+    await vi.waitFor(() => expect(errors).toHaveLength(1));
+    expect(errors[0]).toBe('OpenAI rejected the API key (HTTP 401). This browser cannot read text aloud itself, so nothing was played.');
+    // Blocked now: every later utterance would be silent, so it says so again
+    await vi.waitFor(() => expect(engine.currentText()).toBeNull());
+    engine.speak('Two.');
+    expect(errors).toHaveLength(2);
+    expect(errors[1]).toBe(errors[0]);
   });
 });

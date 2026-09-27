@@ -3,6 +3,7 @@
 // talk over the user. Framework-free: useVoiceConversation wires it to React
 // state, the speech engine and ChatPanel's actions.
 
+import { REPLAY_DONE_EVENT } from '@/lib/events';
 import { Narrator, type NarrationEvent, type NarrationLevel, type Utterance } from './narration';
 import { classifyUtterance, type UtteranceIntent } from './intents';
 import { isBargeIn, isLikelyEcho, type SpokenRecord } from './echo';
@@ -77,16 +78,21 @@ export class ConversationController {
   narrate(event: NarrationEvent, level: NarrationLevel | null, now = Date.now()): void {
     if (event.type === 'done') this.turnDone = true;
     if (event.type === 'text_done') this.expectsReply = /\?\s*$/.test(String(event.content ?? '').trim());
+    // Seen even while nothing is spoken, so turning voice on mid-run narrates live events
+    if (event.type === REPLAY_DONE_EVENT) this.narrator.setReplaying(false);
     if (!level) return;
     this.narrator.setLevel(level);
     this.say(this.narrator.handle(event, now), now);
   }
 
-  /** A stream starts; `replay` skips the history a reconnect replays. */
-  beginTurn(opts: { replay?: boolean } = {}, now = Date.now()): void {
+  /**
+   * A stream starts; with `replay` (reattaching to a run) nothing is spoken
+   * until the server marks the end of the history it replays.
+   */
+  beginTurn(opts: { replay?: boolean } = {}): void {
     this.turnDone = false;
     this.narrator.reset();
-    this.narrator.setIgnoreBefore(opts.replay ? now - 2_000 : 0);
+    this.narrator.setReplaying(!!opts.replay);
   }
 
   /** Voice mode turned off: forget held speech and the user's talking state. */

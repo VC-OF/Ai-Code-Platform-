@@ -29,29 +29,47 @@ const HEARD_LABEL: Record<Exclude<HeardUtterance['kind'], 'ignore'>, string> = {
   prompt: 'New request',
 };
 
+const UNSUPPORTED_MESSAGE = 'Voice input needs Chrome or Edge. Replies are still read aloud.';
+const MIC_UNAVAILABLE_MESSAGE = 'The microphone is not available.';
+
 function hintFor(voice: VoiceConversation): string {
   switch (voice.phase) {
     case 'speaking':
       return voice.settings.bargeIn ? 'Talk to interrupt.' : 'The mic reopens when I finish.';
     case 'thinking':
       return 'Working. Talk to steer, or say "stop".';
-    case 'unsupported':
-      return 'Voice input needs Chrome or Edge. Replies are still read aloud.';
-    case 'error':
-      return voice.listening.error ?? 'The microphone is not available.';
     default:
       return 'Say what to build, or ask a question.';
   }
 }
 
-/** Live voice-mode state above the composer: phase, what was heard, errors. */
+/** A failed read-aloud or narration: shown with or without voice mode. */
+function SpeechError({ speech }: { speech: VoiceConversation['speech'] }) {
+  if (!speech.error) return null;
+  return (
+    <div className={`${s.notice} ${s.noticeError}`} role="alert">
+      <span className={s.noticeText}>{speech.error}</span>
+      <button type="button" className={s.dismiss} onClick={speech.clearError} aria-label="Dismiss voice error">
+        ×
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Live voice-mode state above the composer: phase, what was heard, errors.
+ * With voice mode off it still reports read-aloud errors ("Listen", "read
+ * replies"), which would otherwise fail silently.
+ */
 export default function VoiceStatusBar({ voice }: { voice: VoiceConversation }) {
-  if (!voice.active) return null;
   const { phase, heard, speech, listening } = voice;
+  if (!voice.active) return <SpeechError speech={speech} />;
   const interim = listening.interim;
-  const showHeard = !interim && heard && heard.kind !== 'ignore';
+  // Why the microphone is not listening gets its own wrapping, announced row
+  const micDown = phase === 'error' || phase === 'unsupported';
+  const showHeard = !micDown && !interim && heard && heard.kind !== 'ignore';
   // Recoverable recognizer notices ("Retrying…") while the mic is still open
-  const micNotice = phase !== 'error' && listening.error ? listening.error : null;
+  const micNotice = !micDown && listening.error ? listening.error : null;
 
   return (
     <>
@@ -60,8 +78,8 @@ export default function VoiceStatusBar({ voice }: { voice: VoiceConversation }) 
         <span className={s.phaseLabel} aria-live="polite">
           {PHASE_LABEL[phase]}
         </span>
-        <span className={s.transcript} title={interim || heard?.text || undefined}>
-          {interim ? (
+        <span className={s.transcript} title={interim || (showHeard ? heard.text : undefined)}>
+          {micDown ? null : interim ? (
             <span className={s.interim}>{interim}</span>
           ) : showHeard ? (
             <>
@@ -78,6 +96,16 @@ export default function VoiceStatusBar({ voice }: { voice: VoiceConversation }) 
           </button>
         )}
       </div>
+      {phase === 'error' && (
+        <div className={`${s.notice} ${s.noticeError}`} role="alert">
+          <span className={s.noticeText}>{listening.error ?? MIC_UNAVAILABLE_MESSAGE}</span>
+        </div>
+      )}
+      {phase === 'unsupported' && (
+        <div className={`${s.notice} ${s.noticeWarning}`} role="status">
+          <span className={s.noticeText}>{UNSUPPORTED_MESSAGE}</span>
+        </div>
+      )}
       {micNotice && (
         <div className={`${s.notice} ${s.noticeWarning}`} role="status">
           <span className={s.noticeText}>{micNotice}</span>
@@ -91,14 +119,7 @@ export default function VoiceStatusBar({ voice }: { voice: VoiceConversation }) 
           </button>
         </div>
       )}
-      {speech.error && (
-        <div className={`${s.notice} ${s.noticeError}`} role="alert">
-          <span className={s.noticeText}>{speech.error}</span>
-          <button type="button" className={s.dismiss} onClick={speech.clearError} aria-label="Dismiss voice error">
-            ×
-          </button>
-        </div>
-      )}
+      <SpeechError speech={speech} />
     </>
   );
 }

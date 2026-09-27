@@ -32,11 +32,11 @@ export function useSpeech(config: SpeechEngineConfig) {
   const [browserVoices, setBrowserVoices] = useState<BrowserVoiceInfo[]>([]);
   const browserSupported = useSyncExternalStore(subscribeNothing, browserSpeechSupported, () => false);
 
-  const { engine, voice, browserVoice, rate, pitch } = config;
+  const { engine, voice, browserVoice, rate, pitch, missingVoice = null } = config;
 
   useEffect(() => {
     const instance = new SpeechEngine(
-      { engine, voice, browserVoice, rate, pitch },
+      { engine, voice, browserVoice, rate, pitch, missingVoice },
       {
         onSpeakingChange: (isSpeaking, tag) => {
           setSpeaking(isSpeaking);
@@ -55,8 +55,8 @@ export function useSpeech(config: SpeechEngineConfig) {
   }, []);
 
   useEffect(() => {
-    engineRef.current?.setConfig({ engine, voice, browserVoice, rate, pitch });
-  }, [engine, voice, browserVoice, rate, pitch]);
+    engineRef.current?.setConfig({ engine, voice, browserVoice, rate, pitch, missingVoice });
+  }, [engine, voice, browserVoice, rate, pitch, missingVoice]);
 
   useEffect(() => {
     if (!browserSpeechSupported()) return;
@@ -82,6 +82,10 @@ export function useSpeech(config: SpeechEngineConfig) {
   }, []);
 
   const clearError = useCallback(() => setError(null), []);
+  /** Try a server voice that failed with a config error again (e.g. after a key was added). */
+  const unblockServer = useCallback(() => {
+    engineRef.current?.unblock();
+  }, []);
   const recentSpoken = useCallback(() => engineRef.current?.recentSpoken() ?? [], []);
   const currentText = useCallback(() => engineRef.current?.currentText() ?? null, []);
 
@@ -92,6 +96,7 @@ export function useSpeech(config: SpeechEngineConfig) {
     currentTag,
     error,
     clearError,
+    unblockServer,
     browserSupported,
     browserVoices,
     recentSpoken,

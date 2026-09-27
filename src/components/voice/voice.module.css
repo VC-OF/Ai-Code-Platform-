@@ -264,7 +264,8 @@
   color: var(--text-muted);
 }
 
-.select {
+.select,
+.input {
   width: 100%;
   min-width: 0;
   padding: 5px 8px;
@@ -278,6 +279,19 @@
 
 .select:disabled {
   opacity: 0.6;
+}
+
+.input {
+  font-family: var(--font-mono);
+}
+
+.input::placeholder {
+  font-family: var(--font-sans);
+  color: var(--text-muted);
+}
+
+.input[aria-invalid='true'] {
+  border-color: var(--error);
 }
 
 .rangeRow {
@@ -388,6 +402,26 @@
   color: var(--accent);
   border-color: var(--accent-border);
   background: var(--accent-soft);
+}
+
+/*
+ * Phones (the mobile layout, below 768px): the space above the composer is
+ * too short for the popover, and the chat drawer clips whatever sticks out,
+ * which hid the panel's close button and first controls. The panel becomes a
+ * sheet along the bottom edge instead, sized from the space it has. Fixed
+ * positioning resolves against the viewport, or against the chat drawer
+ * (which is transformed); either way 100% is the visible height.
+ */
+@media (max-width: 767px) {
+  .panel {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    bottom: max(8px, env(safe-area-inset-bottom, 0px));
+    max-height: calc(100% - 16px);
+    box-shadow: var(--shadow-lg);
+    overscroll-behavior: contain;
+  }
 }
 
 @media (max-width: 420px) {

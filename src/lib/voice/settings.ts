@@ -2,7 +2,17 @@
 // a natural-sounding default browser voice. Pure except the two storage helpers.
 
 import { isNarrationLevel, type NarrationLevel } from './narration';
-import { DEFAULT_OPENAI_VOICE, VOICE_ID_RE, type TtsProviderId, type VoiceProviderInfo } from './providers';
+import {
+  DEFAULT_OPENAI_VOICE,
+  OPENAI_VOICES,
+  PROVIDER_LABELS,
+  VOICE_ID_RE,
+  isServerProvider,
+  missingKeyMessage,
+  type TtsProviderId,
+  type VoiceOption,
+  type VoiceProviderInfo,
+} from './providers';
 
 export interface VoiceSettings {
   engine: TtsProviderId;
@@ -143,4 +153,71 @@ export function resolveProviderVoice(settings: VoiceSettings, providers: readonl
     return list[0]?.id ?? '';
   }
   return '';
+}
+
+/** A typed provider voice ID: trimmed, '' to clear it, null when it is not a valid ID. */
+export function parseVoiceIdInput(text: string): string | null {
+  const id = text.trim();
+  return id === '' || VOICE_ID_RE.test(id) ? id : null;
+}
+
+/** How the settings panel offers a server engine's voices. */
+export type ServerVoicePicker =
+  /** Choose from the provider's voices */
+  | { kind: 'list'; voices: VoiceOption[] }
+  /** The key is there (or unknown) but no voices were listed: type a voice ID */
+  | { kind: 'manual' }
+  /** The voice list is still being fetched */
+  | { kind: 'loading' }
+  /** No API key: there is nothing to pick until one is added */
+  | { kind: 'no-key' };
+
+/**
+ * OpenAI's voices are known in advance. ElevenLabs lists the account's
+ * voices; when that list could not be fetched, or is empty, the user can
+ * still enter a voice ID (a key may be allowed to speak but not to list).
+ */
+export function serverVoicePicker(
+  settings: VoiceSettings,
+  providers: readonly VoiceProviderInfo[] | null,
+  providersError: string | null
+): ServerVoicePicker {
+  const provider = providers?.find((p) => p.id === settings.engine);
+  const listed = provider?.voices ?? [];
+  if (settings.engine === 'openai') return { kind: 'list', voices: listed.length ? listed : OPENAI_VOICES };
+  if (settings.engine !== 'elevenlabs') return { kind: 'list', voices: [] };
+  if (listed.length) return { kind: 'list', voices: listed };
+  if (provider && !provider.available) return { kind: 'no-key' };
+  if (!providers && !providersError) return { kind: 'loading' };
+  return { kind: 'manual' };
+}
+
+/**
+ * Why a server engine has no voice to request (resolveProviderVoice gave
+ * ''), in words the user can act on: the missing key, the voice list that
+ * could not be fetched, or voices that are still loading. Null when there
+ * is a voice.
+ */
+export function missingVoiceReason(
+  settings: VoiceSettings,
+  providers: readonly VoiceProviderInfo[] | null,
+  providersError: string | null
+): string | null {
+  const engine = settings.engine;
+  if (!isServerProvider(engine) || resolveProviderVoice(settings, providers)) return null;
+  const label = PROVIDER_LABELS[engine];
+  const provider = providers?.find((p) => p.id === engine);
+  const picker = serverVoicePicker(settings, providers, providersError);
+  switch (picker.kind) {
+    case 'no-key':
+      return provider?.hint ?? missingKeyMessage(engine);
+    case 'loading':
+      return `${label} voices are still loading.`;
+    case 'manual': {
+      const why = provider?.error ?? providersError ?? `${label} did not list any voices.`;
+      return `${why} To use ${label} anyway, enter a voice ID in voice settings.`;
+    }
+    case 'list':
+      return `Pick a voice for ${label} in voice settings.`;
+  }
 }

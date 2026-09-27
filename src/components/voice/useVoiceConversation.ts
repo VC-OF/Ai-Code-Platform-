@@ -10,7 +10,7 @@ import {
   type SteerOutcome,
 } from '@/lib/voice/conversation';
 import { toSpeakable } from '@/lib/voice/speechText';
-import { resolveProviderVoice } from '@/lib/voice/settings';
+import { missingVoiceReason, resolveProviderVoice } from '@/lib/voice/settings';
 import type { VoiceProviderInfo } from '@/lib/voice/providers';
 import { useSpeech } from './useSpeech';
 import { useListening } from './useListening';
@@ -59,6 +59,7 @@ export function useVoiceConversation(options: VoiceConversationOptions) {
     browserVoice: settings.browserVoice,
     rate: settings.rate,
     pitch: settings.pitch,
+    missingVoice: missingVoiceReason(settings, providers, providersError),
   });
 
   const latest = useRef({ options, active, settings, speech });
@@ -104,9 +105,11 @@ export function useVoiceConversation(options: VoiceConversationOptions) {
         if (!res.ok || !Array.isArray(data.providers)) throw new Error(data.error || `HTTP ${res.status}`);
         setProviders(data.providers);
         setProvidersError(null);
+        // A key may have been added since a server voice failed: give it another try
+        latest.current.speech.unblockServer();
       })
       .catch((err: unknown) => {
-        if (!cancelled) setProvidersError(`Could not load voices: ${err instanceof Error ? err.message : String(err)}`);
+        if (!cancelled) setProvidersError(`Could not list voices (${err instanceof Error ? err.message : String(err)}).`);
       });
     return () => {
       cancelled = true;
@@ -114,6 +117,14 @@ export function useVoiceConversation(options: VoiceConversationOptions) {
   }, [needProviders, providersRequest]);
 
   const refreshProviders = useCallback(() => setProvidersRequest((n) => n + 1), []);
+
+  // A key saved or removed in Settings → API keys changes which server voices
+  // work: re-read providers (which also lifts a "missing key" block)
+  useEffect(() => {
+    const onChanged = () => refreshProviders();
+    window.addEventListener('oc-settings-changed', onChanged);
+    return () => window.removeEventListener('oc-settings-changed', onChanged);
+  }, [refreshProviders]);
 
   /** Feed every processed stream event; speaks when voice mode or "read replies" is on. */
   const narrate = useCallback(
@@ -186,6 +197,8 @@ export function useVoiceConversation(options: VoiceConversationOptions) {
     const { speech: sp } = latest.current;
     sp.cancel();
     sp.clearError();
+    // Testing is how the user checks a fixed key or voice, so do not skip the server voice
+    sp.unblockServer();
     sp.speak("Hi! This is how I'll sound while I work on your project.", { priority: 'high' });
   }, []);
 
@@ -196,6 +209,13 @@ export function useVoiceConversation(options: VoiceConversationOptions) {
     else if (listening.error && !listening.listening) phase = 'error';
     else if (options.running) phase = 'thinking';
     else phase = 'listening';
+  }
+
+  // What was heard before the microphone failed is stale: the error takes its place
+  const [prevPhase, setPrevPhase] = useState(phase);
+  if (phase !== prevPhase) {
+    setPrevPhase(phase);
+    if (phase === 'error') setHeard(null);
   }
 
   return {

@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import s from './voice.module.css';
 import { NARRATION_LEVELS, isNarrationLevel } from '@/lib/voice/narration';
-import { OPENAI_VOICES, PROVIDER_LABELS, missingKeyMessage, type TtsProviderId } from '@/lib/voice/providers';
-import { resolveProviderVoice, sortBrowserVoices } from '@/lib/voice/settings';
+import { PROVIDER_LABELS, missingKeyMessage, type TtsProviderId } from '@/lib/voice/providers';
+import { parseVoiceIdInput, resolveProviderVoice, serverVoicePicker, sortBrowserVoices } from '@/lib/voice/settings';
 import type { VoiceConversation } from './useVoiceConversation';
 
 interface VoiceSettingsProps {
@@ -13,6 +13,45 @@ interface VoiceSettingsProps {
 }
 
 const ENGINES: TtsProviderId[] = ['browser', 'openai', 'elevenlabs'];
+
+/**
+ * A provider voice ID typed by hand, for when the provider's voices cannot
+ * be listed. Saved as soon as it is a valid ID.
+ */
+function VoiceIdField({ value, provider, onChange }: { value: string; provider: string; onChange: (id: string) => void }) {
+  const [draft, setDraft] = useState(value);
+  const inputId = useId();
+  const helpId = useId();
+  const invalid = parseVoiceIdInput(draft) === null;
+  return (
+    <div className={s.field}>
+      <label className={s.label} htmlFor={inputId}>
+        Voice ID
+      </label>
+      <input
+        id={inputId}
+        className={s.input}
+        type="text"
+        value={draft}
+        placeholder="Paste a voice ID"
+        spellCheck={false}
+        autoComplete="off"
+        aria-invalid={invalid}
+        aria-describedby={helpId}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          const id = parseVoiceIdInput(e.target.value);
+          if (id !== null) onChange(id);
+        }}
+      />
+      <span id={helpId} className={invalid ? s.fieldError : s.fieldHint}>
+        {invalid
+          ? 'A voice ID has only letters, digits, "-" and "_".'
+          : `Could not list your ${provider} voices. Copy a voice ID from your ${provider} voice library.`}
+      </span>
+    </div>
+  );
+}
 
 /** Popover with engine, voice, speed, narration level and listening options. */
 export default function VoiceSettings({ voice, onClose }: VoiceSettingsProps) {
@@ -62,7 +101,7 @@ export default function VoiceSettings({ voice, onClose }: VoiceSettingsProps) {
   const primaryLang = lang.split('-')[0].toLowerCase();
   const localVoices = browserVoices.filter((v) => v.lang.toLowerCase().startsWith(primaryLang));
   const otherVoices = browserVoices.filter((v) => !v.lang.toLowerCase().startsWith(primaryLang));
-  const serverVoices = settings.engine === 'openai' ? (provider?.voices?.length ? provider.voices : OPENAI_VOICES) : (provider?.voices ?? []);
+  const picker = serverVoicePicker(settings, providers, providersError);
   const serverVoice = resolveProviderVoice(settings, providers);
 
   const engineLabel = (id: TtsProviderId) => {
@@ -101,51 +140,58 @@ export default function VoiceSettings({ voice, onClose }: VoiceSettingsProps) {
           </select>
         </label>
 
-        <label className={s.field}>
-          <span className={s.label}>Voice</span>
-          {settings.engine === 'browser' ? (
-            <select
-              className={s.select}
-              value={settings.browserVoice}
-              onChange={(e) => updateSettings({ browserVoice: e.target.value })}
-              disabled={!speech.browserSupported}
-            >
-              <option value="">Automatic (most natural)</option>
-              {localVoices.length > 0 && (
-                <optgroup label="Your language">
-                  {localVoices.map((v) => (
-                    <option key={`${v.name}-${v.lang}`} value={v.name}>
-                      {v.name} ({v.lang})
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              {otherVoices.length > 0 && (
-                <optgroup label="Other languages">
-                  {otherVoices.map((v) => (
-                    <option key={`${v.name}-${v.lang}`} value={v.name}>
-                      {v.name} ({v.lang})
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-            </select>
-          ) : (
-            <select
-              className={s.select}
-              value={serverVoice}
-              onChange={(e) => setServerVoice(e.target.value)}
-              disabled={serverVoices.length === 0}
-            >
-              {serverVoices.length === 0 && <option value="">No voices loaded</option>}
-              {serverVoices.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.label}
-                </option>
-              ))}
-            </select>
-          )}
-        </label>
+        {settings.engine !== 'browser' && picker.kind === 'manual' ? (
+          <VoiceIdField
+            key={settings.engine}
+            value={serverVoice}
+            provider={PROVIDER_LABELS[settings.engine]}
+            onChange={setServerVoice}
+          />
+        ) : (
+          <label className={s.field}>
+            <span className={s.label}>Voice</span>
+            {settings.engine === 'browser' ? (
+              <select
+                className={s.select}
+                value={settings.browserVoice}
+                onChange={(e) => updateSettings({ browserVoice: e.target.value })}
+                disabled={!speech.browserSupported}
+              >
+                <option value="">Automatic (most natural)</option>
+                {localVoices.length > 0 && (
+                  <optgroup label="Your language">
+                    {localVoices.map((v) => (
+                      <option key={`${v.name}-${v.lang}`} value={v.name}>
+                        {v.name} ({v.lang})
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {otherVoices.length > 0 && (
+                  <optgroup label="Other languages">
+                    {otherVoices.map((v) => (
+                      <option key={`${v.name}-${v.lang}`} value={v.name}>
+                        {v.name} ({v.lang})
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+            ) : picker.kind === 'list' ? (
+              <select className={s.select} value={serverVoice} onChange={(e) => setServerVoice(e.target.value)}>
+                {picker.voices.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.label}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <select className={s.select} value="" disabled>
+                <option value="">{picker.kind === 'loading' ? 'Loading voices…' : 'Add an API key first'}</option>
+              </select>
+            )}
+          </label>
+        )}
 
         <div className={s.field}>
           <label className={s.label} htmlFor="voice-rate">

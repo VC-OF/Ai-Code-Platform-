@@ -16,7 +16,12 @@ export interface SpeechEngineConfig {
   browserVoice: string;
   rate: number;
   pitch: number;
+  /** Why a server engine has no `voice` (missing key, voice list failed); see missingVoiceReason */
+  missingVoice?: string | null;
 }
+
+export const NO_BROWSER_SPEECH_MESSAGE =
+  'This browser cannot read text aloud. Pick a server voice in voice settings, or use Chrome, Edge or Safari.';
 
 export interface SpeechEngineEvents {
   onSpeakingChange: (speaking: boolean, tag: string | null) => void;
@@ -42,6 +47,13 @@ export function browserSpeechSupported(): boolean {
   return typeof window !== 'undefined' && 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined';
 }
 
+const NOTHING_PLAYED = 'This browser cannot read text aloud itself, so nothing was played.';
+
+/** What happens instead of the server voice: the browser voice, or nothing at all. */
+function fallbackNote(usingBrowser: string): string {
+  return browserSpeechSupported() ? usingBrowser : NOTHING_PLAYED;
+}
+
 export class SpeechEngine {
   private config: SpeechEngineConfig;
   private queue: QueuedSpeech[] = [];
@@ -50,8 +62,8 @@ export class SpeechEngine {
   private recent: SpokenRecord[] = [];
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private reportedSpeaking = false;
-  /** `${engine}:${voice}` that failed with a config error; skipped until settings change */
-  private blockedServer: string | null = null;
+  /** `${engine}:${voice}` that failed with a config error, and why; skipped until settings change */
+  private blockedServer: { key: string; message: string } | null = null;
   private disposed = false;
 
   constructor(config: SpeechEngineConfig, private events: SpeechEngineEvents) {
@@ -59,8 +71,16 @@ export class SpeechEngine {
   }
 
   setConfig(config: SpeechEngineConfig): void {
-    if (config.engine !== this.config.engine || config.voice !== this.config.voice) this.blockedServer = null;
+    if (config.engine !== this.config.engine || config.voice !== this.config.voice) this.unblock();
     this.config = config;
+  }
+
+  /**
+   * Try the server voice again after a failure that blocked it (the user may
+   * have added the missing key): call when providers are refetched or on "Test voice".
+   */
+  unblock(): void {
+    this.blockedServer = null;
   }
 
   speak(text: string, opts: { priority?: SpeechPriority; tag?: string } = {}): void {
@@ -139,24 +159,29 @@ export class SpeechEngine {
   }
 
   private play(text: string): Playback {
-    const { engine, voice } = this.config;
-    if (isServerProvider(engine)) {
-      const key = `${engine}:${voice}`;
-      if (!voice) {
-        this.events.onError(`Pick a voice for ${PROVIDER_LABELS[engine]} in voice settings. Using the browser voice for now.`);
-      } else if (this.blockedServer !== key) {
-        return this.playServer(text, engine, voice);
-      }
+    const { engine, voice, missingVoice } = this.config;
+    if (!isServerProvider(engine)) return this.playBrowser(text);
+    if (!voice) {
+      const reason = missingVoice || `Pick a voice for ${PROVIDER_LABELS[engine]} in voice settings.`;
+      this.events.onError(`${reason} ${fallbackNote('Using the browser voice for now.')}`);
+      return this.playBrowser(text, true);
     }
-    return this.playBrowser(text);
+    const blocked = this.blockedServer;
+    if (blocked?.key !== `${engine}:${voice}`) return this.playServer(text, engine, voice);
+    // Reported when it failed; repeated only when there is no browser voice either, as nothing will play
+    if (!browserSpeechSupported()) this.events.onError(`${blocked.message} ${NOTHING_PLAYED}`);
+    return this.playBrowser(text, true);
   }
 
-  private playBrowser(text: string): Playback {
+  /** `reported`: the caller already explained why the browser voice is used. */
+  private playBrowser(text: string, reported = false): Playback {
     let resolveDone: () => void = () => {};
     const done = new Promise<void>((resolve) => {
       resolveDone = resolve;
     });
     if (!browserSpeechSupported()) {
+      // Otherwise "Listen" and read-aloud would do nothing, silently
+      if (!reported) this.events.onError(NO_BROWSER_SPEECH_MESSAGE);
       resolveDone();
       return { stop: () => {}, done };
     }
@@ -274,12 +299,14 @@ export class SpeechEngine {
         }
       } catch (err) {
         if (stopped) return;
-        if (err instanceof TtsRequestError && isBlockingTtsError(err.status, err.code)) this.blockedServer = `${provider}:${voice}`;
         const message = err instanceof Error ? err.message : String(err);
-        this.events.onError(`${message} Using the browser voice instead.`);
+        if (err instanceof TtsRequestError && isBlockingTtsError(err.status, err.code)) {
+          this.blockedServer = { key: `${provider}:${voice}`, message };
+        }
+        this.events.onError(`${message} ${fallbackNote('Using the browser voice instead.')}`);
         const rest = chunks.slice(index).join(' ');
         if (rest) {
-          fallback = this.playBrowser(rest);
+          fallback = this.playBrowser(rest, true);
           await fallback.done;
         }
       } finally {

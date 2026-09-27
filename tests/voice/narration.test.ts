@@ -214,15 +214,19 @@ describe('Narrator: progress (everything)', () => {
 });
 
 describe('Narrator: replayed history', () => {
-  it('skips events older than the reconnect cut-off', () => {
+  it('skips replayed events until the replay_done marker, whatever their timestamps', () => {
     const n = new Narrator({ level: 'everything' });
-    n.setIgnoreBefore(10_000);
-    expect(n.handle({ type: 'text_done', content: 'Old reply', ts: 5_000 }, 20_000)).toEqual([]);
-    expect(n.handle({ type: 'user_input_request', question: 'Old?', ts: 5_000 }, 20_000)).toEqual([]);
-    expect(n.handle({ type: 'plan_update', ts: 5_000, tasks: [{ title: 'Old task', status: 'in_progress' }] }, 20_000)).toEqual([]);
+    n.setReplaying(true);
+    // Stamped by a server clock that runs ahead of the client's: still history
+    expect(n.handle({ type: 'text_done', content: 'Old reply', ts: 90_000 }, 20_000)).toEqual([]);
+    expect(n.handle({ type: 'user_input_request', question: 'Old?', ts: 90_000 }, 20_000)).toEqual([]);
+    expect(n.handle({ type: 'plan_update', ts: 90_000, tasks: [{ title: 'Old task', status: 'in_progress' }] }, 20_000)).toEqual([]);
+    expect(n.tick(30_000)).toEqual([]);
+    expect(n.handle({ type: 'replay_done' }, 20_000)).toEqual([]);
     // The replayed plan task is remembered, so it is not announced again
-    expect(n.handle({ type: 'plan_update', ts: 11_000, tasks: [{ title: 'Old task', status: 'in_progress' }] }, 20_000)).toEqual([]);
-    expect(texts(n.handle({ type: 'user_input_request', question: 'New?', ts: 12_000 }, 20_000))).toEqual(['New?']);
+    expect(n.handle({ type: 'plan_update', ts: 1_000, tasks: [{ title: 'Old task', status: 'in_progress' }] }, 20_000)).toEqual([]);
+    // Live events are spoken, even when stamped by a clock that runs behind
+    expect(texts(n.handle({ type: 'user_input_request', question: 'New?', ts: 1_000 }, 20_000))).toEqual(['New?']);
   });
 
   it('reset clears a held reply', () => {

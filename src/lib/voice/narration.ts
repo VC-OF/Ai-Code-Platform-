@@ -6,6 +6,7 @@
 // ends, so by default only the real answer is read out.
 
 import { toolLabel } from '@/components/toolLabels';
+import { REPLAY_DONE_EVENT } from '@/lib/events';
 import { toSpeakable } from './speechText';
 import type { SpeechPriority } from './speechQueue';
 
@@ -164,7 +165,8 @@ export class Narrator {
   private lastPlanTask: string | null = null;
   private lastError: string | null = null;
   private spokeError = false;
-  private ignoreBefore = 0;
+  // Reattached to a running turn: its history is being replayed
+  private replaying = false;
 
   constructor(options: NarratorOptions = {}) {
     this.opts = {
@@ -186,9 +188,12 @@ export class Narrator {
     this.opts.level = level;
   }
 
-  /** Skip events stamped before `ts` (replayed history when reattaching to a run). */
-  setIgnoreBefore(ts: number): void {
-    this.ignoreBefore = ts;
+  /**
+   * Reattaching to a run: treat events as replayed history (tracked, not
+   * spoken) until the stream's replay_done marker, or until turned off.
+   */
+  setReplaying(replaying: boolean): void {
+    this.replaying = replaying;
   }
 
   /** Forget the current turn (new stream, voice toggled off). */
@@ -243,7 +248,11 @@ export class Narrator {
 
   handle(event: NarrationEvent, now: number = Date.now()): Utterance[] {
     if (!event || typeof event.type !== 'string') return [];
-    const replayed = this.ignoreBefore > 0 && typeof event.ts === 'number' && event.ts < this.ignoreBefore;
+    if (event.type === REPLAY_DONE_EVENT) {
+      this.replaying = false;
+      return [];
+    }
+    const replayed = this.replaying;
 
     switch (event.type) {
       case 'text_done': {
