@@ -429,6 +429,18 @@ export default function ChatPanel({
               const exists = t.some((item) => item.type === 'reasoning' && item.ts === event.ts);
               return exists ? t : [...t, { ...event, type: 'reasoning' }];
             });
+          } else if (event.type === 'mode_change') {
+            // Plan approved via exit_plan_mode: the loop now runs in this mode
+            const mode = event.mode as 'auto' | 'manual' | 'plan' | undefined;
+            if (mode === 'auto' || mode === 'manual' || mode === 'plan') handleModeChange(mode);
+          } else if (event.type === 'memory_update') {
+            const lines = Array.isArray(event.lines) ? (event.lines as string[]) : [];
+            if (lines.length) {
+              setTimeline((t) => (t.some((item) => item.type === 'message' && item.ts === event.ts) ? t : [
+                ...t,
+                { type: 'message', role: 'assistant', ts: event.ts, content: `Saved to project memory (AGENTS.md):\n${lines.map((l) => `- ${l}`).join('\n')}` },
+              ]));
+            }
           } else if (event.type === 'hook') {
             setTimeline((t) => (t.some((item) => item.type === 'hook' && item.ts === event.ts) ? t : [...t, event]));
           } else if (event.type === 'subagent_event') {
