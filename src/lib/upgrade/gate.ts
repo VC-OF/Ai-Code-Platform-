@@ -21,13 +21,25 @@ const TYPECHECK_TIMEOUT_MS = 10 * 60_000;
 
 export interface CmdResult { code: number | null; output: string; timedOut: boolean }
 
+/** Runs a FIXED command line through the shell (npx needs it on Windows).
+ *  Never interpolate untrusted text into `cmd` — use runFile for that. */
 export function runCmd(cmd: string, cwd: string, timeoutMs: number): Promise<CmdResult> {
+  return collect(spawn(cmd, { cwd, shell: true, windowsHide: true, env: { ...process.env, CI: '1', FORCE_COLOR: '0' } }), timeoutMs);
+}
+
+/** Runs `file` with an argument list and NO shell: `%VAR%`, `$(...)`, quotes
+ *  and other shell syntax in `args` stay literal. Use for anything built from
+ *  user or upstream text (upgrade goals can come from public issue titles). */
+export function runFile(file: string, args: string[], cwd: string, timeoutMs: number): Promise<CmdResult> {
+  return collect(spawn(file, args, { cwd, shell: false, windowsHide: true, env: { ...process.env, CI: '1', FORCE_COLOR: '0' } }), timeoutMs);
+}
+
+function collect(child: ReturnType<typeof spawn>, timeoutMs: number): Promise<CmdResult> {
   return new Promise((resolve) => {
-    const child = spawn(cmd, { cwd, shell: true, windowsHide: true, env: { ...process.env, CI: '1', FORCE_COLOR: '0' } });
     let out = '';
     const add = (b: Buffer) => { out += b.toString(); if (out.length > 400_000) out = out.slice(-300_000); };
-    child.stdout.on('data', add);
-    child.stderr.on('data', add);
+    child.stdout?.on('data', add);
+    child.stderr?.on('data', add);
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;

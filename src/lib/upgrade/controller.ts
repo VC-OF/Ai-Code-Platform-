@@ -354,12 +354,14 @@ export async function pushUpgrade(id: string, confirm: { branch?: string; commit
   let prUrl: string | null = null;
   let note: string | null = null;
   try {
-    const { runCmd } = await import('./gate');
+    const { runFile } = await import('./gate');
     const body = `${rec.goal}\n\n${upgradeStore.latestReview(id)?.findings ? `Reviewer findings:\n${upgradeStore.latestReview(id)!.findings}\n\n` : ''}Gate: PASS on base ${rec.base_commit.slice(0, 8)}.\n\nCreated by Upgrade OpenCode (${id}).`;
     const bodyFile = `${rec.worktree}.prbody`;
     fs.writeFileSync(bodyFile, body);
-    const title = `Upgrade ${id}: ${rec.goal}`.slice(0, 120).replace(/"/g, "'");
-    const r = await runCmd(`gh pr create --base "${rec.base_branch}" --head "${rec.candidate_branch}" --title "${title}" --body-file "${bodyFile}"`, rec.worktree, 120_000);
+    // The goal may quote third-party text (Discover: issue titles, news
+    // headlines). gh gets it as a plain argument — no shell ever sees it.
+    const title = `Upgrade ${id}: ${rec.goal}`.replace(/[\u0000-\u001f\u007f]+/g, ' ').slice(0, 120);
+    const r = await runFile('gh', ['pr', 'create', '--base', rec.base_branch, '--head', rec.candidate_branch, '--title', title, '--body-file', bodyFile], rec.worktree, 120_000);
     fs.rmSync(bodyFile, { force: true });
     const url = r.output.match(/https:\/\/github\.com\/\S+\/pull\/\d+/)?.[0];
     if (url) prUrl = url; else note = `Pushed, but the PR was not created: ${r.output.trim().slice(0, 300)}`;
