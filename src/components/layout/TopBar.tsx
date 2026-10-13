@@ -61,7 +61,41 @@ export default function TopBar({
   const [showKeyModal, setShowKeyModal] = useState(false);
   const [showArtifacts, setShowArtifacts] = useState(false);
   const [showKnowledge, setShowKnowledge] = useState(false);
+  const [privateMode, setPrivateModeState] = useState(false);
   const openPalette = useCommandPaletteStore((s) => s.setOpen);
+
+  // Sync private mode from localStorage & custom events
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('opencode_private_mode');
+      if (saved !== null) {
+        setPrivateModeState(saved === 'true');
+      }
+    } catch {}
+
+    const handleModeChange = (e: Event) => {
+      const detail = (e as CustomEvent<{ enabled?: boolean }>).detail;
+      if (typeof detail?.enabled === 'boolean') {
+        setPrivateModeState(detail.enabled);
+      }
+    };
+    window.addEventListener('oc-private-mode-changed', handleModeChange);
+    return () => window.removeEventListener('oc-private-mode-changed', handleModeChange);
+  }, []);
+
+  const togglePrivateMode = () => {
+    const next = !privateMode;
+    setPrivateModeState(next);
+    try {
+      localStorage.setItem('opencode_private_mode', String(next));
+      window.dispatchEvent(new CustomEvent('oc-private-mode-changed', { detail: { enabled: next } }));
+      void fetch('/api/private-mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: next }),
+      }).catch(() => {});
+    } catch {}
+  };
 
   // Sync execution mode from localStorage
   useEffect(() => {
@@ -302,6 +336,40 @@ export default function TopBar({
             </svg>
           </button>
         )}
+
+        <button
+          type="button"
+          className={`icon-btn ${privateMode ? 'icon-btn--private-on' : ''}`}
+          onClick={togglePrivateMode}
+          title={privateMode ? 'Private Mode ON (Local isolation active, private tools enabled, external telemetry suppressed)' : 'Private Mode OFF (Click to enable local isolation & private tools)'}
+          aria-label="Toggle Private Mode"
+          aria-pressed={privateMode}
+          style={privateMode ? {
+            color: '#10b981',
+            borderColor: 'rgba(16, 185, 129, 0.4)',
+            background: 'rgba(16, 185, 129, 0.12)',
+            boxShadow: '0 0 10px rgba(16, 185, 129, 0.25)',
+          } : undefined}
+        >
+          <svg viewBox="0 0 24 24" fill={privateMode ? 'rgba(16, 185, 129, 0.25)' : 'none'} stroke="currentColor" strokeWidth={1.8} width={15} height={15}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+          </svg>
+          {privateMode && (
+            <span style={{
+              fontSize: '10px',
+              fontWeight: 700,
+              letterSpacing: '0.5px',
+              padding: '0 4px',
+              borderRadius: '3px',
+              background: '#10b981',
+              color: '#000',
+              marginLeft: '2px',
+              lineHeight: '14px',
+            }}>
+              PVT
+            </span>
+          )}
+        </button>
 
         <button
           type="button"
