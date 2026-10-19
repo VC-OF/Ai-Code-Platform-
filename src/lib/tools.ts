@@ -1,7 +1,11 @@
 import fs from "fs/promises";
 import path from "path";
 import fg from "fast-glob";
+import { execFile } from "child_process";
+import { promisify } from "util";
 import { safeResolve } from "./safeResolve";
+
+const execFileAsync = promisify(execFile);
 import { safeExec, CommandError, isDockerMode } from "./safeExec";
 import {
   findProjectDirs, lintPlan, testPlan, parseTestCounts, resolveCommandTimeoutMs,
@@ -15,6 +19,11 @@ import { JOB_TOOL_SCHEMAS, isJobTool, executeJobTool } from "./jobTools";
 import { OPEN_CODE_DIR, ensureOpenCodeIgnored, openCodePath } from "./openCodeDir";
 import { GITHUB_TOOL_SCHEMAS, isGithubTool, executeGithubTool } from "./githubTools";
 import { LSP_TOOL_SCHEMAS, isLspTool, executeLspTool } from "./lspTools";
+import { AST_TOOL_SCHEMAS, isAstTool, executeAstTool } from "./astTools";
+import { GIT_ADVANCED_TOOL_SCHEMAS, isGitAdvancedTool, executeGitAdvancedTool } from "./gitAdvancedTools";
+import { SIDECAR_TOOL_SCHEMAS, isSidecarTool, executeSidecarTool } from "./sidecarTools";
+import { SCHEDULE_TOOL_SCHEMAS, isScheduleTool, executeScheduleTool } from "./scheduleTools";
+import { TUNNEL_TOOL_SCHEMAS, isTunnelTool, executeTunnelTool } from "./tunnelTools";
 import { SPAWN_AGENT_SCHEMA } from "./subagents";
 import { parseNotebook, formatNotebook } from "./notebooks";
 import { directoryMemoryFor, formatDirectoryMemory } from "./memoryFiles";
@@ -638,6 +647,11 @@ export const TOOL_SCHEMAS = [
   ...JOB_TOOL_SCHEMAS,
   ...GITHUB_TOOL_SCHEMAS,
   ...LSP_TOOL_SCHEMAS,
+  ...AST_TOOL_SCHEMAS,
+  ...GIT_ADVANCED_TOOL_SCHEMAS,
+  ...SIDECAR_TOOL_SCHEMAS,
+  ...SCHEDULE_TOOL_SCHEMAS,
+  ...TUNNEL_TOOL_SCHEMAS,
   SPAWN_AGENT_SCHEMA,
   ...BROWSER_TOOL_SCHEMAS,
 ] as const;
@@ -840,6 +854,21 @@ async function runTool(
     }
     if (isLspTool(name)) {
       return await executeLspTool(name, args, workspace);
+    }
+    if (isAstTool(name)) {
+      return await executeAstTool(name, args, workspace, ctx);
+    }
+    if (isGitAdvancedTool(name)) {
+      return await executeGitAdvancedTool(name, args, workspace);
+    }
+    if (isSidecarTool(name)) {
+      return await executeSidecarTool(name, args, workspace);
+    }
+    if (isScheduleTool(name)) {
+      return await executeScheduleTool(name, args, workspace);
+    }
+    if (isTunnelTool(name)) {
+      return await executeTunnelTool(name, args, workspace);
     }
     if (name === "spawn_agent") {
       // Needs the loop's model/emitter/cancellation — handled in agentLoop.ts
@@ -1314,7 +1343,9 @@ async function runTool(
         return {
           success: true,
           output: truncate(output) || "(no matches)",
-          fullOutput: allLines,
+          // Keep the full result for the spill file even when the compact
+          // response only shows the first 100 matches.
+          fullOutput: matches.length > 100 ? allLines : undefined,
           summary: `Grep found ${matches.length} matches for '${args.pattern}'`,
         };
       }
@@ -1829,16 +1860,75 @@ function assertSafeGlob(pattern: string): void {
   }
 }
 
-// Pure-Node grep — portable (no external grep/find binaries needed)
+// High-performance search: uses ripgrep if available on host, falling back to pure-Node
 async function nodeGrep(
   searchRoot: string,
   pattern: RegExp,
   globFilter: string | undefined
 ): Promise<{ file: string; line: number; text: string }[]> {
   if (globFilter) assertSafeGlob(globFilter);
+
+  // 1. Try ripgrep (rg) for sub-millisecond search
+  try {
+    const rgArgs = ["-n", "--no-heading", "--color=never", "--max-count", "200"];
+    if (pattern.ignoreCase) {
+      rgArgs.push("-i");
+    } else {
+      rgArgs.push("-s");
+    }
+    if (globFilter) {
+      rgArgs.push("-g", globFilter);
+    }
+    rgArgs.push("-g", "!node_modules", "-g", "!.next", "-g", "!.git", "-g", "!.platform", "-g", "!dist", "-g", "!build");
+    // Run from the search root so ripgrep emits relative paths. Absolute
+    // Windows paths contain a drive colon, which makes naive `:` splitting
+    // ambiguous and corrupts the displayed filename.
+    rgArgs.push("-e", pattern.source, ".");
+
+    const { stdout } = await execFileAsync("rg", rgArgs, {
+      cwd: searchRoot,
+      timeout: 10_000,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+
+    const lines = stdout.split(/\r?\n/);
+    const rgResults: { file: string; line: number; text: string }[] = [];
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const match = line.match(/^(.*?):(\d+):(.*)$/);
+      if (match) {
+        const [, filePath, rawLineNum, rawText] = match;
+        const lineNum = parseInt(rawLineNum, 10);
+        const text = rawText.trim();
+        rgResults.push({
+          file: path.relative(searchRoot, path.resolve(searchRoot, filePath)).replace(/\\/g, "/"),
+          line: isNaN(lineNum) ? 1 : lineNum,
+          text,
+        });
+        if (rgResults.length >= 200) break;
+      }
+    }
+    if (rgResults.length > 0 || stdout.length > 0) {
+      return rgResults;
+    }
+  } catch {
+    // ripgrep not installed or exited non-zero — proceed with pure-Node fallback
+  }
+
+  // 2. Pure-Node fallback using fast-glob
   const files = await fg(globFilter || "**/*", {
     cwd: searchRoot,
-    ignore: ["**/node_modules/**", "**/.next/**", "**/.git/**"],
+    ignore: [
+      "**/node_modules/**",
+      "**/.next/**",
+      "**/.git/**",
+      "**/.platform/**",
+      "**/dist/**",
+      "**/build/**",
+      "**/target/**",
+      "**/.turbo/**",
+      "**/coverage/**",
+    ],
     absolute: true,
     onlyFiles: true,
   });

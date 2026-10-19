@@ -13,59 +13,41 @@ interface ChatTimelineProps {
   streamingText: string;
   selectedArtifact: ExtractedArtifact | null;
   onSelectArtifact: (artifact: ExtractedArtifact) => void;
-  onSendPrompt: (prompt: string) => void;
+  onSendPrompt?: (prompt: string) => void;
   composer?: React.ReactNode;
 }
 
-const STARTER_PROMPTS = [
-  {
-    title: 'Interactive Web Application',
-    prompt: 'Build a complete interactive financial loan calculator in HTML, CSS, and JS with clean visuals, sliders for loan amount, interest rate, and term, and an amortization chart.',
-    badge: 'HTML / JS',
-    icon: (
-      <svg className="w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-      </svg>
-    ),
-  },
-  {
-    title: 'Modern SVG Vector Graphic',
-    prompt: 'Create a high-quality, modern SVG vector illustration of a cloud native microservices architecture with glowing gradients, database nodes, and API gateways.',
-    badge: 'SVG Vector',
-    icon: (
-      <svg className="w-4 h-4 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-      </svg>
-    ),
-  },
-  {
-    title: 'React Kanban Board Component',
-    prompt: 'Write a full React component for a sleek Kanban Task Board with columns (Backlog, In Progress, Done), add card functionality, and tag badges.',
-    badge: 'React / TSX',
-    icon: (
-      <svg className="w-4 h-4 text-blue-400" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 9a3 3 0 100 6 3 3 0 000-6zm0-7c-5.52 0-10 4.48-10 10s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" />
-      </svg>
-    ),
-  },
-  {
-    title: 'Deep Architectural Reasoning',
-    prompt: 'Analyze the mathematical and computational trade-offs between Multi-Head Attention and Grouped-Query Attention (GQA) in Large Language Models with detailed reasoning and LaTeX math.',
-    badge: 'Reasoning & Math',
-    icon: (
-      <svg className="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    ),
-  },
-];
-
-function getGreeting() {
+function getGreetingTitle() {
   const hour = new Date().getHours();
-  if (hour >= 21 || hour < 5) return 'Moonlit chat?';
-  if (hour < 12) return 'Good morning';
-  if (hour < 18) return 'Good afternoon';
-  return 'Good evening';
+  if (hour >= 21 || hour < 5) return 'Late night thoughts';
+  if (hour < 12) return 'Morning thoughts';
+  if (hour < 18) return 'Afternoon thoughts';
+  return 'Evening thoughts';
+}
+
+function ClaudeSunburst() {
+  return (
+    <svg width="32" height="32" viewBox="0 0 32 32" fill="none" className="shrink-0">
+      <g stroke="#da7756" strokeWidth="2.4" strokeLinecap="round">
+        <line x1="16" y1="4" x2="16" y2="9" />
+        <line x1="16" y1="23" x2="16" y2="28" />
+        <line x1="4" y1="16" x2="9" y2="16" />
+        <line x1="23" y1="16" x2="28" y2="16" />
+        <line x1="7.5" y1="7.5" x2="11" y2="11" />
+        <line x1="21" y1="21" x2="24.5" y2="24.5" />
+        <line x1="7.5" y1="24.5" x2="11" y2="21" />
+        <line x1="21" y1="11" x2="24.5" y2="7.5" />
+        <line x1="5.1" y1="11.8" x2="9" y2="12.8" />
+        <line x1="23" y1="19.2" x2="26.9" y2="20.2" />
+        <line x1="11.8" y1="5.1" x2="12.8" y2="9" />
+        <line x1="19.2" y1="23" x2="20.2" y2="26.9" />
+        <line x1="5.1" y1="20.2" x2="9" y2="19.2" />
+        <line x1="23" y1="12.8" x2="26.9" y2="11.8" />
+        <line x1="11.8" y1="26.9" x2="12.8" y2="23" />
+        <line x1="19.2" y1="9" x2="20.2" y2="5.1" />
+      </g>
+    </svg>
+  );
 }
 
 export default function ChatTimeline({
@@ -96,63 +78,33 @@ export default function ChatTimeline({
   const isEmpty = messages.length === 0 && !isStreaming;
 
   if (isEmpty) {
-    const greeting = getGreeting();
+    const greetingTitle = getGreetingTitle();
 
     return (
-      <div className="flex-1 flex flex-col items-center justify-center px-4 py-8 max-w-3xl mx-auto w-full overflow-y-auto">
-        {/* Brand Icon & Headline */}
-        <div className="flex flex-col items-center mb-6">
-          <div style={{ width: 40, height: 40, borderRadius: 8, background: 'var(--brand)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16, flexShrink: 0 }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
-              <path d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
+      <div className="flex-1 flex flex-col items-center justify-center px-4 py-8 w-full overflow-y-auto">
+        <div className="w-full max-w-[720px] mx-auto flex flex-col items-center">
+          {/* Brand Icon & Headline - Horizontal Side by Side */}
+          <div className="flex items-center justify-center gap-3.5 mb-7 select-none">
+            <ClaudeSunburst />
+            <h1 className="text-3xl sm:text-[34px] font-serif font-normal text-[#1f1e1d] dark:text-[#f7f4ee] tracking-tight">
+              {greetingTitle}
+            </h1>
           </div>
-          <h1 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0, fontFamily: 'var(--font-sans)' }}>
-            {greeting}
-          </h1>
-        </div>
 
-        {/* Centered Composer in Empty State */}
-        {composer && (
-          <div className="w-full mb-6">
-            {composer}
-          </div>
-        )}
-
-        {/* Starter Suggestion Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
-          {STARTER_PROMPTS.map((starter) => (
-            <button
-              key={starter.title}
-              type="button"
-              onClick={() => onSendPrompt(starter.prompt)}
-              style={{ border: '1px solid var(--border-base)', background: 'transparent', borderRadius: 'var(--radius-md)', padding: '10px 14px' }}
-              className="flex flex-col text-left hover:bg-[var(--bg-hover)] transition-all duration-150 group cursor-pointer"
-            >
-              <div className="flex items-center justify-between w-full mb-1.5">
-                <div className="flex items-center gap-2">
-                  {starter.icon}
-                  <span style={{ color: 'var(--text-primary)' }} className="font-semibold text-xs transition-colors">
-                    {starter.title}
-                  </span>
-                </div>
-                <span style={{ color: 'var(--text-muted)', background: 'var(--bg-elevated)' }} className="text-[10px] px-1.5 py-0.5 rounded font-mono">
-                  {starter.badge}
-                </span>
-              </div>
-              <p style={{ color: 'var(--text-muted)' }} className="text-[11.5px] line-clamp-2 leading-relaxed">
-                {starter.prompt}
-              </p>
-            </button>
-          ))}
+          {/* Composer in Empty State */}
+          {composer && (
+            <div className="w-full">
+              {composer}
+            </div>
+          )}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 space-y-7">
-      <div className="max-w-3xl mx-auto space-y-7">
+    <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 space-y-7 w-full">
+      <div className="max-w-[760px] mx-auto space-y-7">
         {messages.map((message) => {
           const isUser = message.role === 'user';
           let parsedArtifacts: ExtractedArtifact[] = [];
@@ -204,17 +156,62 @@ export default function ChatTimeline({
 
               {/* Assistant Message Body */}
               <div className="w-full text-[#1f1e1d] dark:text-[#ebe6dc] text-[14.5px] leading-relaxed">
-                <Markdown text={message.content} />
+                {(() => {
+                  const rawContent = message.content || '';
+                  const artifactRegex = /:::artifact\{id="([^"]+)"[^\}]*\}\s*:::/g;
+                  const renderedIds = new Set<string>();
+                  const parts: React.ReactNode[] = [];
+                  let lastIndex = 0;
+                  let match: RegExpExecArray | null;
 
-                {/* Inline Artifacts */}
-                {parsedArtifacts.map((art) => (
-                  <ArtifactCard
-                    key={art.id}
-                    artifact={art}
-                    isActive={selectedArtifact?.id === art.id}
-                    onSelect={onSelectArtifact}
-                  />
-                ))}
+                  while ((match = artifactRegex.exec(rawContent)) !== null) {
+                    const textBefore = rawContent.slice(lastIndex, match.index).trim();
+                    if (textBefore) {
+                      parts.push(<Markdown key={`text-${lastIndex}`} text={textBefore} />);
+                    }
+                    const artId = match[1];
+                    const art = parsedArtifacts.find((a) => a.id === artId);
+                    if (art) {
+                      renderedIds.add(art.id);
+                      parts.push(
+                        <ArtifactCard
+                          key={`art-${art.id}`}
+                          artifact={art}
+                          isActive={selectedArtifact?.id === art.id}
+                          onSelect={onSelectArtifact}
+                        />
+                      );
+                    }
+                    lastIndex = match.index + match[0].length;
+                  }
+
+                  const remainingText = rawContent.slice(lastIndex).trim();
+                  if (remainingText) {
+                    const cleanRemaining = remainingText
+                      .replace(/:::artifact\{[\s\S]*?\}\s*:::/g, '')
+                      .replace(/<antArtifact[\s\S]*?<\/antArtifact>/gi, '')
+                      .trim();
+                    if (cleanRemaining) {
+                      parts.push(<Markdown key={`text-rem-${lastIndex}`} text={cleanRemaining} />);
+                    }
+                  }
+
+                  // Render any remaining artifacts not placed by a tag
+                  parsedArtifacts
+                    .filter((a) => !renderedIds.has(a.id))
+                    .forEach((art) => {
+                      parts.push(
+                        <ArtifactCard
+                          key={`art-extra-${art.id}`}
+                          artifact={art}
+                          isActive={selectedArtifact?.id === art.id}
+                          onSelect={onSelectArtifact}
+                        />
+                      );
+                    });
+
+                  return parts.length > 0 ? parts : <Markdown text={rawContent.replace(/:::artifact\{[\s\S]*?\}\s*:::/g, '').trim()} />;
+                })()}
               </div>
 
               {/* Claude Action Toolbar */}
@@ -261,16 +258,34 @@ export default function ChatTimeline({
             )}
 
             <div className="w-full text-[#1f1e1d] dark:text-[#ebe6dc] text-[14.5px] leading-relaxed">
-              {streamingText ? (
-                <Markdown text={streamingText} />
-              ) : (
-                !streamingThinking && (
-                  <div className="flex items-center gap-2 text-[#737067] dark:text-[#9b968a] text-xs py-1">
-                    <span className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-[#da7756] border-t-transparent" />
-                    <span>Claude is responding…</span>
-                  </div>
-                )
-              )}
+              {(() => {
+                const isGeneratingArtifact = streamingText.includes('<antArtifact') || streamingText.includes(':::artifact');
+                const cleanStreamingText = streamingText
+                  .replace(/<antArtifact[\s\S]*$/gi, '')
+                  .replace(/:::artifact\{[\s\S]*$/gi, '')
+                  .trim();
+
+                return (
+                  <>
+                    {cleanStreamingText ? (
+                      <Markdown text={cleanStreamingText} />
+                    ) : (
+                      !streamingThinking && (
+                        <div className="flex items-center gap-2 text-[#737067] dark:text-[#9b968a] text-xs py-1">
+                          <span className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-[#da7756] border-t-transparent" />
+                          <span>Claude is responding…</span>
+                        </div>
+                      )
+                    )}
+                    {isGeneratingArtifact && (
+                      <div className="inline-flex items-center gap-2 px-3 py-1.5 my-2 rounded-xl bg-[#da7756]/10 border border-[#da7756]/30 text-[#da7756] text-xs font-medium animate-pulse">
+                        <span className="w-2 h-2 rounded-full bg-[#da7756]"></span>
+                        <span>Generating interactive artifact preview…</span>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </div>
         )}

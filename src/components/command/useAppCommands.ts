@@ -29,6 +29,8 @@ interface AppCommandsOpts {
 
 export function useAppCommands(opts: AppCommandsOpts) {
   const { setCommands } = useCommandPaletteStore();
+  const projectIds = opts.projects.map((p) => p.id).join(',');
+  const activeProjectId = opts.activeProject?.id;
 
   useEffect(() => {
     const {
@@ -212,11 +214,13 @@ export function useAppCommands(opts: AppCommandsOpts) {
     ];
 
     setCommands(commands);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    opts.projects.map((p) => p.id).join(','),
-    opts.activeProject?.id,
+    projectIds,
+    activeProjectId,
     opts.activeTab,
     opts.activeFile,
     opts.isStreaming,
+    setCommands,
   ]);
 }

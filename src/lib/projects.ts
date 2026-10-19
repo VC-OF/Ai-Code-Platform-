@@ -13,6 +13,9 @@ export interface Project {
   id: string;
   title: string;
   kind: "app" | "build";
+  userId?: string | null;
+  shareToken?: string | null;
+  isPublic?: boolean;
   createdAt: number;
   updatedAt: number;
   chatHistory: { role: "user" | "assistant"; content: string }[];
@@ -57,14 +60,28 @@ function toProject(row: DbProject): Project {
     id: row.id,
     title: row.name,
     kind: row.kind,
+    userId: row.user_id ?? null,
+    shareToken: row.share_token ?? null,
+    isPublic: Boolean(row.is_public),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     chatHistory: [],
   };
 }
 
-export async function getProjects(): Promise<Project[]> {
+export async function getProjects(userId?: string | null): Promise<Project[]> {
   await migrateLegacyJson();
+  if (userId) {
+    const userProjects = projectDb.getByUserId(userId);
+    const anonProjects = projectDb.getAll().filter((p) => !p.user_id);
+    const combined = [...userProjects];
+    for (const ap of anonProjects) {
+      if (!combined.some((p) => p.id === ap.id)) {
+        combined.push(ap);
+      }
+    }
+    return combined.map(toProject);
+  }
   return projectDb.getAll().map(toProject);
 }
 
@@ -90,7 +107,8 @@ export async function getProject(id: string): Promise<Project | null> {
 
 export async function createProject(
   title: string = "New Project",
-  templateId: string = "blank"
+  templateId: string = "blank",
+  userId?: string | null
 ): Promise<Project> {
   await migrateLegacyJson();
   const id = "proj_" + Math.random().toString(36).substring(2, 11);
@@ -111,7 +129,7 @@ export async function createProject(
       // Scaffolding default AGENTS.md memory file for pre-scaffolded templates
       let pkgManager = "npm";
       try {
-        const filesInParent = await fs.readdir(process.cwd());
+        const filesInParent = await fs.readdir(/* turbopackIgnore: true */ process.cwd());
         if (filesInParent.includes("pnpm-lock.yaml")) pkgManager = "pnpm";
         else if (filesInParent.includes("yarn.lock")) pkgManager = "yarn";
       } catch {}
@@ -151,6 +169,7 @@ export async function createProject(
     name: title,
     workspace: workspaceRoot,
     description: null,
+    user_id: userId ?? null,
   });
 
   const row = projectDb.getById(id)!;
@@ -201,7 +220,7 @@ export async function validateBuildModePath(rawPath: string): Promise<string> {
 
   // The platform's own directory (or an ancestor containing it) — opening
   // it would let the agent edit its own source, .env.local, and DB
-  const cwd = path.resolve(process.cwd());
+  const cwd = path.resolve(/* turbopackIgnore: true */ process.cwd());
   if (resolved === cwd || cwd.startsWith(resolved + path.sep)) {
     throw new Error("Refusing to open the platform's own directory");
   }
@@ -228,7 +247,8 @@ export async function validateBuildModePath(rawPath: string): Promise<string> {
 
 export async function createBuildModeProject(
   hostPath: string,
-  title?: string
+  title?: string,
+  userId?: string | null
 ): Promise<Project> {
   await migrateLegacyJson();
   const resolved = await validateBuildModePath(hostPath);
@@ -273,9 +293,33 @@ export async function createBuildModeProject(
     workspace: resolved,
     description: null,
     kind: "build",
+    user_id: userId ?? null,
   });
 
   const row = projectDb.getById(id)!;
+  return toProject(row);
+}
+
+export async function setProjectShare(
+  id: string,
+  isPublic: boolean
+): Promise<{ isPublic: boolean; shareToken: string | null } | null> {
+  const row = projectDb.getById(id);
+  if (!row) return null;
+  let shareToken: string | null = row.share_token ?? null;
+  if (isPublic && !shareToken) {
+    shareToken = "sh_" + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+  } else if (!isPublic) {
+    shareToken = null;
+  }
+
+  projectDb.setShare(id, isPublic, shareToken);
+  return { isPublic, shareToken };
+}
+
+export async function getProjectByShareToken(token: string): Promise<Project | null> {
+  const row = projectDb.getByShareToken(token);
+  if (!row || !row.is_public) return null;
   return toProject(row);
 }
 
@@ -301,3 +345,4 @@ export async function deleteProject(id: string): Promise<boolean> {
   projectDb.delete(id);
   return true;
 }
+

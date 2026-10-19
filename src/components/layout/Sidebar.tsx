@@ -19,6 +19,7 @@ export default function Sidebar({
   const [search,   setSearch]   = useState('');
   const [creating, setCreating] = useState(false);
   const [newName,  setNewName]  = useState('');
+  const [newTemplate, setNewTemplate] = useState('react-vite');
   const [loading,  setLoading]  = useState(true);
 
   useEffect(() => {
@@ -29,9 +30,13 @@ export default function Sidebar({
       .finally(() => setLoading(false));
   }, []);
 
+  const [showAllProjects, setShowAllProjects] = useState(false);
+
   const filtered = projects.filter((p) =>
     p.title.toLowerCase().includes(search.toLowerCase())
   );
+
+  const displayedProjects = search.trim() || showAllProjects ? filtered : filtered.slice(0, 8);
 
   const createProject = async () => {
     if (!newName.trim()) return;
@@ -39,7 +44,7 @@ export default function Sidebar({
       const res = await fetch('/api/projects', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ title: newName.trim(), template: 'react-vite' }),
+        body:    JSON.stringify({ title: newName.trim(), template: newTemplate }),
       });
       if (!res.ok) return;
       const data = await res.json();
@@ -65,6 +70,21 @@ export default function Sidebar({
 
   return (
     <aside className="sidebar">
+      {/* Top Search Input */}
+      <div className="sidebar-search">
+        <svg className="sidebar-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13}>
+          <circle cx="11" cy="11" r="7"/>
+          <path d="M21 21l-4.3-4.3"/>
+        </svg>
+        <input
+          type="text"
+          placeholder="Search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="sidebar-search-input"
+        />
+      </div>
+
       {/* New Project Action Button */}
       <div className="sidebar-action-container">
         {creating ? (
@@ -81,6 +101,20 @@ export default function Sidebar({
               className="sidebar-new-input"
               autoFocus
             />
+            <select
+              value={newTemplate}
+              onChange={(e) => setNewTemplate(e.target.value)}
+              className="sidebar-new-input sidebar-template-select"
+              style={{ fontSize: '11px', padding: '4px 6px', marginTop: '2px' }}
+            >
+              <option value="react-vite">React app</option>
+              <option value="nextjs-tailwind">Next.js 16</option>
+              <option value="dashboard-shell">Dashboard</option>
+              <option value="fastapi-react">FastAPI + React</option>
+              <option value="express-api">Express API</option>
+              <option value="static-site">Static site</option>
+              <option value="blank">Blank</option>
+            </select>
             <div className="sidebar-new-actions">
               <button onClick={createProject} className="btn-primary-sm">
                 Create
@@ -98,42 +132,29 @@ export default function Sidebar({
             onClick={() => setCreating(true)}
             className="sidebar-new-btn"
           >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-              <path d="M12 5v14M5 12h14"/>
-            </svg>
-            <span>New project</span>
+            <span className="sidebar-new-plus">+</span>
+            <span>New</span>
           </button>
         )}
+      </div>
+
+      {/* Upgrade OpenCode shortcut */}
+      <div className="sidebar-nav-shortcuts">
         <button
+          type="button"
           onClick={() => window.dispatchEvent(new CustomEvent('oc-open', { detail: { target: 'upgrade' } }))}
-          className="sidebar-new-btn sidebar-upgrade-btn"
-          title="Improve OpenCode's own source in an isolated worktree"
+          className="sidebar-nav-item"
+          title="Upgrade OpenCode in an isolated worktree"
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="12" cy="12" r="3"/>
-            <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>
+          <svg className="sidebar-nav-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
           </svg>
           <span>Upgrade OpenCode</span>
         </button>
       </div>
 
-      {/* Search Projects */}
-      <div className="sidebar-search">
-        <svg className="sidebar-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13}>
-          <circle cx="11" cy="11" r="7"/>
-          <path d="M21 21l-4.3-4.3"/>
-        </svg>
-        <input
-          type="text"
-          placeholder="Search projects…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="sidebar-search-input"
-        />
-      </div>
-
-      {/* Recents Label */}
-      <div className="sidebar-nav-label">Recent projects</div>
+      {/* Projects list header */}
+      <div className="sidebar-nav-label">Projects</div>
 
       {/* Project list */}
       <div className="sidebar-list">
@@ -148,17 +169,30 @@ export default function Sidebar({
             {search ? 'No results' : 'No projects yet'}
           </div>
         ) : (
-          filtered.map((project) => (
-            <ProjectItem
-              key={project.id}
-              project={project}
-              active={activeProject?.id === project.id}
-              onClick={() => onProjectSelect(project)}
-              onDelete={(e) => deleteProject(project.id, e)}
-            />
-          ))
+          <>
+            {displayedProjects.map((project) => (
+              <ProjectItem
+                key={project.id}
+                project={project}
+                active={activeProject?.id === project.id}
+                onClick={() => onProjectSelect(project)}
+                onDelete={(e) => deleteProject(project.id, e)}
+              />
+            ))}
+            {!search && filtered.length > 8 && (
+              <button
+                type="button"
+                onClick={() => setShowAllProjects(!showAllProjects)}
+                className="sidebar-more-btn"
+              >
+                {showAllProjects ? 'Show fewer' : `Show all (${filtered.length})`}
+              </button>
+            )}
+          </>
         )}
       </div>
+
+
 
 
 
@@ -171,115 +205,47 @@ export default function Sidebar({
           border-right: 1px solid var(--border-subtle);
           width: var(--sidebar-width);
           overflow: hidden;
-          padding: 8px;
+          padding: 10px 8px;
           height: 100%;
           font-size: 13px;
-        }
-        .sidebar-action-container {
-          margin-bottom: 8px;
-          flex-shrink: 0;
-        }
-        .sidebar-new-btn {
-          width: 100%;
-          height: 32px;
-          background: var(--accent);
-          border: none;
-          border-radius: var(--radius-md);
-          color: var(--bg-surface);
-          font-family: var(--font-sans);
-          font-weight: 500;
-          font-size: 13px;
-          padding: 0 10px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 6px;
-          cursor: pointer;
-          transition: background var(--transition-fast);
-        }
-        .sidebar-new-btn:hover {
-          background: var(--accent-dim);
-        }
-        .sidebar-upgrade-btn {
-          margin-top: 6px;
-          background: transparent;
-          border: 1px solid var(--border-base);
-          color: var(--text-secondary);
-        }
-        .sidebar-upgrade-btn:hover {
-          background: var(--bg-hover);
-          color: var(--text-primary);
-        }
-        .sidebar-new-form {
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-        }
-        .sidebar-new-input {
-          width: 100%;
-          height: 32px;
-          padding: 0 10px;
-          background: var(--bg-elevated);
-          border: 1px solid var(--border-base);
-          border-radius: var(--radius-md);
-          color: var(--text-primary);
-          font-size: 13px;
-          outline: none;
-        }
-        .sidebar-new-input:focus {
-          border-color: var(--accent);
-        }
-        .sidebar-new-actions {
-          display: flex;
-          gap: 6px;
-        }
-        .btn-primary-sm,
-        .btn-ghost-sm {
-          flex: 1;
-          height: 28px;
-          border-radius: var(--radius-md);
-          font-size: 12px;
-          cursor: pointer;
-        }
-        .btn-primary-sm {
-          background: var(--accent);
-          border: none;
-          color: var(--bg-surface);
-          font-weight: 500;
-        }
-        .btn-ghost-sm {
-          background: transparent;
-          border: 1px solid var(--border-base);
-          color: var(--text-secondary);
-        }
-        .btn-ghost-sm:hover {
-          background: var(--bg-hover);
-        }
-        .sidebar-new-btn:focus-visible,
-        .btn-primary-sm:focus-visible,
-        .btn-ghost-sm:focus-visible {
-          outline: 2px solid var(--accent);
-          outline-offset: 2px;
+          user-select: none;
         }
         .sidebar-search {
           display: flex;
           align-items: center;
           gap: 6px;
-          height: 32px;
-          background: transparent;
-          border: 1px solid transparent;
+          height: 28px;
+          background: var(--bg-elevated);
+          border: 1px solid var(--border-subtle);
           border-radius: var(--radius-md);
           padding: 0 8px;
-          margin-bottom: 12px;
+          margin-bottom: 8px;
           flex-shrink: 0;
-          transition: background var(--transition-fast), border-color var(--transition-fast);
-        }
-        .sidebar-search:hover {
-          background: var(--bg-hover);
+          font-size: 12px;
+          transition: border-color var(--transition-fast);
         }
         .sidebar-search:focus-within {
-          background: var(--bg-elevated);
-          border-color: var(--accent);
+          border-color: var(--border-strong);
+          box-shadow: 0 0 0 1px var(--border-strong);
+        }
+        .sidebar-more-btn {
+          width: 100%;
+          padding: 6px 8px;
+          font-size: 11px;
+          font-weight: 500;
+          color: var(--text-muted);
+          background: transparent;
+          border: 1px dashed var(--border-subtle);
+          border-radius: var(--radius-sm);
+          cursor: pointer;
+          margin-top: 4px;
+          transition: all var(--transition-fast);
+          text-align: center;
+        }
+        .sidebar-more-btn:hover {
+          color: var(--text-primary);
+          background: var(--bg-hover);
+          border-color: var(--border-base);
         }
         .sidebar-search-icon {
           color: var(--text-muted);
@@ -291,20 +257,140 @@ export default function Sidebar({
           background: transparent;
           border: none;
           outline: none;
-          color: var(--text-primary);
-          font-size: 13px;
+          color: #1f1e1d;
+          font-size: 12px;
+        }
+        :global(html:not([data-theme="light"])) .sidebar-search-input {
+          color: #eceae3;
         }
         .sidebar-search-input::placeholder {
-          color: var(--text-muted);
+          color: #9c978b;
         }
-        .sidebar-nav-label {
-          font-size: 12px;
-          color: var(--text-muted);
-          padding: 0 8px;
-          margin-bottom: 4px;
-          font-weight: 500;
+        .sidebar-action-container {
+          margin-bottom: 6px;
           flex-shrink: 0;
         }
+        .sidebar-new-btn {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          width: 100%;
+          padding: 5px 8px;
+          border-radius: var(--radius-md);
+          font-size: 12px;
+          font-weight: 500;
+          color: var(--text-secondary);
+          background: transparent;
+          border: none;
+          cursor: pointer;
+          transition: background var(--transition-fast), color var(--transition-fast);
+          text-align: left;
+        }
+        .sidebar-new-btn:hover {
+          background: var(--bg-hover);
+          color: var(--text-primary);
+        }
+        .sidebar-new-plus {
+          font-size: 16px;
+          font-weight: 600;
+          line-height: 1;
+        }
+        .sidebar-nav-shortcuts {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          padding-bottom: 8px;
+          margin-bottom: 6px;
+          border-bottom: 1px solid #ece9e0;
+          flex-shrink: 0;
+        }
+        :global(html:not([data-theme="light"])) .sidebar-nav-shortcuts {
+          border-bottom-color: rgba(255, 255, 255, 0.08);
+        }
+        .sidebar-nav-item {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          width: 100%;
+          padding: 4px 8px;
+          border-radius: var(--radius-sm);
+          font-size: 12px;
+          font-weight: 400;
+          color: var(--text-muted);
+          background: transparent;
+          border: none;
+          cursor: pointer;
+          transition: background var(--transition-fast), color var(--transition-fast);
+          text-align: left;
+        }
+        .sidebar-nav-item:hover {
+          background: var(--bg-hover);
+          color: var(--text-primary);
+        }
+        .sidebar-nav-icon {
+          color: #736f66;
+          flex-shrink: 0;
+        }
+        .sidebar-more-dots {
+          font-family: var(--font-mono);
+          font-weight: 700;
+          color: #736f66;
+          width: 14px;
+          text-align: center;
+        }
+        .sidebar-nav-label {
+          font-size: 10px;
+          font-weight: 600;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: var(--text-disabled);
+          padding: 0 10px;
+          margin-bottom: 2px;
+          flex-shrink: 0;
+        }
+        .sidebar-new-form {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+        .sidebar-new-input {
+          width: 100%;
+          height: 30px;
+          padding: 0 8px;
+          background: var(--bg-surface);
+          border: 1px solid var(--border-base);
+          border-radius: 8px;
+          color: var(--text-primary);
+          font-size: 12px;
+          outline: none;
+        }
+        .sidebar-new-input:focus {
+          border-color: var(--brand);
+        }
+        .sidebar-new-actions {
+          display: flex;
+          gap: 6px;
+        }
+        .btn-primary-sm,
+        .btn-ghost-sm {
+          flex: 1;
+          height: 26px;
+          border-radius: 6px;
+          font-size: 11px;
+          font-weight: 500;
+          cursor: pointer;
+        }
+        .btn-primary-sm {
+          background: var(--brand);
+          border: none;
+          color: #ffffff;
+        }
+        .btn-ghost-sm {
+          background: transparent;
+          border: 1px solid var(--border-base);
+          color: var(--text-muted);
+        }
+
         .sidebar-list {
           flex: 1;
           overflow-y: auto;
@@ -319,13 +405,13 @@ export default function Sidebar({
           padding: 4px 0;
         }
         .sidebar-skeleton {
-          height: 32px;
-          background: var(--bg-hover);
-          border-radius: var(--radius-md);
+          height: 28px;
+          background: rgba(0, 0, 0, 0.04);
+          border-radius: 6px;
         }
         .sidebar-empty {
           padding: 8px;
-          color: var(--text-muted);
+          color: #9c978b;
           font-size: 12px;
         }
       `}</style>
@@ -407,7 +493,9 @@ function ProjectItem({
         }
         .project-item--active,
         .project-item--active:hover {
-          background: var(--bg-overlay);
+          background: var(--bg-hover);
+          border-left: 2px solid var(--brand);
+          padding-left: 6px;
         }
         .project-info {
           flex: 1;

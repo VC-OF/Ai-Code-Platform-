@@ -1,4 +1,10 @@
 @import "tailwindcss";
+@variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme {
+  --font-sans: var(--font-inter, -apple-system), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+}
 /* Tailwind v4 scans every non-ignored file for class names. The live SQLite
    database (.platform/*.db-shm is locked while the app runs) and user
    workspaces must never be part of that scan — Turbopack panics on the lock
@@ -14,8 +20,9 @@
   padding: 0;
 }
 
-html, body, #__next {
+html, body {
   height: 100%;
+  min-height: 100%;
   overflow: hidden;
 }
 
@@ -147,7 +154,7 @@ button, input, textarea, select {
   }
 }
 
-.font-serif-display { font-family: var(--font-serif); font-weight: 400; letter-spacing: -0.01em; }
+.font-serif-display { font-family: var(--font-sans); font-weight: 600; letter-spacing: -0.025em; }
 
 /* ── /context and /skills report cards ─────────────────────────────── */
 .ctx-report {

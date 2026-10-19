@@ -593,7 +593,7 @@ export default function MessageInput({
             ? 'Voice mode is on: talk, or type here…'
             : isStreaming
               ? 'Reply, steer, or answer the agent…'
-              : 'Describe what to build…'
+              : 'Describe a task or ask a question'
         }
         disabled={disabled}
         rows={1}
@@ -617,14 +617,12 @@ export default function MessageInput({
             <button
               type="button"
               onClick={triggerFileInput}
-              className="btn-attach"
+              className="btn-attach btn-attach--plus"
               title="Attach files or images"
               aria-label="Attach files or images"
               disabled={disabled}
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={14} height={14}>
-                <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
-              </svg>
+              <span className="plus-symbol">+</span>
             </button>
             <button
               type="button"
@@ -711,17 +709,35 @@ export default function MessageInput({
           position: relative;
           background: var(--bg-surface);
           border: 1px solid var(--border-base);
-          border-radius: 14px;
-          padding: 10px 10px 8px 14px;
+          border-radius: 12px;
+          padding: 12px 12px 8px 14px;
           display: flex;
           flex-direction: column;
           gap: 6px;
           flex-shrink: 0;
-          transition: border-color var(--transition-fast);
+          transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
         }
 
         .input-area:focus-within {
           border-color: var(--border-strong);
+          box-shadow: 0 0 0 1px var(--border-strong);
+        }
+
+        .btn-attach--plus {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 500;
+        }
+
+        .plus-symbol {
+          font-size: 18px;
+          line-height: 1;
+          color: var(--text-muted);
+        }
+
+        .btn-attach--plus:hover .plus-symbol {
+          color: var(--text-primary);
         }
 
         .context-badge {
@@ -881,13 +897,14 @@ export default function MessageInput({
         }
 
         .btn-send {
-          background: var(--accent);
-          color: #fff;
+          background: var(--text-primary);
+          color: var(--bg-base);
           margin-left: 4px;
+          border-radius: 8px;
         }
 
         .btn-send:hover:not(:disabled) {
-          background: var(--accent-dim);
+          opacity: 0.85;
         }
 
         .btn-send:disabled {
@@ -909,7 +926,7 @@ export default function MessageInput({
         .btn-send:focus-visible,
         .btn-stop:focus-visible,
         .btn-remove-attachment:focus-visible {
-          outline: 2px solid var(--accent);
+          outline: 2px solid var(--border-strong);
           outline-offset: 1px;
         }
 

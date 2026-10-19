@@ -126,6 +126,7 @@ export default function CodeTab({
   const [quickOpenFilter, setQuickOpenFilter] = useState("");
   const [allProjectFiles, setAllProjectFiles] = useState<string[]>([]);
   const [quickOpenIndex, setQuickOpenIndex] = useState(0);
+  const recentFiles = allProjectFiles.slice(0, 4);
 
   // VS Code status bar info
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
@@ -204,7 +205,7 @@ export default function CodeTab({
     setInlineOriginal(text);
     setInlineProposed(null);
     setShowInlineEdit(true);
-  }, [activePath]);
+  }, [activePath, setInlineProposed]);
   // Monaco commands are registered once on mount; route through a ref so they see the current activePath
   const openInlineEditRef = useRef(handleOpenInlineEdit);
   const activePathRef = useRef(activePath);
@@ -241,7 +242,7 @@ export default function CodeTab({
     } finally {
       setInlineLoading(false);
     }
-  }, [inlinePrompt, activePath]);
+  }, [inlinePrompt, activePath, setInlineProposed]);
 
   const handleAcceptInlineEdit = useCallback(() => {
     if (!editorRef.current || inlineProposed === null || !inlineRangeRef.current) return;
@@ -263,13 +264,13 @@ export default function CodeTab({
     setShowInlineEdit(false);
     setInlineProposed(null);
     setInlinePrompt('');
-  }, [inlineProposed, activePath]);
+  }, [inlineProposed, activePath, setInlineProposed, setInlinePrompt]);
 
   const handleRejectInlineEdit = useCallback(() => {
     setShowInlineEdit(false);
     setInlineProposed(null);
     setInlinePrompt('');
-  }, []);
+  }, [setInlineProposed, setInlinePrompt]);
 
   // Close the inline edit if the active file changes; its captured range belongs to the old file.
   // (Render-time adjustment; handleAcceptInlineEdit also guards on inlinePathRef.)
@@ -630,7 +631,9 @@ export default function CodeTab({
     }
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saveFile, activePath, openTabs]);
+
 
   const isCurrentModified = activePath ? modifiedPaths.has(activePath) : false;
 
@@ -867,7 +870,7 @@ export default function CodeTab({
               </div>
               <h2 className="welcome-title">No file open</h2>
               <p className="welcome-desc">
-                Select a file in the explorer, or press <kbd className="kbd">Ctrl+P</kbd> to open one quickly.
+                Open a project file, start a new one, or ask the coding agent to build something for you.
               </p>
               <div className="welcome-actions">
                 <button
@@ -877,12 +880,51 @@ export default function CodeTab({
                   }}
                   className="btn btn--secondary"
                 >
-                  Quick open
+                  Browse files
                 </button>
                 <button onClick={createNewFile} className="btn btn--ghost">
                   New file
                 </button>
               </div>
+              {recentFiles.length > 0 && (
+                <div className="welcome-recent">
+                  <div className="welcome-recent-heading">Project files</div>
+                  <div className="welcome-recent-list">
+                    {recentFiles.map((file) => (
+                      <button
+                        key={file}
+                        type="button"
+                        className="welcome-recent-file"
+                        onClick={() => openFileFromPalette(file)}
+                        title={`Open ${file}`}
+                      >
+                        <span className="welcome-file-icon" aria-hidden="true">{file.split('/').pop()?.split('.').pop()?.slice(0, 2).toUpperCase() || '•'}</span>
+                        <span className="welcome-file-path">{file}</span>
+                        <span className="welcome-file-arrow" aria-hidden="true">↗</span>
+                      </button>
+                    ))}
+                  </div>
+                  {allProjectFiles.length > recentFiles.length && (
+                    <button
+                      type="button"
+                      className="welcome-all-files"
+                      onClick={() => {
+                        setShowQuickOpen(true);
+                        setQuickOpenFilter("");
+                      }}
+                    >
+                      View all {allProjectFiles.length} files
+                    </button>
+                  )}
+                </div>
+              )}
+              <button
+                type="button"
+                className="welcome-agent-link"
+                onClick={() => window.dispatchEvent(new CustomEvent('oc-focus-chat'))}
+              >
+                Ask the agent to build or change something
+              </button>
             </div>
           </div>
         )}
@@ -1884,16 +1926,17 @@ export default function CodeTab({
 
         /* ── Empty state ─────────────────────────────────────────── */
         .welcome-screen {
-          height: 100%;
+          min-height: 100%;
           width: 100%;
           display: flex;
           align-items: center;
           justify-content: center;
-          padding: 24px;
+          padding: clamp(16px, 4vw, 32px);
+          overflow-y: auto;
         }
 
         .welcome-card {
-          max-width: 340px;
+          width: min(100%, 440px);
           text-align: center;
           display: flex;
           flex-direction: column;
@@ -1916,13 +1959,126 @@ export default function CodeTab({
           font-size: 12.5px;
           color: var(--text-muted);
           line-height: 1.55;
-          margin-bottom: 18px;
+          margin-bottom: 16px;
         }
 
         .welcome-actions {
           display: flex;
           align-items: center;
           gap: 8px;
+        }
+
+        .welcome-recent {
+          width: 100%;
+          margin-top: 22px;
+          text-align: left;
+          border-top: 1px solid var(--border-subtle);
+          padding-top: 14px;
+        }
+
+        .welcome-recent-heading {
+          margin: 0 2px 7px;
+          color: var(--text-muted);
+          font-size: 10px;
+          font-weight: 600;
+          letter-spacing: .07em;
+          text-transform: uppercase;
+        }
+
+        .welcome-recent-list {
+          display: grid;
+          gap: 3px;
+        }
+
+        .welcome-recent-file {
+          width: 100%;
+          min-width: 0;
+          display: flex;
+          align-items: center;
+          gap: 9px;
+          padding: 7px 8px;
+          border: 1px solid transparent;
+          border-radius: var(--radius-md);
+          background: transparent;
+          color: var(--text-secondary);
+          cursor: pointer;
+          text-align: left;
+        }
+
+        .welcome-recent-file:hover {
+          color: var(--text-primary);
+          border-color: var(--border-subtle);
+          background: var(--bg-hover);
+        }
+
+        .welcome-file-icon {
+          flex: 0 0 25px;
+          height: 25px;
+          display: grid;
+          place-items: center;
+          border-radius: 6px;
+          background: var(--accent-soft);
+          color: var(--brand);
+          font: 600 9px var(--font-mono);
+        }
+
+        .welcome-file-path {
+          min-width: 0;
+          flex: 1;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          font: 11px var(--font-mono);
+        }
+
+        .welcome-file-arrow {
+          color: var(--text-muted);
+          opacity: 0;
+        }
+
+        .welcome-recent-file:hover .welcome-file-arrow {
+          opacity: 1;
+        }
+
+        .welcome-all-files,
+        .welcome-agent-link {
+          border: 0;
+          background: none;
+          color: var(--brand);
+          cursor: pointer;
+          font: 11px var(--font-sans);
+        }
+
+        .welcome-all-files {
+          margin: 9px 0 0 8px;
+        }
+
+        .welcome-agent-link {
+          margin-top: 15px;
+          color: var(--text-muted);
+          text-decoration: underline;
+          text-decoration-color: var(--border-strong);
+          text-underline-offset: 3px;
+        }
+
+        .welcome-agent-link:hover,
+        .welcome-all-files:hover {
+          color: var(--brand);
+        }
+
+        @media (max-width: 480px) {
+          .welcome-screen {
+            align-items: flex-start;
+            padding: 20px 14px;
+          }
+
+          .welcome-icon {
+            margin-bottom: 8px;
+          }
+
+          .welcome-recent {
+            margin-top: 16px;
+          }
         }
 
         /* ── Floating selection actions ──────────────────────────── */

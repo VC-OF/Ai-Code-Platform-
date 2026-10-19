@@ -16,6 +16,7 @@ interface ChatHeaderProps {
   isCanvasOpen: boolean;
   onToggleCanvas: () => void;
   onSwitchToCode?: () => void;
+  onOpenKeyModal?: () => void;
 }
 
 export default function ChatHeader({
@@ -30,6 +31,7 @@ export default function ChatHeader({
   isCanvasOpen,
   onToggleCanvas,
   onSwitchToCode,
+  onOpenKeyModal,
 }: ChatHeaderProps) {
   return (
     <header className="min-h-11 border-b border-[#e8e6de] bg-white dark:border-[#2b2a26] dark:bg-[#1f1e1b] flex items-center justify-between gap-2 px-2 sm:px-3 text-[#1f1e1d] dark:text-[#ede8de] select-none z-10 shrink-0">
@@ -94,11 +96,17 @@ export default function ChatHeader({
           }}
         />
 
-        <div className="min-w-0 hidden md:block">
-          <span className="font-medium text-xs text-[#737067] dark:text-[#9c978b] truncate max-w-xs font-sans">
-            {title || 'New session'}
-          </span>
-        </div>
+        {title && title !== 'Open Chat' && title !== 'New Chat' && (
+          <div className="min-w-0 hidden md:flex items-center gap-1.5 text-xs">
+            <span className="text-[#c5c1b6] dark:text-[#42403a] font-light">/</span>
+            <span
+              className="font-medium text-xs text-[#737067] dark:text-[#9c978b] truncate max-w-xs font-sans"
+              title={title}
+            >
+              {title}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Right: Model Selector & Actions */}
@@ -137,6 +145,21 @@ export default function ChatHeader({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
             </svg>
             <span className="hidden sm:inline">Canvas</span>
+          </button>
+        )}
+
+        {/* API Keys Configuration */}
+        {onOpenKeyModal && (
+          <button
+            type="button"
+            onClick={onOpenKeyModal}
+            title="Configure API Keys"
+            aria-label="Configure API Keys"
+            className="p-1.5 rounded-lg text-[#737067] hover:text-[#1f1e1d] hover:bg-[#f0eee6] dark:text-[#9c978b] dark:hover:text-[#f7f4ee] dark:hover:bg-[#282723] transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+            </svg>
           </button>
         )}
 

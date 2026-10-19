@@ -6,6 +6,11 @@ import { JOB_ZOD_SCHEMAS } from './jobTools';
 import { GITHUB_ZOD_SCHEMAS } from './githubTools';
 import { LSP_ZOD_SCHEMAS } from './lspTools';
 import { SPAWN_AGENT_ZOD } from './subagents';
+import { AST_ZOD_SCHEMAS } from './astTools';
+import { GIT_ADVANCED_ZOD_SCHEMAS } from './gitAdvancedTools';
+import { SIDECAR_ZOD_SCHEMAS } from './sidecarTools';
+import { SCHEDULE_ZOD_SCHEMAS } from './scheduleTools';
+import { TUNNEL_ZOD_SCHEMAS } from './tunnelTools';
 
 const toolSchemas = {
   read_file: z.object({
@@ -176,6 +181,11 @@ const toolSchemas = {
   ...GITHUB_ZOD_SCHEMAS,
   ...LSP_ZOD_SCHEMAS,
   ...BROWSER_ZOD_SCHEMAS,
+  ...AST_ZOD_SCHEMAS,
+  ...GIT_ADVANCED_ZOD_SCHEMAS,
+  ...SIDECAR_ZOD_SCHEMAS,
+  ...SCHEDULE_ZOD_SCHEMAS,
+  ...TUNNEL_ZOD_SCHEMAS,
 };
 
 export type ToolName = keyof typeof toolSchemas;

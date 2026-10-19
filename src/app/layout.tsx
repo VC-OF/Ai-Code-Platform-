@@ -31,14 +31,6 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={inter.variable} data-theme="light">
-      <head>
-        {/* Source Serif 4 + JetBrains Mono */}
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
-          rel="stylesheet"
-        />
-      </head>
       <body className="antialiased">{children}</body>
     </html>
   );

@@ -12,7 +12,13 @@ const nextConfig: NextConfig = {
   },
   outputFileTracingExcludes: {
     // .claude/worktrees holds full repo copies made for isolated sub-agents
-    "*": [".platform/**", "workspaces/**", ".claude/**", ".open-code/**"],
+    "*": [
+      ".platform/**",
+      "workspaces/**",
+      ".claude/**",
+      ".open-code/**",
+      ".settings/**",
+    ],
   },
 };
 

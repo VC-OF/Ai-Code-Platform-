@@ -61,6 +61,12 @@ workspaces/*/.next/
 /e2e/screenshots/
 
 # Upgrade OpenCode → Discover: settings, cache and daily digests (local data)
-.platform/discover.json
+.platform/
+.claude/
+.freebuff/
 .platform/discover-cache.json
 .platform/discover-digests/
+.open-code/
+workspaces/
+.platform/attachments/
+test-results/

@@ -162,7 +162,7 @@ function hostPythonCmd(): string | null {
   hostPython = null;
   for (const cmd of ["python", "python3"]) {
     try {
-      const out = execFileSync(cmd, ["--version"], { stdio: "pipe", timeout: 5000 }).toString();
+      const out = execFileSync(/* turbopackIgnore: true */ cmd, ["--version"], { stdio: "pipe", timeout: 5000 }).toString();
       if (/Python 3/.test(out)) {
         hostPython = cmd;
         break;

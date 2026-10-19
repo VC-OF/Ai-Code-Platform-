@@ -91,14 +91,15 @@ export default function ChatSidebar({
 
   if (!isOpen) {
     return (
-      <div className="p-3 border-r border-[#e8e6de] dark:border-[#2b2a26] bg-[#faf9f6] dark:bg-[#1a1916] flex flex-col items-center select-none">
+      <div className="p-3 border-r border-[var(--border-subtle)] bg-[var(--bg-surface)] flex flex-col items-center select-none shrink-0 z-20">
         <button
           type="button"
           onClick={onToggleOpen}
-          className="p-2 rounded-lg text-[#6e6b64] hover:text-[#1f1e1d] hover:bg-[#ebe7de] dark:text-[#9c978b] dark:hover:text-[#f7f4ee] dark:hover:bg-[#282723] transition-colors"
+          className="p-2 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
           title="Open sidebar"
+          aria-label="Open sidebar"
         >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <rect x="3" y="4" width="18" height="16" rx="2" strokeWidth={1.8} />
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 4v16" />
           </svg>
@@ -107,11 +108,12 @@ export default function ChatSidebar({
         <button
           type="button"
           onClick={onNewChat}
-          className="mt-4 p-2 rounded-xl bg-[#f0eee6] hover:bg-[#e8e5dc] text-[#1f1e1d] dark:bg-[#da7756] dark:text-white shadow-sm transition-colors"
+          className="mt-4 p-2 rounded-xl bg-[var(--brand)] text-white hover:opacity-90 shadow-xs transition-transform active:scale-95 cursor-pointer"
           title="New Chat"
+          aria-label="New Chat"
         >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.4}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
           </svg>
         </button>
       </div>
@@ -119,90 +121,118 @@ export default function ChatSidebar({
   }
 
   return (
-    <aside className="w-64 sm:w-72 h-full border-r border-[#e8e6de] dark:border-[#2b2a26] bg-[#faf9f6] dark:bg-[#191815] flex flex-col shrink-0 select-none z-20 font-sans">
+    <aside className="w-64 sm:w-72 h-full border-r border-[var(--border-subtle)] bg-[var(--bg-surface)] flex flex-col shrink-0 select-none z-20 font-sans">
       {/* Top search & collapse */}
       <div className="p-3 pb-2 flex items-center gap-2">
-        <div className="relative flex-1">
+        <div className="relative flex-1 flex items-center">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            className="text-[var(--text-muted)] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none shrink-0"
+          >
+            <circle cx="11" cy="11" r="8" />
+            <path d="M21 21l-4.35-4.35" />
+          </svg>
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search"
-            className="w-full pl-8 pr-3 py-1.5 bg-white dark:bg-[#21201d] border border-[#e8e6de] dark:border-[#312f2c] rounded-lg text-xs text-[#1f1e1d] dark:text-[#ece7dc] placeholder-[#9c978b] focus:outline-none focus:border-[#da7756] transition-colors shadow-2xs"
+            placeholder="Search chats..."
+            className="w-full h-8 pl-8 pr-6 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-lg text-xs text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--brand)] transition-colors shadow-2xs font-sans"
           />
-          <svg
-            className="w-3.5 h-3.5 text-[#9c978b] absolute left-2.5 top-2"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)] text-xs cursor-pointer"
+              title="Clear search"
+            >
+              ✕
+            </button>
+          )}
         </div>
 
         <button
           type="button"
           onClick={onToggleOpen}
-          className="p-1.5 rounded-lg text-[#8c887e] hover:text-[#1f1e1d] hover:bg-[#ebe7de] dark:text-[#9c978b] dark:hover:text-[#f7f4ee] dark:hover:bg-[#282723] transition-colors"
-          title="Close sidebar"
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] border border-transparent hover:border-[var(--border-subtle)] transition-colors shrink-0 cursor-pointer"
+          title="Collapse sidebar"
+          aria-label="Collapse sidebar"
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
           </svg>
         </button>
       </div>
 
-      {/* + New Button */}
+      {/* + New Chat Action Button */}
       <div className="px-3 pb-2">
         <button
           type="button"
           onClick={onNewChat}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-[#f0eee6] hover:bg-[#e6e3da] dark:bg-[#282723] dark:hover:bg-[#31302c] border border-transparent hover:border-[#dedacf] text-[#1f1e1d] dark:text-[#f7f4ee] font-medium text-xs transition-all active:scale-[0.99]"
+          className="w-full h-9 flex items-center justify-between px-3 rounded-xl bg-[var(--bg-elevated)] hover:bg-[var(--bg-hover)] border border-[var(--border-subtle)] hover:border-[var(--brand)]/50 text-[var(--text-primary)] font-medium text-xs transition-all active:scale-[0.99] shadow-xs cursor-pointer group"
         >
-          <span className="text-base leading-none font-semibold text-[#1f1e1d] dark:text-white">+</span>
-          <span>New</span>
+          <div className="flex items-center gap-2">
+            <span className="w-5 h-5 rounded-md bg-[var(--brand)] text-white flex items-center justify-center font-bold shadow-xs group-hover:scale-105 transition-transform">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.6}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+            </span>
+            <span className="font-semibold text-xs tracking-tight">New Chat</span>
+          </div>
+          <kbd className="text-[10px] font-mono text-[var(--text-muted)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] px-1.5 py-0.5 rounded font-medium">
+            ⌘K
+          </kbd>
         </button>
       </div>
 
       {/* Navigation Links */}
-      <div className="px-2 py-1 space-y-0.5 border-b border-[#ece9e0] dark:border-[#2b2a26]/60 pb-2">
+      <div className="px-3 py-1 space-y-1 border-b border-[var(--border-subtle)] pb-2.5">
         <button
           type="button"
           onClick={() => onSwitchToCode?.()}
-          className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs text-[#524f48] dark:text-[#9c978b] hover:text-[#1f1e1d] dark:hover:text-[#f7f4ee] hover:bg-[#edeae1] dark:hover:bg-[#23221f] transition-colors"
+          className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer group text-left"
         >
-          <svg className="w-3.5 h-3.5 text-[#736f66]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-          </svg>
-          <span>Projects</span>
+          <div className="w-5 h-5 rounded flex items-center justify-center text-[var(--text-muted)] group-hover:text-[var(--brand)] transition-colors shrink-0">
+            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+            </svg>
+          </div>
+          <span className="truncate">Projects (Open Code)</span>
         </button>
 
         <button
           type="button"
           onClick={() => window.dispatchEvent(new CustomEvent('oc-open', { detail: { target: 'upgrade' } }))}
-          className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs text-[#524f48] dark:text-[#9c978b] hover:text-[#1f1e1d] dark:hover:text-[#f7f4ee] hover:bg-[#edeae1] dark:hover:bg-[#23221f] transition-colors"
+          className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer group text-left"
           title="Upgrade OpenCode in an isolated worktree"
         >
-          <svg className="w-3.5 h-3.5 text-[#736f66]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-          </svg>
-          <span>Upgrade OpenCode</span>
+          <div className="w-5 h-5 rounded flex items-center justify-center text-[var(--text-muted)] group-hover:text-[var(--brand)] transition-colors shrink-0">
+            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          </div>
+          <span className="truncate">Upgrade OpenCode</span>
         </button>
       </div>
 
       {/* Conversation Thread List (Pinned & Recents) */}
       <div className="flex-1 overflow-y-auto px-2 py-2 space-y-3">
         {groups.length === 0 ? (
-          <div className="text-center py-8 text-xs text-[#9c978b]">
+          <div className="text-center py-8 text-xs text-[var(--text-muted)] font-sans">
             {search ? 'No matching chats' : 'No chats yet'}
           </div>
         ) : (
           groups.map((group) => (
             <div key={group.label} className="space-y-0.5">
-              <div className="flex items-center justify-between px-2.5 py-1 text-[11px] font-semibold text-[#8c887e] dark:text-[#7d796f] tracking-wide">
+              <div className="px-2.5 pt-3 pb-1 text-[11px] font-semibold tracking-wide text-[var(--text-muted)] font-sans flex items-center justify-between select-none">
                 <span>{group.label}</span>
                 {group.label === 'Recents' && (
-                  <svg className="w-3 h-3 text-[#a8a49a]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="text-[var(--text-muted)]">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
                   </svg>
                 )}
@@ -225,7 +255,7 @@ export default function ChatSidebar({
                         value={editingTitle}
                         onChange={(e) => setEditingTitle(e.target.value)}
                         onBlur={(e) => handleSaveRename(item.id, e)}
-                        className="w-full px-2 py-1 text-xs bg-white dark:bg-[#121210] border border-[#da7756] rounded text-[#1f1e1d] dark:text-[#f7f4ee] focus:outline-none"
+                        className="w-full h-7 px-2 text-xs bg-[var(--bg-elevated)] border border-[var(--brand)] rounded-md text-[var(--text-primary)] focus:outline-none font-sans"
                       />
                     </form>
                   );
@@ -235,23 +265,29 @@ export default function ChatSidebar({
                   <div
                     key={item.id}
                     onClick={() => onSelectConversation(item.id)}
-                    className={`group relative flex items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer transition-colors text-xs ${
+                    className={`group relative flex items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer transition-all text-xs font-sans ${
                       isActive
-                        ? 'bg-[#edeae1] dark:bg-[#292824] text-[#1f1e1d] dark:text-[#f7f4ee] font-medium shadow-2xs'
-                        : 'text-[#524f48] dark:text-[#9c978b] hover:text-[#1f1e1d] dark:hover:text-[#ece7dc] hover:bg-[#edeae1]/60 dark:hover:bg-[#22211e]'
+                        ? 'bg-[var(--bg-hover)] text-[var(--text-primary)] font-semibold shadow-2xs'
+                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
                     }`}
                   >
-                    <div className="flex items-center gap-2 truncate min-w-0 pr-2">
-                      {item.pinned ? (
-                        <svg className="w-3.5 h-3.5 text-[#da7756] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                        </svg>
-                      ) : (
-                        <svg className="w-3.5 h-3.5 text-[#8c887e] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                        </svg>
-                      )}
-                      <span className="truncate">{item.title}</span>
+                    {isActive && (
+                      <div className="absolute left-0 top-1.5 bottom-1.5 w-[3px] bg-[var(--brand)] rounded-r-full" />
+                    )}
+
+                    <div className="flex items-center gap-2 truncate min-w-0 pr-1">
+                      <span className="w-4 h-4 flex items-center justify-center shrink-0">
+                        {item.pinned ? (
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" className="text-[var(--brand)]">
+                            <path d="M12 2a1 1 0 0 1 1 1v4.06a7.97 7.97 0 0 1 3.54 1.46l2.87-2.87a1 1 0 1 1 1.41 1.41l-2.87 2.87A7.97 7.97 0 0 1 19.41 13H23a1 1 0 1 1 0 2h-3.59a7.97 7.97 0 0 1-1.46 3.54l2.87 2.87a1 1 0 0 1-1.41 1.41l-2.87-2.87A7.97 7.97 0 0 1 13 21.41V23a1 1 0 1 1-2 0v-1.59a7.97 7.97 0 0 1-3.54-1.46l-2.87 2.87a1 1 0 0 1-1.41-1.41l2.87-2.87A7.97 7.97 0 0 1 4.59 15H1a1 1 0 1 1 0-2h3.59a7.97 7.97 0 0 1 1.46-3.54L3.18 6.59a1 1 0 1 1 1.41-1.41l2.87 2.87A7.97 7.97 0 0 1 11 6.59V3a1 1 0 0 1 1-1z" />
+                          </svg>
+                        ) : (
+                          <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8} className="text-[var(--text-muted)] group-hover:text-[var(--text-secondary)]">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                          </svg>
+                        )}
+                      </span>
+                      <span className="truncate leading-normal">{item.title}</span>
                     </div>
 
                     {/* Quick action buttons on hover */}
@@ -264,10 +300,11 @@ export default function ChatSidebar({
                           onTogglePinConversation(item.id, !item.pinned);
                         }}
                         title={item.pinned ? 'Unpin chat' : 'Pin chat'}
-                        className="p-1 rounded hover:bg-[#dfdbd1] dark:hover:bg-[#34322e] text-[#736f66] dark:text-[#9c978b]"
+                        aria-label={item.pinned ? 'Unpin chat' : 'Pin chat'}
+                        className="p-1 rounded hover:bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
                       >
-                        <svg className="w-3 h-3" fill={item.pinned ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                        <svg width="12" height="12" fill={item.pinned ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
                         </svg>
                       </button>
 
@@ -276,10 +313,11 @@ export default function ChatSidebar({
                         type="button"
                         onClick={(e) => handleStartRename(item, e)}
                         title="Rename chat"
-                        className="p-1 rounded hover:bg-[#dfdbd1] dark:hover:bg-[#34322e] text-[#736f66] dark:text-[#9c978b]"
+                        aria-label="Rename chat"
+                        className="p-1 rounded hover:bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
                       >
-                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                         </svg>
                       </button>
 
@@ -291,10 +329,11 @@ export default function ChatSidebar({
                           onDeleteConversation(item.id);
                         }}
                         title="Delete chat"
-                        className="p-1 rounded hover:bg-[#dfdbd1] dark:hover:bg-[#34322e] text-[#736f66] dark:text-[#9c978b] hover:text-red-500"
+                        aria-label="Delete chat"
+                        className="p-1 rounded hover:bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-red-500 transition-colors cursor-pointer"
                       >
-                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                         </svg>
                       </button>
                     </div>
@@ -306,7 +345,16 @@ export default function ChatSidebar({
         )}
       </div>
 
-
+      {/* Sidebar Footer */}
+      <div className="p-3 border-t border-[var(--border-subtle)] flex items-center justify-between text-[11px] text-[var(--text-muted)] font-sans">
+        <div className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-[var(--brand)] animate-pulse" />
+          <span className="font-medium text-[var(--text-secondary)]">Open Chat</span>
+        </div>
+        <span className="font-mono text-[10px] bg-[var(--bg-elevated)] border border-[var(--border-subtle)] px-1.5 py-0.5 rounded text-[var(--text-muted)]">
+          v1.0
+        </span>
+      </div>
     </aside>
   );
 }

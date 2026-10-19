@@ -70,6 +70,17 @@ export async function GET(req: NextRequest) {
         }
       }
 
+      if (searchParams.get("download") === "1") {
+        const fileBuffer = await fs.readFile(full);
+        const fileName = path.basename(filePath);
+        return new NextResponse(fileBuffer, {
+          headers: {
+            "Content-Type": "application/octet-stream",
+            "Content-Disposition": `attachment; filename="${fileName}"`,
+          },
+        });
+      }
+
       const content = await fs.readFile(full, "utf8");
       return NextResponse.json({ path: filePath, content });
     }

@@ -103,6 +103,9 @@ export default function MobileNav({
           border-top: 1px solid var(--border-subtle);
           padding-bottom: env(safe-area-inset-bottom, 0);
           flex-shrink: 0;
+          min-height: 64px;
+          padding-left: env(safe-area-inset-left, 0);
+          padding-right: env(safe-area-inset-right, 0);
         }
 
         .mob-nav-item {
@@ -112,7 +115,7 @@ export default function MobileNav({
           align-items: center;
           justify-content: center;
           gap: 3px;
-          padding: 10px 4px;
+          padding: 7px 2px;
           background: none;
           border: none;
           cursor: pointer;
@@ -161,8 +164,9 @@ export default function MobileNav({
         }
 
         .mob-nav-label {
-          font-size: 11px;
+          font-size: clamp(10px, 3vw, 11px);
           font-weight: 500;
+          white-space: nowrap;
         }
       `}</style>
     </nav>

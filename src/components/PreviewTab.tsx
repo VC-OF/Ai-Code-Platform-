@@ -36,9 +36,13 @@ export default function PreviewTab({
     sizeKb: number;
   } | null>(null);
 
-  // Vercel deploy state
+  // Multi-target deploy state
   const [deploying, setDeploying] = useState(false);
   const [deployUrl, setDeployUrl] = useState<string | null>(null);
+  const [showDeployModal, setShowDeployModal] = useState(false);
+  const [deployTarget, setDeployTarget] = useState<'vercel' | 'netlify' | 'cloudflare' | 'github'>('vercel');
+  const [githubRepoName, setGithubRepoName] = useState('');
+  const [githubIsPrivate, setGithubIsPrivate] = useState(false);
 
   // Inspect mode: serve the preview through a same-origin proxy that lets
   // the user click an element to reference it in the chat
@@ -201,30 +205,38 @@ export default function PreviewTab({
       .catch(() => setDbStats(null));
   }, [previewSubTab, projectId]);
 
-  async function deploy() {
+  async function executeDeploy(target = deployTarget) {
     if (deploying) return;
     setDeploying(true);
     setDeployUrl(null);
-    setLogs((prev) => [...prev, "\n$ deploy → vercel\n"]);
+    setLogs((prev) => [...prev, `\n$ deploy → ${target}\n`]);
     try {
       const res = await fetch("/api/deploy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId }),
+        body: JSON.stringify({
+          projectId,
+          target,
+          repoName: target === 'github' ? (githubRepoName.trim() || undefined) : undefined,
+          isPrivate: target === 'github' ? githubIsPrivate : undefined,
+        }),
       });
       const data = await res.json();
       if (data.error) {
         setLogs((prev) => [...prev, `deploy error: ${data.error}\n${data.output ?? ""}\n`]);
+        alert(`Deploy error: ${data.error}`);
       } else {
         setDeployUrl(data.url);
         setLogs((prev) => [
           ...prev,
-          `${data.output ?? ""}\n✓ Deployed: ${data.url ?? "(no URL reported)"}\n`,
+          `${data.output ?? ""}\n✓ Deployed to ${target}: ${data.url ?? "(no URL reported)"}\n`,
         ]);
         if (data.url) window.open(data.url, "_blank");
+        setShowDeployModal(false);
       }
     } catch (err) {
       setLogs((prev) => [...prev, `deploy error: ${String(err)}\n`]);
+      alert(`Deploy error: ${String(err)}`);
     } finally {
       setDeploying(false);
     }
@@ -329,24 +341,53 @@ export default function PreviewTab({
   return (
     <div className="preview-root">
       <div className="preview-toolbar">
-        <div className="url-pill">
-          <svg {...icon} width={12} height={12} aria-hidden="true">
-            <circle cx="12" cy="12" r="9" />
-            <path d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18" />
+        {/* Navigation arrows (Image 1) */}
+        <button
+          className="toolbar-icon"
+          onClick={() => {
+            const iframe = document.querySelector('.preview-iframe') as HTMLIFrameElement;
+            if (iframe && iframe.contentWindow) {
+              iframe.contentWindow.history.back();
+            }
+          }}
+          title="Back"
+          aria-label="Back"
+        >
+          <svg {...icon} width={13} height={13}>
+            <path d="M19 12H5M12 19l-7-7 7-7" />
           </svg>
-          <span className="url-text">{url || "Server offline"}</span>
-        </div>
-
+        </button>
         <button
           className="toolbar-icon"
           onClick={() => setIframeKey((k) => k + 1)}
           title="Reload preview"
           aria-label="Reload preview"
-          disabled={status !== "running"}
         >
-          <svg {...icon} width={14} height={14} aria-hidden="true">
+          <svg {...icon} width={13} height={13}>
             <path d="M21 12a9 9 0 11-2.64-6.36M21 4v5h-5" />
           </svg>
+        </button>
+
+        <div className="url-pill">
+          <input
+            type="text"
+            className="url-input"
+            value={url || ""}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="Type a URL"
+          />
+        </div>
+
+        <button
+          className="browse-web-btn"
+          onClick={() => url && window.open(url, "_blank")}
+          title="Browse the web"
+        >
+          <svg {...icon} width={13} height={13}>
+            <circle cx="12" cy="12" r="10" />
+            <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+          </svg>
+          <span>Browse the web</span>
         </button>
 
         <button
@@ -638,14 +679,14 @@ export default function PreviewTab({
           </button>
           <button
             className="dock-btn"
-            onClick={deploy}
+            onClick={() => setShowDeployModal(true)}
             disabled={deploying}
-            title="Deploy this workspace to Vercel (needs VERCEL_TOKEN in Settings)"
+            title="Deploy workspace to Vercel, Netlify, Cloudflare, or push to GitHub"
           >
             <svg {...icon} width={12} height={12} aria-hidden="true">
               <path d="M12 4l9 16H3z" />
             </svg>
-            {deploying ? "Deploying…" : "Deploy"}
+            {deploying ? "Deploying…" : "Deploy / Sync"}
           </button>
         </div>
         <div className="dock-right">
@@ -711,10 +752,49 @@ export default function PreviewTab({
           background: var(--bg-elevated);
           border: 1px solid var(--border-subtle);
           border-radius: var(--radius-md);
-          padding: 5px 10px;
-          font-family: var(--font-mono);
+          padding: 4px 10px;
           font-size: 12px;
           color: var(--text-secondary);
+        }
+        .url-input {
+          width: 100%;
+          background: transparent;
+          border: none;
+          outline: none;
+          color: var(--text-primary);
+          font-size: 12px;
+          font-family: var(--font-sans);
+        }
+        .url-input::placeholder {
+          color: var(--text-muted);
+        }
+        .browse-web-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          padding: 4px 10px;
+          background: #f0eee6;
+          border: 1px solid #e5e2da;
+          border-radius: var(--radius-md);
+          font-size: 12px;
+          font-weight: 500;
+          color: #1f1e1d;
+          cursor: pointer;
+          flex-shrink: 0;
+          transition: background var(--transition-fast), border-color var(--transition-fast);
+        }
+        :global(.dark) .browse-web-btn {
+          background: #2a2926;
+          border-color: #383632;
+          color: #ede8de;
+        }
+        .browse-web-btn:hover {
+          background: #e6e3da;
+          border-color: #d8d4ca;
+        }
+        :global(.dark) .browse-web-btn:hover {
+          background: #33322d;
+          border-color: #44423d;
         }
         .url-pill svg {
           color: var(--text-muted);
@@ -1343,7 +1423,181 @@ export default function PreviewTab({
             transition: none;
           }
         }
+
+        /* ── Multi-Target Deploy Modal ── */
+        .deploy-modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.65);
+          backdrop-filter: blur(4px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 100;
+          padding: 16px;
+        }
+        .deploy-modal-card {
+          width: 100%;
+          max-width: 480px;
+          background: var(--bg-surface);
+          border: 1px solid var(--border-base);
+          border-radius: var(--radius-lg, 12px);
+          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+          padding: 20px;
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+        .deploy-modal-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+        .deploy-modal-header h3 {
+          font-size: 16px;
+          font-weight: 600;
+          color: var(--text-primary);
+          margin: 0;
+        }
+        .deploy-modal-desc {
+          font-size: 13px;
+          color: var(--text-muted);
+          line-height: 1.5;
+          margin: 0;
+        }
+        .deploy-targets-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 10px;
+        }
+        .deploy-target-item {
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+          padding: 12px;
+          background: var(--bg-elevated);
+          border: 1px solid var(--border-base);
+          border-radius: var(--radius-md);
+          cursor: pointer;
+          text-align: left;
+          transition: border-color var(--transition-fast), background var(--transition-fast);
+        }
+        .deploy-target-item:hover {
+          background: var(--bg-hover);
+          border-color: var(--border-strong);
+        }
+        .deploy-target-item--active {
+          border-color: var(--accent);
+          background: rgba(76, 111, 255, 0.08);
+        }
+        .deploy-target-icon {
+          font-size: 18px;
+          line-height: 1;
+        }
+        .deploy-target-name {
+          font-size: 13px;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+        .deploy-target-sub {
+          font-size: 11px;
+          color: var(--text-muted);
+          margin-top: 2px;
+        }
+        .deploy-github-opts {
+          padding: 12px;
+          background: var(--bg-elevated);
+          border: 1px solid var(--border-base);
+          border-radius: var(--radius-md);
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+        .deploy-label {
+          font-size: 12px;
+          font-weight: 500;
+          color: var(--text-primary);
+        }
+        .deploy-modal-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 10px;
+        }
       `}</style>
+
+      {/* Deploy & Sync Modal */}
+      {showDeployModal && (
+        <div className="deploy-modal-overlay" onClick={() => setShowDeployModal(false)}>
+          <div className="deploy-modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="deploy-modal-header">
+              <h3>Deploy Workspace & Sync</h3>
+              <button type="button" onClick={() => setShowDeployModal(false)} className="dock-btn">&times;</button>
+            </div>
+            <p className="deploy-modal-desc">
+              Choose a cloud host or push directly to a new GitHub repository. Ensure provider API tokens are added in Settings.
+            </p>
+
+            <div className="deploy-targets-grid">
+              {[
+                { id: 'vercel', label: 'Vercel', desc: 'Frontend & Edge Hosting', icon: '▲' },
+                { id: 'netlify', label: 'Netlify', desc: 'Global CDN JAMstack', icon: '🌐' },
+                { id: 'cloudflare', label: 'Cloudflare Pages', desc: 'Fast Edge Network', icon: '⚡' },
+                { id: 'github', label: 'GitHub Repository', desc: '1-Click Create & Push', icon: '🐙' },
+              ].map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className={`deploy-target-item ${deployTarget === t.id ? 'deploy-target-item--active' : ''}`}
+                  onClick={() => setDeployTarget(t.id as 'vercel' | 'netlify' | 'cloudflare' | 'github')}
+                >
+                  <span className="deploy-target-icon">{t.icon}</span>
+                  <div>
+                    <div className="deploy-target-name">{t.label}</div>
+                    <div className="deploy-target-sub">{t.desc}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {deployTarget === 'github' && (
+              <div className="deploy-github-opts">
+                <label className="deploy-label">Repository Name</label>
+                <input
+                  type="text"
+                  placeholder={`app-${projectId}`}
+                  value={githubRepoName}
+                  onChange={(e) => setGithubRepoName(e.target.value)}
+                  className="preview-terminal-input"
+                  style={{ width: '100%', marginBottom: '8px' }}
+                />
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+                  <input
+                    type="checkbox"
+                    checked={githubIsPrivate}
+                    onChange={(e) => setGithubIsPrivate(e.target.checked)}
+                  />
+                  <span>Private repository</span>
+                </label>
+              </div>
+            )}
+
+            <div className="deploy-modal-actions">
+              <button type="button" onClick={() => setShowDeployModal(false)} className="dock-btn">
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => executeDeploy(deployTarget)}
+                disabled={deploying}
+                className="dock-btn"
+                style={{ background: 'var(--accent, #3b82f6)', color: 'white', fontWeight: 600 }}
+              >
+                {deploying ? 'Deploying...' : `Deploy to ${deployTarget}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

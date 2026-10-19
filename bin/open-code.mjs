@@ -16,6 +16,7 @@
  * Plain Node ESM, no dependencies. Pure helpers are exported for tests.
  */
 import fs from "node:fs";
+import path from "node:path";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 
@@ -26,6 +27,8 @@ export const USAGE = `Usage:
 
 Options:
   -p, --prompt <text>        Prompt to send (or pipe it on stdin)
+  -d, --dir <path>           Open/create Build Mode project for directory
+  --cwd                      Open/create Build Mode project for current working dir
   --project <id|name>        Existing project (id, exact or unique partial title)
   --new <name>               Create a new project with this title
   -c, --continue             Use the most recently updated project
@@ -45,6 +48,7 @@ export function parseArgs(argv, env = {}) {
     prompt: undefined,
     project: undefined,
     newProject: undefined,
+    dir: undefined,
     model: undefined,
     mode: "auto",
     outputFormat: "text",
@@ -73,6 +77,8 @@ export function parseArgs(argv, env = {}) {
     };
     switch (flag) {
       case "-p": case "--prompt": opts.prompt = take(); break;
+      case "-d": case "--dir": opts.dir = path.resolve(take()); break;
+      case "--cwd": opts.dir = process.cwd(); break;
       case "--project": opts.project = take(); break;
       case "--new": opts.newProject = take(); break;
       case "--model": opts.model = take(); break;
@@ -249,6 +255,8 @@ export function createClient(server, env = {}, fetchImpl = globalThis.fetch) {
   return {
     listProjects: async () => (await json("GET", "/api/projects")).projects ?? [],
     createProject: async (title) => (await json("POST", "/api/projects", { title })).project,
+    createBuildProject: async (hostPath, title) =>
+      (await json("POST", "/api/projects", { mode: "build", path: hostPath, title })).project,
     status: (projectId) => json("GET", `/api/chat/status?projectId=${encodeURIComponent(projectId)}`),
     answer: (projectId, answer) => json("POST", "/api/chat/input", { projectId, answer }),
     chat: async (body) => {
@@ -344,7 +352,9 @@ export async function main(argv, io = {}) {
     }
 
     let project;
-    if (opts.newProject) {
+    if (opts.dir) {
+      project = await client.createBuildProject(opts.dir, opts.newProject);
+    } else if (opts.newProject) {
       project = await client.createProject(opts.newProject);
     } else if (opts.project) {
       project = resolveProject(opts.project, await client.listProjects());

@@ -124,8 +124,10 @@ export default function MobileHeader({
 
         .mob-title {
           flex: 1;
+          min-width: 0;
           display: flex;
           justify-content: center;
+          padding: 0 4px;
         }
 
         .mob-status-row {
@@ -145,7 +147,7 @@ export default function MobileHeader({
           font-size: 14px;
           font-weight: 500;
           color: var(--text-primary);
-          max-width: 200px;
+          max-width: min(200px, 100%);
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;

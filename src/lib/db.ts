@@ -67,6 +67,17 @@ function runMigrations(db: Database.Database) {
   if (!projectCols.some((c) => c.name === 'kind')) {
     db.exec("ALTER TABLE projects ADD COLUMN kind TEXT NOT NULL DEFAULT 'app'");
   }
+  if (!projectCols.some((c) => c.name === 'user_id')) {
+    db.exec('ALTER TABLE projects ADD COLUMN user_id TEXT');
+  }
+  if (!projectCols.some((c) => c.name === 'share_token')) {
+    db.exec('ALTER TABLE projects ADD COLUMN share_token TEXT');
+  }
+  if (!projectCols.some((c) => c.name === 'is_public')) {
+    db.exec('ALTER TABLE projects ADD COLUMN is_public INTEGER NOT NULL DEFAULT 0');
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_projects_user ON projects(user_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_projects_share_token ON projects(share_token)');
 
   const checkpointCols = db
     .prepare(`PRAGMA table_info(checkpoints)`)
@@ -84,10 +95,63 @@ function runMigrations(db: Database.Database) {
   if (!usageCols.some((c) => c.name === 'cached_tokens')) {
     db.exec('ALTER TABLE usage_log ADD COLUMN cached_tokens INTEGER');
   }
+
+  // Open Chat: conversations and conversation messages
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS conversations (
+      id            TEXT PRIMARY KEY,
+      user_id       TEXT,
+      title         TEXT NOT NULL,
+      model         TEXT NOT NULL,
+      pinned        INTEGER NOT NULL DEFAULT 0,
+      created_at    INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+      updated_at    INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
+    );
+    CREATE TABLE IF NOT EXISTS conversation_messages (
+      id              TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+      role            TEXT NOT NULL CHECK(role IN ('user','assistant','system')),
+      content         TEXT NOT NULL,
+      thinking        TEXT,
+      thinking_ms     INTEGER,
+      artifacts       TEXT,
+      model           TEXT,
+      tokens_used     INTEGER,
+      created_at      INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
+    );
+    CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations(user_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_conversation_messages_convo ON conversation_messages(conversation_id, created_at ASC);
+  `);
+
+  const convMsgCols = db
+    .prepare(`PRAGMA table_info(conversation_messages)`)
+    .all() as { name: string }[];
+  if (!convMsgCols.some((c) => c.name === 'attachments')) {
+    db.exec('ALTER TABLE conversation_messages ADD COLUMN attachments TEXT');
+  }
 }
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
 const SCHEMA = `
+  -- Users
+  CREATE TABLE IF NOT EXISTS users (
+    id            TEXT PRIMARY KEY,
+    email         TEXT UNIQUE NOT NULL,
+    name          TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    role          TEXT NOT NULL DEFAULT 'user',
+    created_at    INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+    updated_at    INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
+  );
+
+  -- Sessions
+  CREATE TABLE IF NOT EXISTS sessions (
+    token         TEXT PRIMARY KEY,
+    user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at    INTEGER NOT NULL,
+    created_at    INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
+  );
+
   -- Projects
   CREATE TABLE IF NOT EXISTS projects (
     id          TEXT PRIMARY KEY,
@@ -98,6 +162,9 @@ const SCHEMA = `
     -- template. 'build': points at an arbitrary existing folder on disk
     -- (Build Mode) — no template, no preview/deploy assumptions.
     kind        TEXT NOT NULL DEFAULT 'app' CHECK(kind IN ('app', 'build')),
+    user_id     TEXT,
+    share_token TEXT,
+    is_public   INTEGER NOT NULL DEFAULT 0,
     created_at  INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
     updated_at  INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
   );
@@ -175,7 +242,38 @@ const SCHEMA = `
     created_at  INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
   );
 
+  -- Conversations (Open Chat)
+  CREATE TABLE IF NOT EXISTS conversations (
+    id            TEXT PRIMARY KEY,
+    user_id       TEXT,
+    title         TEXT NOT NULL,
+    model         TEXT NOT NULL,
+    pinned        INTEGER NOT NULL DEFAULT 0,
+    created_at    INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+    updated_at    INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
+  );
+
+  -- Conversation Messages (Open Chat)
+  CREATE TABLE IF NOT EXISTS conversation_messages (
+    id              TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    role            TEXT NOT NULL CHECK(role IN ('user','assistant','system')),
+    content         TEXT NOT NULL,
+    thinking        TEXT,        -- Collapsible reasoning content (Claude 3.7 / R1 style)
+    thinking_ms     INTEGER,     -- Time taken to think in milliseconds
+    artifacts       TEXT,        -- JSON array of ExtractedArtifact
+    model           TEXT,
+    tokens_used     INTEGER,
+    created_at      INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
+  );
+
   -- Indexes
+  CREATE INDEX IF NOT EXISTS idx_conversations_user
+    ON conversations(user_id, updated_at DESC);
+
+  CREATE INDEX IF NOT EXISTS idx_conversation_messages_convo
+    ON conversation_messages(conversation_id, created_at ASC);
+
   CREATE INDEX IF NOT EXISTS idx_schedules_due
     ON schedules(enabled, next_run_at);
 
@@ -190,15 +288,38 @@ const SCHEMA = `
 
   CREATE INDEX IF NOT EXISTS idx_tool_log_project
     ON tool_log(project_id, turn_index, created_at);
+
+  CREATE INDEX IF NOT EXISTS idx_sessions_user
+    ON sessions(user_id);
 `;
 
 // ─── Types ───────────────────────────────────────────────────────────────────
+export interface DbUser {
+  id: string;
+  email: string;
+  name: string;
+  password_hash: string;
+  role: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface DbSession {
+  token: string;
+  user_id: string;
+  expires_at: number;
+  created_at: number;
+}
+
 export interface DbProject {
   id: string;
   name: string;
   workspace: string;
   description: string | null;
   kind: 'app' | 'build';
+  user_id?: string | null;
+  share_token?: string | null;
+  is_public?: number;
   created_at: number;
   updated_at: number;
 }
@@ -243,12 +364,126 @@ export interface DbUsageLog {
   cached_tokens?: number | null;
 }
 
+// ─── User queries ────────────────────────────────────────────────────────────
+export const userDb = {
+  getById(id: string): DbUser | undefined {
+    return getDb()
+      .prepare('SELECT * FROM users WHERE id = ?')
+      .get(id) as DbUser | undefined;
+  },
+
+  getByEmail(email: string): DbUser | undefined {
+    return getDb()
+      .prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)')
+      .get(email.trim()) as DbUser | undefined;
+  },
+
+  create(user: { id: string; email: string; name: string; password_hash: string; role?: string }): DbUser {
+    const now = Date.now();
+    getDb()
+      .prepare(`
+        INSERT INTO users (id, email, name, password_hash, role, created_at, updated_at)
+        VALUES (@id, @email, @name, @password_hash, @role, @created_at, @updated_at)
+      `)
+      .run({
+        id: user.id,
+        email: user.email.toLowerCase().trim(),
+        name: user.name.trim(),
+        password_hash: user.password_hash,
+        role: user.role ?? 'user',
+        created_at: now,
+        updated_at: now,
+      });
+    return this.getById(user.id)!;
+  },
+
+  getAll(): DbUser[] {
+    return getDb()
+      .prepare('SELECT * FROM users ORDER BY created_at ASC')
+      .all() as DbUser[];
+  },
+};
+
+// ─── Session queries ─────────────────────────────────────────────────────────
+export const sessionDb = {
+  create(token: string, userId: string, ttlMs: number = 7 * 24 * 60 * 60 * 1000): DbSession {
+    const now = Date.now();
+    const expiresAt = now + ttlMs;
+    getDb()
+      .prepare(`
+        INSERT INTO sessions (token, user_id, expires_at, created_at)
+        VALUES (@token, @user_id, @expires_at, @created_at)
+      `)
+      .run({ token, user_id: userId, expires_at: expiresAt, created_at: now });
+    return { token, user_id: userId, expires_at: expiresAt, created_at: now };
+  },
+
+  get(token: string): (DbSession & { user: Omit<DbUser, 'password_hash'> }) | undefined {
+    const row = getDb()
+      .prepare(`
+        SELECT s.token, s.user_id, s.expires_at, s.created_at,
+               u.id as u_id, u.email as u_email, u.name as u_name, u.role as u_role,
+               u.created_at as u_created_at, u.updated_at as u_updated_at
+        FROM sessions s
+        JOIN users u ON s.user_id = u.id
+        WHERE s.token = ? AND s.expires_at > ?
+      `)
+      .get(token, Date.now()) as {
+        token: string;
+        user_id: string;
+        expires_at: number;
+        created_at: number;
+        u_id: string;
+        u_email: string;
+        u_name: string;
+        u_role: string;
+        u_created_at: number;
+        u_updated_at: number;
+      } | undefined;
+    if (!row) return undefined;
+    return {
+      token: row.token,
+      user_id: row.user_id,
+      expires_at: row.expires_at,
+      created_at: row.created_at,
+      user: {
+        id: row.u_id,
+        email: row.u_email,
+        name: row.u_name,
+        role: row.u_role,
+        created_at: row.u_created_at,
+        updated_at: row.u_updated_at,
+      },
+    };
+  },
+
+  delete(token: string): void {
+    getDb().prepare('DELETE FROM sessions WHERE token = ?').run(token);
+  },
+
+  cleanExpired(): void {
+    getDb().prepare('DELETE FROM sessions WHERE expires_at <= ?').run(Date.now());
+  },
+};
+
 // ─── Project queries ─────────────────────────────────────────────────────────
 export const projectDb = {
   getAll(): DbProject[] {
     return getDb()
       .prepare('SELECT * FROM projects ORDER BY updated_at DESC')
       .all() as DbProject[];
+  },
+
+  getByUserId(userId: string): DbProject[] {
+    return getDb()
+      .prepare('SELECT * FROM projects WHERE user_id = ? ORDER BY updated_at DESC')
+      .all(userId) as DbProject[];
+  },
+
+  getByShareToken(shareToken: string): DbProject | undefined {
+    return getDb()
+      .prepare('SELECT * FROM projects WHERE share_token = ?')
+      .get(shareToken) as DbProject | undefined;
   },
 
   getById(id: string): DbProject | undefined {
@@ -260,20 +495,37 @@ export const projectDb = {
   create(
     project: Omit<DbProject, 'created_at' | 'updated_at' | 'kind'> & {
       kind?: 'app' | 'build';
+      user_id?: string | null;
+      share_token?: string | null;
+      is_public?: number;
     }
   ): void {
     const now = Date.now();
     getDb()
       .prepare(`
-        INSERT INTO projects (id, name, workspace, description, kind, created_at, updated_at)
-        VALUES (@id, @name, @workspace, @description, @kind, @created_at, @updated_at)
+        INSERT INTO projects (id, name, workspace, description, kind, user_id, share_token, is_public, created_at, updated_at)
+        VALUES (@id, @name, @workspace, @description, @kind, @user_id, @share_token, @is_public, @created_at, @updated_at)
       `)
-      .run({ kind: 'app', ...project, created_at: now, updated_at: now });
+      .run({
+        kind: 'app',
+        user_id: null,
+        share_token: null,
+        is_public: 0,
+        ...project,
+        created_at: now,
+        updated_at: now,
+      });
+  },
+
+  setShare(id: string, isPublic: boolean, shareToken?: string | null): void {
+    getDb()
+      .prepare('UPDATE projects SET is_public = ?, share_token = ?, updated_at = ? WHERE id = ?')
+      .run(isPublic ? 1 : 0, shareToken ?? null, Date.now(), id);
   },
 
   update(
     id: string,
-    fields: Partial<Pick<DbProject, 'name' | 'description'>>
+    fields: Partial<Pick<DbProject, 'name' | 'description' | 'user_id'>>
   ): void {
     const sets = Object.keys(fields)
       .map((k) => `${k} = @${k}`)
@@ -700,6 +952,199 @@ export const scheduleDb = {
 
   delete(id: string): boolean {
     return getDb().prepare('DELETE FROM schedules WHERE id = ?').run(id).changes > 0;
+  },
+};
+
+// ─── Open Chat queries ───────────────────────────────────────────────────────
+export interface DbConversation {
+  id: string;
+  user_id?: string | null;
+  title: string;
+  model: string;
+  pinned: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ExtractedArtifact {
+  id: string;
+  title: string;
+  type: 'html' | 'svg' | 'react' | 'markdown' | 'mermaid' | 'code';
+  language?: string;
+  content: string;
+}
+
+export interface ChatAttachment {
+  id: string;
+  name: string;
+  size: number;
+  type: string;
+  url?: string;
+  dataUrl?: string;
+  textContent?: string;
+  isImage?: boolean;
+}
+
+export interface DbConversationMessage {
+  id: string;
+  conversation_id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  thinking?: string | null;
+  thinking_ms?: number | null;
+  artifacts?: string | null; // JSON string of ExtractedArtifact[]
+  attachments?: string | null; // JSON string of ChatAttachment[]
+  model?: string | null;
+  tokens_used?: number | null;
+  created_at: number;
+}
+
+export const conversationDb = {
+  list(userId?: string | null): DbConversation[] {
+    const db = getDb();
+    if (userId) {
+      return db
+        .prepare('SELECT * FROM conversations WHERE user_id = ? ORDER BY pinned DESC, updated_at DESC')
+        .all(userId) as DbConversation[];
+    }
+    return db
+      .prepare('SELECT * FROM conversations ORDER BY pinned DESC, updated_at DESC')
+      .all() as DbConversation[];
+  },
+
+  get(id: string): (DbConversation & { messages: DbConversationMessage[] }) | undefined {
+    const db = getDb();
+    const convo = db.prepare('SELECT * FROM conversations WHERE id = ?').get(id) as DbConversation | undefined;
+    if (!convo) return undefined;
+    const messages = db
+      .prepare('SELECT * FROM conversation_messages WHERE conversation_id = ? ORDER BY created_at ASC')
+      .all(id) as DbConversationMessage[];
+    return { ...convo, messages };
+  },
+
+  create(params: {
+    id?: string;
+    user_id?: string | null;
+    title: string;
+    model: string;
+    pinned?: boolean;
+  }): DbConversation {
+    const id = params.id || crypto.randomUUID();
+    const now = Date.now();
+    getDb()
+      .prepare(`
+        INSERT INTO conversations (id, user_id, title, model, pinned, created_at, updated_at)
+        VALUES (@id, @user_id, @title, @model, @pinned, @created_at, @updated_at)
+      `)
+      .run({
+        id,
+        user_id: params.user_id ?? null,
+        title: params.title,
+        model: params.model,
+        pinned: params.pinned ? 1 : 0,
+        created_at: now,
+        updated_at: now,
+      });
+
+    return {
+      id,
+      user_id: params.user_id ?? null,
+      title: params.title,
+      model: params.model,
+      pinned: params.pinned ? 1 : 0,
+      created_at: now,
+      updated_at: now,
+    };
+  },
+
+  update(id: string, updates: { title?: string; pinned?: boolean; model?: string }): boolean {
+    const fields: string[] = ['updated_at = ?'];
+    const values: (string | number)[] = [Date.now()];
+
+    if (updates.title !== undefined) {
+      fields.push('title = ?');
+      values.push(updates.title);
+    }
+    if (updates.pinned !== undefined) {
+      fields.push('pinned = ?');
+      values.push(updates.pinned ? 1 : 0);
+    }
+    if (updates.model !== undefined) {
+      fields.push('model = ?');
+      values.push(updates.model);
+    }
+
+    values.push(id);
+    const stmt = getDb().prepare(`UPDATE conversations SET ${fields.join(', ')} WHERE id = ?`);
+    return stmt.run(...values).changes > 0;
+  },
+
+  delete(id: string): boolean {
+    return getDb().prepare('DELETE FROM conversations WHERE id = ?').run(id).changes > 0;
+  },
+
+  addMessage(msg: {
+    id?: string;
+    conversation_id: string;
+    role: 'user' | 'assistant' | 'system';
+    content: string;
+    thinking?: string | null;
+    thinking_ms?: number | null;
+    artifacts?: ExtractedArtifact[] | null;
+    attachments?: ChatAttachment[] | string | null;
+    model?: string | null;
+    tokens_used?: number | null;
+  }): DbConversationMessage {
+    const id = msg.id || crypto.randomUUID();
+    const now = Date.now();
+    const artifactsJson = msg.artifacts ? JSON.stringify(msg.artifacts) : null;
+    const attachmentsJson = msg.attachments
+      ? (typeof msg.attachments === 'string' ? msg.attachments : JSON.stringify(msg.attachments))
+      : null;
+
+    getDb()
+      .prepare(`
+        INSERT INTO conversation_messages (id, conversation_id, role, content, thinking, thinking_ms, artifacts, attachments, model, tokens_used, created_at)
+        VALUES (@id, @conversation_id, @role, @content, @thinking, @thinking_ms, @artifacts, @attachments, @model, @tokens_used, @created_at)
+      `)
+      .run({
+        id,
+        conversation_id: msg.conversation_id,
+        role: msg.role,
+        content: msg.content,
+        thinking: msg.thinking ?? null,
+        thinking_ms: msg.thinking_ms ?? null,
+        artifacts: artifactsJson,
+        attachments: attachmentsJson,
+        model: msg.model ?? null,
+        tokens_used: msg.tokens_used ?? null,
+        created_at: now,
+      });
+
+    // Touch conversation updated_at
+    getDb()
+      .prepare('UPDATE conversations SET updated_at = ? WHERE id = ?')
+      .run(now, msg.conversation_id);
+
+    return {
+      id,
+      conversation_id: msg.conversation_id,
+      role: msg.role,
+      content: msg.content,
+      thinking: msg.thinking ?? null,
+      thinking_ms: msg.thinking_ms ?? null,
+      artifacts: artifactsJson,
+      attachments: attachmentsJson,
+      model: msg.model ?? null,
+      tokens_used: msg.tokens_used ?? null,
+      created_at: now,
+    };
+  },
+
+  clearMessages(conversationId: string): void {
+    getDb()
+      .prepare('DELETE FROM conversation_messages WHERE conversation_id = ?')
+      .run(conversationId);
   },
 };
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { buildTree, type TreeNode, type FlatNode } from '@/lib/file-utils';
 import { FileIcon, FolderIcon } from '@/components/icons/FileIcon';
 
@@ -21,6 +21,7 @@ function TreeEntry({
   onDelete,
   expandedFolders,
   toggleFolder,
+  projectId,
 }: {
   node: TreeNode;
   depth: number;
@@ -30,6 +31,7 @@ function TreeEntry({
   onDelete: (path: string, e: React.MouseEvent) => void;
   expandedFolders: Set<string>;
   toggleFolder: (path: string) => void;
+  projectId: string;
 }) {
   const isExpanded = expandedFolders.has(node.fullPath);
   const isActive = activePath === node.fullPath;
@@ -68,6 +70,7 @@ function TreeEntry({
                 onDelete={onDelete}
                 expandedFolders={expandedFolders}
                 toggleFolder={toggleFolder}
+                projectId={projectId}
               />
             ))}
           </div>
@@ -92,6 +95,30 @@ function TreeEntry({
         <span className="truncate">{node.name}</span>
       </button>
       <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 flex items-center gap-0.5">
+        <a
+          href={`/api/files?projectId=${encodeURIComponent(projectId)}&path=${encodeURIComponent(node.fullPath)}&download=1`}
+          download
+          className="fe-icon-btn"
+          title="Download file"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+        </a>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            void navigator.clipboard?.writeText(node.fullPath);
+          }}
+          className="fe-icon-btn"
+          title="Copy path"
+        >
+          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+          </svg>
+        </button>
         <button
           type="button"
           onClick={(e) => onRename(node.fullPath, e)}
@@ -166,71 +193,136 @@ export default function FileExplorer({
     });
   }
 
-  async function createNewFile() {
-    const filename = prompt('Enter relative file path (e.g. src/components/Badge.tsx):');
-    if (!filename?.trim()) return;
-    try {
-      const res = await fetch('/api/files', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: filename.trim(), content: '', projectId }),
-      });
-      if (res.ok) {
-        await loadFiles();
-        onFileSelect(filename.trim().replace(/\\/g, '/'));
-      }
-    } catch (e) {
-      alert(`Error creating file: ${String(e)}`);
-    }
-  }
+  const [modal, setModal] = useState<{
+    isOpen: boolean;
+    type: 'file' | 'folder' | 'rename';
+    targetPath?: string;
+  }>({ isOpen: false, type: 'file' });
+  const [modalInput, setModalInput] = useState('');
+  const [modalSubmitting, setModalSubmitting] = useState(false);
+  const [modalError, setModalError] = useState('');
 
-  async function createNewFolder() {
-    const foldername = prompt('Enter relative folder path (e.g. src/utils):');
-    if (!foldername?.trim()) return;
-    try {
-      // Create empty placeholder file so git/system registers folder
-      const placeholderPath = `${foldername.trim().replace(/\\/g, '/')}/.gitkeep`;
-      const res = await fetch('/api/files', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: placeholderPath, content: '', projectId }),
-      });
-      if (res.ok) {
-        await loadFiles();
-        setExpandedFolders((prev) => new Set([...Array.from(prev), foldername.trim()]));
-      }
-    } catch (e) {
-      alert(`Error creating folder: ${String(e)}`);
-    }
-  }
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  async function handleRename(filePath: string, e: React.MouseEvent) {
-    e.stopPropagation();
-    const newName = prompt(`Rename "${filePath}" to:`, filePath);
-    if (!newName?.trim() || newName.trim() === filePath) return;
+  const openModal = (type: 'file' | 'folder' | 'rename', targetPath?: string) => {
+    setModal({ isOpen: true, type, targetPath });
+    setModalInput(type === 'rename' ? (targetPath || '') : '');
+    setModalError('');
+  };
+
+  const closeModal = () => {
+    setModal({ isOpen: false, type: 'file' });
+    setModalInput('');
+    setModalError('');
+  };
+
+  const handleModalSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const val = modalInput.trim();
+    if (!val) return;
+    setModalSubmitting(true);
+    setModalError('');
     try {
-      const res = await fetch('/api/files', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          oldPath: filePath,
-          newPath: newName.trim().replace(/\\/g, '/'),
-          projectId,
-        }),
-      });
-      if (res.ok) {
-        await loadFiles();
-        if (activeFile === filePath) {
-          onFileSelect(newName.trim().replace(/\\/g, '/'));
+      if (modal.type === 'file') {
+        const res = await fetch('/api/files', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: val, content: '', projectId }),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || 'Failed to create file');
         }
-      } else {
-        const err = await res.json();
-        alert(`Failed to rename: ${err.error || 'Unknown error'}`);
+        await loadFiles();
+        onFileSelect(val.replace(/\\/g, '/'));
+        closeModal();
+      } else if (modal.type === 'folder') {
+        const placeholderPath = `${val.replace(/\\/g, '/')}/.gitkeep`;
+        const res = await fetch('/api/files', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: placeholderPath, content: '', projectId }),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || 'Failed to create folder');
+        }
+        await loadFiles();
+        setExpandedFolders((prev) => new Set([...Array.from(prev), val]));
+        closeModal();
+      } else if (modal.type === 'rename' && modal.targetPath) {
+        const res = await fetch('/api/files', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            oldPath: modal.targetPath,
+            newPath: val.replace(/\\/g, '/'),
+            projectId,
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || 'Failed to rename');
+        }
+        await loadFiles();
+        if (activeFile === modal.targetPath) {
+          onFileSelect(val.replace(/\\/g, '/'));
+        }
+        closeModal();
       }
     } catch (err) {
-      alert(`Error renaming: ${String(err)}`);
+      setModalError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setModalSubmitting(false);
     }
-  }
+  };
+
+  const uploadFiles = async (filesList: FileList | File[]) => {
+    if (!filesList || filesList.length === 0) return;
+    setUploading(true);
+    const formData = new FormData();
+    formData.append('projectId', projectId);
+    Array.from(filesList).forEach((f) => formData.append('files', f));
+    try {
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      if (res.ok) {
+        await loadFiles();
+      } else {
+        const data = await res.json();
+        alert(`Upload error: ${data.error || 'Failed to upload'}`);
+      }
+    } catch (err) {
+      alert(`Upload error: ${String(err)}`);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    if (e.dataTransfer?.files) {
+      await uploadFiles(e.dataTransfer.files);
+    }
+  };
 
   async function handleDelete(filePath: string, e: React.MouseEvent) {
     e.stopPropagation();
@@ -256,34 +348,72 @@ export default function FileExplorer({
     .sort((a, b) => a.path.localeCompare(b.path));
 
   return (
-    <div className="file-explorer">
+    <div
+      className="file-explorer"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      <input
+        type="file"
+        multiple
+        ref={fileInputRef}
+        onChange={(e) => e.target.files && uploadFiles(e.target.files)}
+        style={{ display: 'none' }}
+      />
+
+      {/* Dropzone overlay */}
+      {isDragging && (
+        <div className="fe-dropzone-overlay">
+          <div className="fe-dropzone-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={28} height={28} className="text-blue-500">
+              <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            <span>Drop files to upload</span>
+          </div>
+        </div>
+      )}
+
       {/* Pane Title Bar */}
       <div className="explorer-header">
         <span className="explorer-title">Files</span>
         <div className="explorer-actions">
-          <button onClick={createNewFile} className="action-btn" title="New file">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={14} height={14}>
+          <button onClick={() => openModal('file')} className="action-btn" title="New file">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13}>
               <path d="M9 12h6M12 9v6M12 3v18" />
             </svg>
           </button>
-          <button onClick={createNewFolder} className="action-btn" title="New folder">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={14} height={14}>
+          <button onClick={() => openModal('folder')} className="action-btn" title="New folder">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13}>
               <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2zM12 11v6M9 14h6" />
             </svg>
           </button>
-          <button onClick={loadFiles} className="action-btn" title="Refresh">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={14} height={14} className={loading ? 'animate-spin' : ''}>
+          <button onClick={() => fileInputRef.current?.click()} className="action-btn" title="Upload files">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13}>
+              <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+          </button>
+          <button onClick={loadFiles} className="action-btn" title="Refresh files">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13} className={loading || uploading ? 'animate-spin' : ''}>
               <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 11-.57-8.38l5.67-5.67" />
             </svg>
           </button>
+          <span className="header-divider" />
+          <button type="button" className="action-btn" title="More options">⋮</button>
+          <button type="button" className="action-btn" title="Expand">⤢</button>
+          <button type="button" className="action-btn" onClick={() => window.dispatchEvent(new CustomEvent('oc-close-explorer'))} title="Close">✕</button>
         </div>
       </div>
 
-      {/* Search files bar */}
+      {/* Search files bar (Filter, or ? to search in files) */}
       <div className="explorer-search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13} className="explorer-search-icon">
+          <circle cx="11" cy="11" r="7" />
+          <path d="M21 21l-4.3-4.3" />
+        </svg>
         <input
           type="text"
-          placeholder="Search files..."
+          placeholder="Filter, or ? to search in files"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           className="search-input"
@@ -319,7 +449,7 @@ export default function FileExplorer({
             ))
           )
         ) : treeNodes.length === 0 ? (
-          <div className="empty-message">No files found.</div>
+          <div className="empty-message">No files found. Drag files here to upload.</div>
         ) : (
           treeNodes.map((node) => (
             <TreeEntry
@@ -328,14 +458,58 @@ export default function FileExplorer({
               depth={0}
               activePath={activeFile}
               onSelect={onFileSelect}
-              onRename={handleRename}
+              onRename={(path) => openModal('rename', path)}
               onDelete={handleDelete}
               expandedFolders={expandedFolders}
               toggleFolder={toggleFolder}
+              projectId={projectId}
             />
           ))
         )}
       </div>
+
+      {/* Modal Dialog for File/Folder/Rename */}
+      {modal.isOpen && (
+        <div className="fe-modal-overlay" onClick={closeModal}>
+          <div className="fe-modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="fe-modal-header">
+              <span className="fe-modal-title">
+                {modal.type === 'file' ? 'New File' : modal.type === 'folder' ? 'New Folder' : 'Rename'}
+              </span>
+              <button type="button" onClick={closeModal} className="action-btn">&times;</button>
+            </div>
+            <form onSubmit={handleModalSubmit} className="fe-modal-form">
+              <input
+                type="text"
+                value={modalInput}
+                onChange={(e) => setModalInput(e.target.value)}
+                placeholder={
+                  modal.type === 'file'
+                    ? 'e.g. src/components/Badge.tsx'
+                    : modal.type === 'folder'
+                    ? 'e.g. src/utils'
+                    : 'New path'
+                }
+                className="search-input"
+                autoFocus
+              />
+              {modalError && <div className="fe-modal-error">{modalError}</div>}
+              <div className="fe-modal-actions">
+                <button type="button" onClick={closeModal} className="qa-footer-btn">
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={modalSubmitting || !modalInput.trim()}
+                  className="qa-footer-btn qa-footer-btn--primary"
+                >
+                  {modalSubmitting ? 'Saving...' : 'Confirm'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* ── Open Code Editor CTA ────────────────────────────────────────── */}
       <div className="quick-actions-footer">
@@ -360,8 +534,17 @@ export default function FileExplorer({
           display: flex;
           flex-direction: column;
           height: 100%;
-          background: var(--bg-surface);
-          border-left: 1px solid var(--border-subtle);
+          min-height: 0;
+          background: #ffffff;
+          border: 1px solid #e5e2da;
+          border-radius: 14px;
+          box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+          overflow: hidden;
+        }
+
+        :global(.dark) .file-explorer {
+          background: #1f1e1d;
+          border-color: #383632;
         }
 
         .explorer-header {
@@ -369,8 +552,14 @@ export default function FileExplorer({
           align-items: center;
           justify-content: space-between;
           padding: 0 12px;
-          border-bottom: 1px solid var(--border-subtle);
-          height: 40px;
+          border-bottom: 1px solid #e8e6de;
+          background: #faf9f6;
+          height: 36px;
+        }
+
+        :global(.dark) .explorer-header {
+          background: #23221f;
+          border-color: #383632;
         }
 
         .explorer-title {
@@ -581,6 +770,90 @@ export default function FileExplorer({
         .qa-footer-btn:hover {
           background: var(--bg-hover);
           border-color: var(--border-strong);
+        }
+
+        .qa-footer-btn--primary {
+          background: var(--accent);
+          color: white;
+          border-color: var(--accent);
+        }
+        .qa-footer-btn--primary:hover {
+          background: var(--accent-strong, #3b82f6);
+        }
+
+        /* ── Drag & Drop Overlay ── */
+        .fe-dropzone-overlay {
+          position: absolute;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.65);
+          backdrop-filter: blur(2px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 50;
+          pointer-events: none;
+        }
+        .fe-dropzone-box {
+          border: 2px dashed var(--accent);
+          border-radius: var(--radius-lg, 12px);
+          background: var(--bg-surface);
+          padding: 24px 32px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 10px;
+          color: var(--text-primary);
+          font-size: 13px;
+          font-weight: 500;
+        }
+
+        /* ── File Explorer Inline Modal ── */
+        .fe-modal-overlay {
+          position: absolute;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.5);
+          backdrop-filter: blur(2px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 16px;
+          z-index: 40;
+        }
+        .fe-modal-card {
+          width: 100%;
+          max-width: 280px;
+          background: var(--bg-surface);
+          border: 1px solid var(--border-base);
+          border-radius: var(--radius-lg, 10px);
+          box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+          padding: 14px;
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+        .fe-modal-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .fe-modal-title {
+          font-size: 13px;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+        .fe-modal-form {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+        .fe-modal-error {
+          font-size: 11px;
+          color: var(--error, #ef4444);
+        }
+        .fe-modal-actions {
+          display: flex;
+          gap: 8px;
+          justify-content: flex-end;
         }
       `}</style>
     </div>

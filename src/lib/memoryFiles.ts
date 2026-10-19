@@ -114,8 +114,8 @@ export function directoryMemoryFor(
     for (const file of DIRECTORY_MEMORY_FILES) {
       const name = `${sub}/${file}`;
       if (loaded.has(name)) continue;
-      const full = path.join(workspace, sub, file);
-      if (!existsSync(full) || !isInside(realOrSelf(workspace), realOrSelf(full))) continue;
+      const full = path.join(/* turbopackIgnore: true */ workspace, sub, file);
+      if (!existsSync(/* turbopackIgnore: true */ full) || !isInside(realOrSelf(workspace), realOrSelf(full))) continue;
       const text = readText(full);
       loaded.add(name);
       if (!text?.trim()) continue;

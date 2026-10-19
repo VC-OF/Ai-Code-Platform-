@@ -154,6 +154,7 @@ export default function MobileLayout({
           height: 100dvh;
           overflow: hidden;
           background: var(--bg-base);
+          min-width: 0;
         }
 
         .mobile-main {
@@ -162,12 +163,16 @@ export default function MobileLayout({
           overflow: hidden;
           display: flex;
           flex-direction: column;
+          min-width: 0;
+          min-height: 0;
         }
 
         .mobile-content {
           flex: 1;
           position: relative;
           overflow: hidden;
+          min-width: 0;
+          min-height: 0;
         }
 
         .mobile-empty {
@@ -176,12 +181,14 @@ export default function MobileLayout({
           display: flex;
           flex-direction: column;
           background: var(--bg-surface);
+          min-width: 0;
+          min-height: 0;
         }
 
         .chat-fab {
-          position: fixed;
-          bottom: calc(var(--tab-bar-height) + 24px);
-          right: 20px;
+          position: absolute;
+          bottom: 16px;
+          right: 16px;
           width: 48px;
           height: 48px;
           border-radius: 50%;
@@ -194,6 +201,15 @@ export default function MobileLayout({
           justify-content: center;
           cursor: pointer;
           z-index: 50;
+        }
+
+        @media (max-width: 380px) {
+          .chat-fab {
+            width: 44px;
+            height: 44px;
+            right: 12px;
+            bottom: 12px;
+          }
         }
 
         .chat-fab:focus-visible {

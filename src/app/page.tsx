@@ -13,6 +13,8 @@ import CommandPalette   from '@/components/command/CommandPalette';
 import UpgradePanel     from '@/components/upgrade/UpgradePanel';
 import MobileLayout     from '@/components/mobile/MobileLayout';
 import FileExplorer     from '@/components/FileExplorer';
+import OpenChatPanel     from '@/components/chat-app/OpenChatPanel';
+import OpenChatApp       from '@/components/chat-app/OpenChatApp';
 import CompletionDialog from '@/components/CompletionDialog';
 import ToolModal        from '@/components/ToolModal';
 import ChangesReviewModal from '@/components/editor/ChangesReviewModal';
@@ -62,9 +64,28 @@ export default function App() {
   const [settingsOpen,  setSettingsOpen]  = useState(false);
   const [upgradeOpen,   setUpgradeOpen]   = useState(false);
   const [terminalOpen,  setTerminalOpen]  = useState(false);
+  const [openChatOpen,  setOpenChatOpen]  = useState(false);
+  const [mainView,      setMainView]      = useState<'code' | 'chat'>(() => {
+    if (typeof window === 'undefined') return 'code';
+    const params = new URLSearchParams(window.location.search);
+    return params.get('mode') === 'chat' || params.get('view') === 'chat' ? 'chat' : 'code';
+  });
   const [liveOpen,      setLiveOpen]      = useState(false);
   const [isResizing,    setIsResizing]    = useState(false);
   const workspaceColumnsRef = useRef<HTMLDivElement | null>(null);
+  const isProjectHydratedRef = useRef(false);
+
+  const handleMainViewChange = useCallback((mode: 'code' | 'chat') => {
+    setMainView(mode);
+    const url = new URL(window.location.href);
+    if (mode === 'chat') {
+      url.searchParams.set('mode', 'chat');
+    } else {
+      url.searchParams.delete('mode');
+      url.searchParams.delete('view');
+    }
+    window.history.replaceState(null, '', url.pathname + url.search);
+  }, []);
 
   // Listen for open review modal events from timeline or shortcuts
   useEffect(() => {
@@ -73,14 +94,25 @@ export default function App() {
     return () => window.removeEventListener('oc-open-review-modal', handleOpenReview);
   }, []);
 
-  const hasOpenPanels = editorOpen || previewOpen || settingsOpen || terminalOpen;
+  // Listen for close explorer events from FileExplorer header
+  useEffect(() => {
+    const handleCloseExplorer = () => setExplorerOpen(false);
+    window.addEventListener('oc-close-explorer', handleCloseExplorer);
+    return () => window.removeEventListener('oc-close-explorer', handleCloseExplorer);
+  }, []);
 
-  // Sync explorer open/closed preference from localStorage (default: closed)
+  const hasOpenPanels = editorOpen || previewOpen || settingsOpen || terminalOpen || openChatOpen;
+
+  // Sync explorer open/closed preference from localStorage (default: open on desktop)
   useEffect(() => {
     // Deferred to a frame callback to avoid a synchronous setState in the effect body
     const id = requestAnimationFrame(() => {
       const saved = localStorage.getItem('oc-explorer-open');
-      if (saved !== null) setExplorerOpen(saved === 'true');
+      if (saved !== null) {
+        setExplorerOpen(saved === 'true');
+      } else if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
+        setExplorerOpen(true);
+      }
     });
     return () => cancelAnimationFrame(id);
   }, []);
@@ -109,6 +141,10 @@ export default function App() {
     setTerminalOpen((p) => !p);
   }, []);
 
+  const toggleOpenChat = useCallback(() => {
+    setOpenChatOpen((p) => !p);
+  }, []);
+
   const handleResizeWidth = useCallback((targetWidth: number) => {
     const screenW = typeof window !== 'undefined' ? window.innerWidth : 1200;
     const minW = 280;
@@ -122,6 +158,7 @@ export default function App() {
       setPreviewOpen(false);
       setSettingsOpen(false);
       setTerminalOpen(false);
+      setOpenChatOpen(false);
     } else {
       setEditorOpen(true);
       const screenW = typeof window !== 'undefined' ? window.innerWidth : 1200;
@@ -148,10 +185,21 @@ export default function App() {
         setUpgradeOpen(true);
       } else if (target === 'live') {
         setLiveOpen(true);
+      } else if (target === 'preview') {
+        setActiveTab('preview');
+        setPreviewOpen(true);
       }
     };
     window.addEventListener('oc-open', onOpen);
     return () => window.removeEventListener('oc-open', onOpen);
+  }, []);
+
+  useEffect(() => {
+    const focusChat = () => {
+      document.querySelector<HTMLTextAreaElement>('.input-textarea')?.focus();
+    };
+    window.addEventListener('oc-focus-chat', focusChat);
+    return () => window.removeEventListener('oc-focus-chat', focusChat);
   }, []);
 
   // Listen for external terminal toggle events
@@ -168,8 +216,9 @@ export default function App() {
     return () => window.removeEventListener('oc-open-live', handleToggleLive);
   }, []);
 
-  // Media query mobile detector
-  const isMobile = useIsMobile('md');
+  // Use the compact, single-panel shell below tablet width. At half-window
+  // sizes keep the desktop shell's project navigation and chat available.
+  const isMobile = useIsMobile('sm');
 
   // Register global shortcuts handler
   useGlobalKeyboard();
@@ -321,10 +370,16 @@ export default function App() {
           if (found) {
             setActiveProject(found);
           }
+          isProjectHydratedRef.current = true;
         })
-        .catch((err) => console.error('Error auto-loading project:', err));
+        .catch((err) => {
+          console.error('Error auto-loading project:', err);
+          isProjectHydratedRef.current = true;
+        });
+    } else {
+      isProjectHydratedRef.current = true;
     }
-  }, []);
+  }, [activeProject]);
 
   // Build Mode projects have no preview panel — bounce off it if a
   // previously-open app-mode tab selection carries over. Adjust-during-render
@@ -339,20 +394,19 @@ export default function App() {
     }
   }
 
-  // Sync activeProject state with URL query parameters
+  // Sync activeProject state with URL query parameters once initial load has completed
   useEffect(() => {
+    if (!isProjectHydratedRef.current) return;
+    const url = new URL(window.location.href);
     if (activeProject) {
-      const url = new URL(window.location.href);
       url.searchParams.set('projectId', activeProject.id);
-      window.history.replaceState(null, '', url.pathname + url.search);
     } else {
-      const url = new URL(window.location.href);
       url.searchParams.delete('projectId');
-      window.history.replaceState(null, '', url.pathname + url.search);
     }
+    window.history.replaceState(null, '', url.pathname + url.search);
   }, [activeProject]);
 
-  if (isMobile) {
+  if (isMobile && mainView !== 'chat') {
     return (
       <>
         <MobileLayout
@@ -367,6 +421,27 @@ export default function App() {
         />
         {upgradeOpen && <UpgradePanel onClose={() => setUpgradeOpen(false)} />}
       </>
+    );
+  }
+
+  if (mainView === 'chat') {
+    return (
+      <OpenChatApp
+        onSwitchToCode={() => handleMainViewChange('code')}
+        onOpenProject={(projectId) => {
+          fetch('/api/projects')
+            .then((r) => r.json())
+            .then((data) => {
+              const list = data.projects || [];
+              const found = list.find((p: Project) => p.id === projectId);
+              if (found) {
+                setActiveProject(found);
+              }
+            })
+            .catch(() => {});
+          handleMainViewChange('code');
+        }}
+      />
     );
   }
 
@@ -397,6 +472,10 @@ export default function App() {
         onTabChange={setActiveTab}
         liveOpen={liveOpen}
         onLiveToggle={() => setLiveOpen((p) => !p)}
+        openChatOpen={openChatOpen}
+        onOpenChatToggle={toggleOpenChat}
+        mainView={mainView}
+        onMainViewChange={handleMainViewChange}
       />
 
       <div className="app-body">
@@ -458,24 +537,32 @@ export default function App() {
                         <div className="workspace-panel-slot">
                           <div className="panel-slot-header">
                             <div className="panel-slot-title">
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13}>
-                                <polyline points="16 18 22 12 16 6" strokeLinecap="round" strokeLinejoin="round" />
-                                <polyline points="8 6 2 12 8 18" strokeLinecap="round" strokeLinejoin="round" />
-                              </svg>
-                              <span>Code</span>
-                              {activeFile && (
-                                <span className="panel-slot-badge">{activeFile.split('/').pop()}</span>
-                              )}
+                              <span className="panel-tab-title">{activeFile ? activeFile.split('/').pop() : 'Code'}</span>
+                              <button
+                                type="button"
+                                className="panel-tab-add"
+                                onClick={() => {
+                                  // Trigger new file
+                                  window.dispatchEvent(new CustomEvent('oc-new-file'));
+                                }}
+                                title="New file"
+                              >
+                                +
+                              </button>
                             </div>
-                            <button
-                              type="button"
-                              className="panel-slot-close"
-                              onClick={() => setEditorOpen(false)}
-                              title="Close code editor"
-                              aria-label="Close Code Editor"
-                            >
-                              ✕
-                            </button>
+                            <div className="panel-slot-actions">
+                              <button type="button" className="panel-action-btn" title="More options">⋮</button>
+                              <button type="button" className="panel-action-btn" title="Expand">⤢</button>
+                              <button
+                                type="button"
+                                className="panel-action-btn"
+                                onClick={() => setEditorOpen(false)}
+                                title="Close"
+                                aria-label="Close Code Editor"
+                              >
+                                ✕
+                              </button>
+                            </div>
                           </div>
                           <div className="panel-slot-body">
                             <EditorPanel
@@ -493,21 +580,29 @@ export default function App() {
                         <div className="workspace-panel-slot">
                           <div className="panel-slot-header">
                             <div className="panel-slot-title">
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} width={13} height={13}>
-                                <circle cx="12" cy="12" r="10" />
-                                <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-                              </svg>
-                              <span>Live preview</span>
+                              <span className="panel-tab-title">New tab</span>
+                              <button
+                                type="button"
+                                className="panel-tab-add"
+                                onClick={() => setPreviewToken((t) => t + 1)}
+                                title="New preview tab"
+                              >
+                                +
+                              </button>
                             </div>
-                            <button
-                              type="button"
-                              className="panel-slot-close"
-                              onClick={() => setPreviewOpen(false)}
-                              title="Close live preview"
-                              aria-label="Close Live Preview"
-                            >
-                              ✕
-                            </button>
+                            <div className="panel-slot-actions">
+                              <button type="button" className="panel-action-btn" title="More options">⋮</button>
+                              <button type="button" className="panel-action-btn" title="Expand">⤢</button>
+                              <button
+                                type="button"
+                                className="panel-action-btn"
+                                onClick={() => setPreviewOpen(false)}
+                                title="Close"
+                                aria-label="Close Live Preview"
+                              >
+                                ✕
+                              </button>
+                            </div>
                           </div>
                           <div className="panel-slot-body">
                             <PreviewPanel
@@ -523,24 +618,63 @@ export default function App() {
                         <div className="workspace-panel-slot">
                           <div className="panel-slot-header">
                             <div className="panel-slot-title">
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} width={13} height={13}>
-                                <circle cx="12" cy="12" r="3" />
-                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                              </svg>
-                              <span>Settings</span>
+                              <span className="panel-tab-title">Settings</span>
                             </div>
-                            <button
-                              type="button"
-                              className="panel-slot-close"
-                              onClick={() => setSettingsOpen(false)}
-                              title="Close settings"
-                              aria-label="Close Settings"
-                            >
-                              ✕
-                            </button>
+                            <div className="panel-slot-actions">
+                              <button type="button" className="panel-action-btn" title="More options">⋮</button>
+                              <button type="button" className="panel-action-btn" title="Expand">⤢</button>
+                              <button
+                                type="button"
+                                className="panel-action-btn"
+                                onClick={() => setSettingsOpen(false)}
+                                title="Close"
+                                aria-label="Close Settings"
+                              >
+                                ✕
+                              </button>
+                            </div>
                           </div>
                           <div className="panel-slot-body">
                             <SettingsPanel project={activeProject} />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Open Chat Beside Open Code Panel Slot */}
+                      {openChatOpen && (
+                        <div className="workspace-panel-slot">
+                          <div className="panel-slot-header">
+                            <div className="panel-slot-title">
+                              <span className="panel-tab-title">Open Chat</span>
+                              <span className="panel-slot-badge">Beside Open Code</span>
+                            </div>
+                            <div className="panel-slot-actions">
+                              <button type="button" className="panel-action-btn" title="More options">⋮</button>
+                              <button
+                                type="button"
+                                className="panel-action-btn"
+                                onClick={() => handleMainViewChange('chat')}
+                                title="Expand to full chat"
+                              >
+                                ⤢
+                              </button>
+                              <button
+                                type="button"
+                                className="panel-action-btn"
+                                onClick={() => setOpenChatOpen(false)}
+                                title="Close"
+                                aria-label="Close Open Chat"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </div>
+                          <div className="panel-slot-body">
+                            <OpenChatPanel
+                              projectId={activeProject?.id}
+                              onClose={() => setOpenChatOpen(false)}
+                              onExpandToFullChat={() => handleMainViewChange('chat')}
+                            />
                           </div>
                         </div>
                       )}
@@ -726,7 +860,8 @@ export default function App() {
         .app-shell {
           display: flex;
           flex-direction: column;
-          height: 100vh;
+          height: 100dvh;
+          min-height: 0;
           overflow: hidden;
           background: var(--bg-base);
         }
@@ -770,7 +905,7 @@ export default function App() {
           flex-direction: column;
           overflow: hidden;
           min-height: 0;
-          padding: 12px 0 12px 12px;
+          padding: 12px 6px 12px 12px;
           transition: width 0.2s cubic-bezier(0.16, 1, 0.3, 1), flex 0.2s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
@@ -778,7 +913,7 @@ export default function App() {
           flex: 1 1 0px !important;
           min-width: 0 !important;
           width: auto !important;
-          padding: 12px 6px 12px 12px !important;
+          padding: 12px !important;
         }
 
         .workspace-columns--resizing .workspace-column-left,
@@ -796,7 +931,7 @@ export default function App() {
           min-width: 0;
           min-height: 0;
           overflow: hidden;
-          padding: 12px 0;
+          padding: 12px 6px 12px 0;
         }
 
         .workspace-column-middle--full {
@@ -804,7 +939,7 @@ export default function App() {
         }
 
         .workspace-column-right {
-          width: 260px;
+          width: 270px;
           flex-shrink: 0;
           height: 100%;
           min-height: 0;
@@ -817,9 +952,10 @@ export default function App() {
           display: flex;
           flex-direction: column;
           border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-sm);
+          border-radius: 14px;
           overflow: hidden;
-          background: var(--bg-deep);
+          background: var(--bg-surface);
+          box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
           min-width: 0;
           min-height: 0;
           height: 100%;
@@ -833,29 +969,29 @@ export default function App() {
           min-height: 0;
           overflow-x: auto;
           overflow-y: hidden;
-          background: var(--border-subtle);
+          background: var(--bg-elevated);
           gap: 1px;
         }
 
         .workspace-panel-slot {
           flex: 1 1 0px;
-          min-width: 320px;
+          min-width: min(320px, 100%);
           height: 100%;
           min-height: 0;
           display: flex;
           flex-direction: column;
-          background: var(--bg-deep);
+          background: var(--bg-surface);
           overflow: hidden;
           position: relative;
         }
 
         .panel-slot-header {
-          height: 28px;
+          height: 34px;
           display: flex;
           align-items: center;
           justify-content: space-between;
           padding: 0 10px;
-          background: var(--bg-surface);
+          background: var(--bg-elevated);
           border-bottom: 1px solid var(--border-subtle);
           flex-shrink: 0;
           user-select: none;
@@ -865,33 +1001,68 @@ export default function App() {
           display: flex;
           align-items: center;
           gap: 6px;
-          font-size: 11px;
-          font-weight: 600;
-          color: var(--text-secondary);
+        }
+
+        .panel-tab-title {
+          font-size: 12px;
+          font-weight: 500;
+          color: var(--text-primary);
+        }
+
+        .panel-tab-add {
+          background: transparent;
+          border: none;
+          font-size: 14px;
+          color: #737067;
+          cursor: pointer;
+          padding: 0 2px;
+          line-height: 1;
+          transition: color 0.15s;
+        }
+
+        .panel-tab-add:hover {
+          color: var(--text-primary);
         }
 
         .panel-slot-badge {
-          font-size: 9.5px;
+          font-size: 10px;
           font-family: var(--font-mono);
-          color: var(--text-muted);
-          padding: 1px 5px;
-          border-radius: 3px;
+          color: #737067;
+          background: #f0eee6;
+          padding: 1px 6px;
+          border-radius: 4px;
         }
 
-        .panel-slot-close {
+        :global(.dark) .panel-slot-badge {
+          background: #31302c;
+          color: #9c978b;
+        }
+
+        .panel-slot-actions {
+          display: flex;
+          align-items: center;
+          gap: 3px;
+        }
+
+        .panel-action-btn {
           background: transparent;
           border: none;
-          color: var(--text-muted);
+          color: #737067;
           cursor: pointer;
-          font-size: 11px;
-          padding: 2px 5px;
-          border-radius: 3px;
-          transition: all var(--transition-fast);
+          font-size: 12px;
+          padding: 3px 6px;
+          border-radius: 4px;
+          transition: all 0.15s;
         }
 
-        .panel-slot-close:hover {
-          color: var(--text-primary);
-          background: var(--bg-hover);
+        .panel-action-btn:hover {
+          color: #1f1e1d;
+          background: #f0eee6;
+        }
+
+        :global(.dark) .panel-action-btn:hover {
+          color: #f7f4ee;
+          background: #31302c;
         }
 
         .panel-slot-body {
@@ -908,15 +1079,16 @@ export default function App() {
           flex-shrink: 0;
           border-top: 1px solid var(--border-subtle);
           overflow: hidden;
+          background: #181816;
         }
 
         /* Subtle IDE-style bottom indication bar */
         .app-footer {
-          height: 24px;
-          min-height: 24px;
-          max-height: 24px;
+          height: 26px;
+          min-height: 26px;
+          max-height: 26px;
           border-top: 1px solid var(--border-subtle);
-          background: var(--bg-surface);
+          background: var(--bg-elevated);
           display: flex;
           align-items: center;
           justify-content: space-between;
@@ -1011,6 +1183,7 @@ function WelcomeScreen({
   const [error,    setError]    = useState('');
   const [projects, setProjects] = useState<Project[]>([]);
   const [fetching, setFetching] = useState(true);
+  const [showAllWelcomeProjects, setShowAllWelcomeProjects] = useState(false);
 
   useEffect(() => {
     fetch('/api/projects')
@@ -1093,7 +1266,7 @@ function WelcomeScreen({
       <div className="welcome-inner">
         {/* ── Hero card ────────────────────────────────────────────── */}
         <div className="welcome-card">
-          <h1 className="welcome-title font-serif-display">What are we building today?</h1>
+          <h1 className="welcome-title font-sans">What are we building today?</h1>
           <p className="welcome-desc">
             {mode === 'app'
               ? 'Start a new project, or pick up where you left off.'
@@ -1132,9 +1305,13 @@ function WelcomeScreen({
               />
               <div className="template-row">
                 {[
-                  { id: 'react-vite',  label: 'React app' },
-                  { id: 'static-site', label: 'Static site' },
-                  { id: 'blank',       label: 'Blank' },
+                  { id: 'react-vite',       label: 'React app',      tag: 'Vite' },
+                  { id: 'nextjs-tailwind',  label: 'Next.js 16',     tag: 'Fullstack' },
+                  { id: 'dashboard-shell',  label: 'Dashboard',      tag: 'Analytics' },
+                  { id: 'fastapi-react',    label: 'FastAPI + React', tag: 'Python' },
+                  { id: 'express-api',      label: 'Express API',    tag: 'Node' },
+                  { id: 'static-site',      label: 'Static site',    tag: 'HTML/CSS' },
+                  { id: 'blank',            label: 'Blank',          tag: 'Empty' },
                 ].map((t) => (
                   <button
                     key={t.id}
@@ -1142,7 +1319,8 @@ function WelcomeScreen({
                     className={`template-chip ${template === t.id ? 'template-chip--active' : ''}`}
                     onClick={() => setTemplate(t.id)}
                   >
-                    {t.label}
+                    <span className="template-label">{t.label}</span>
+                    <span className="template-tag">{t.tag}</span>
                   </button>
                 ))}
               </div>
@@ -1189,7 +1367,7 @@ function WelcomeScreen({
             <div className="welcome-projects">
               <div className="welcome-projects-label">Recent projects</div>
               <div className="welcome-projects-list">
-                {projects.map((p) => (
+                {(showAllWelcomeProjects ? projects : projects.slice(0, 5)).map((p) => (
                   <button
                     key={p.id}
                     onClick={() => onProjectSelect(p)}
@@ -1209,6 +1387,15 @@ function WelcomeScreen({
                   </button>
                 ))}
               </div>
+              {projects.length > 5 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllWelcomeProjects(!showAllWelcomeProjects)}
+                  className="welcome-more-btn"
+                >
+                  {showAllWelcomeProjects ? 'Show fewer projects' : `View all ${projects.length} projects`}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -1248,9 +1435,10 @@ function WelcomeScreen({
         }
 
         .welcome-title {
-          font-size: 34px;
-          font-weight: 400;
-          line-height: 1.2;
+          font-family: var(--font-sans);
+          font-size: 1.25rem;
+          font-weight: 600;
+          line-height: 1.3;
           color: var(--text-primary);
           margin-bottom: 8px;
         }
@@ -1355,50 +1543,96 @@ function WelcomeScreen({
 
         .template-chip {
           flex: 1;
-          padding: 8px 10px;
-          background: var(--bg-elevated);
-          border: 1px solid var(--border-subtle);
+          padding: 8px 6px;
+          background: var(--bg-surface);
+          border: 1px solid var(--border-base);
           border-radius: var(--radius-md);
           color: var(--text-secondary);
           font-size: 12px;
           cursor: pointer;
           transition: all var(--transition-fast);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 2px;
+          text-align: center;
         }
 
         .template-chip:hover {
           background: var(--bg-hover);
           color: var(--text-primary);
-          border-color: var(--border-base);
+          border-color: var(--brand);
         }
 
         .template-chip--active {
-          background: var(--bg-overlay);
-          border-color: var(--border-strong);
-          color: var(--text-primary);
+          background: var(--bg-elevated);
+          border-color: var(--brand);
+          color: var(--brand);
+          font-weight: 600;
+          box-shadow: 0 0 0 1px var(--brand);
+        }
+
+        .template-label {
           font-weight: 500;
+          line-height: 1.2;
+        }
+
+        .template-tag {
+          font-size: 10px;
+          color: var(--text-muted);
+          font-family: var(--font-mono);
+        }
+
+        .template-chip--active .template-tag {
+          color: var(--brand);
+          opacity: 0.85;
         }
 
         .welcome-btn {
           width: 100%;
-          background: var(--accent);
+          background: var(--brand);
           border: none;
           border-radius: var(--radius-md);
-          color: var(--bg-surface);
+          color: #ffffff;
           font-weight: 600;
-          font-size: 13px;
-          padding: 10px 14px;
+          font-size: 13.5px;
+          padding: 11px 16px;
           cursor: pointer;
-          margin-bottom: 6px;
+          margin-bottom: 8px;
           position: relative;
           display: flex;
           align-items: center;
           justify-content: center;
           gap: 6px;
+          box-shadow: 0 2px 10px var(--brand-glow);
           transition: all var(--transition-fast);
         }
 
         .welcome-btn:hover:not(:disabled) {
-          background: var(--accent-dim);
+          background: var(--brand-dim);
+          box-shadow: 0 4px 14px var(--brand-glow);
+          transform: translateY(-1px);
+        }
+
+        .welcome-more-btn {
+          margin-top: 6px;
+          padding: 7px 12px;
+          font-size: 11.5px;
+          font-weight: 500;
+          color: var(--text-muted);
+          background: transparent;
+          border: 1px dashed var(--border-base);
+          border-radius: var(--radius-md);
+          cursor: pointer;
+          transition: all var(--transition-fast);
+          text-align: center;
+          width: 100%;
+        }
+
+        .welcome-more-btn:hover {
+          color: var(--text-primary);
+          background: var(--bg-hover);
+          border-color: var(--border-strong);
         }
 
         .welcome-btn:focus-visible,

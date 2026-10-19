@@ -31,7 +31,7 @@ export function getWorkspaceRoot(projectId: string = "default"): string {
     // DB unavailable or row not found yet — fall through to the default
   }
 
-  return path.join(process.cwd(), "workspaces", projectId);
+  return path.join(/* turbopackIgnore: true */ process.cwd(), "workspaces", projectId);
 }
 
 export async function ensureWorkspace(projectId: string = "default") {

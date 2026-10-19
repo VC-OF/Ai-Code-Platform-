@@ -16,7 +16,7 @@ const SKILL_ROOTS = [
 ] as const;
 
 const GLOBAL_SKILL_ROOTS = [
-  path.join(process.cwd(), 'skills'),
+  path.join(/* turbopackIgnore: true */ process.cwd(), 'skills'),
   path.join(os.homedir(), '.gemini', 'antigravity-ide', 'builtin', 'skills'),
   path.join(os.homedir(), '.gemini', 'config', 'skills'),
 ];
@@ -46,7 +46,7 @@ export async function loadSkills(
     const rootPath = path.join(workspaceRoot, root);
     let entries: { name: string; isDirectory(): boolean }[];
     try {
-      entries = await fs.readdir(rootPath, { withFileTypes: true });
+      entries = await fs.readdir(/* turbopackIgnore: true */ rootPath, { withFileTypes: true });
     } catch {
       continue;
     }
@@ -74,7 +74,7 @@ export async function loadSkills(
       if (skills.length >= MAX_SKILLS) break;
       let entries: { name: string; isDirectory(): boolean }[];
       try {
-        entries = await fs.readdir(path.join(plugin.root, 'skills'), { withFileTypes: true });
+        entries = await fs.readdir(/* turbopackIgnore: true */ path.join(plugin.root, 'skills'), { withFileTypes: true });
       } catch {
         continue;
       }
@@ -105,7 +105,7 @@ export async function loadSkills(
       if (skills.length >= MAX_SKILLS) break;
       let entries: { name: string; isDirectory(): boolean }[];
       try {
-        entries = await fs.readdir(globalRoot, { withFileTypes: true });
+      entries = await fs.readdir(/* turbopackIgnore: true */ globalRoot, { withFileTypes: true });
       } catch {
         continue;
       }

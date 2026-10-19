@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "bin": {
-    "open-code": "bin/open-code.mjs"
+    "open-code": "bin/open-code.mjs",
+    "opencode": "bin/open-code.mjs"
   },
   "scripts": {
     "cli": "node bin/open-code.mjs",

@@ -1,20 +1,45 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { parseAnsi } from '@/lib/ansi';
 
 interface TerminalPanelProps {
   projectId: string;
   onClose?: () => void;
 }
 
+interface LogEntry {
+  id: string;
+  type: 'cmd' | 'output' | 'info' | 'error';
+  text: string;
+  durationMs?: number;
+  exitCode?: number;
+}
+
 export default function TerminalPanel({ projectId, onClose }: TerminalPanelProps) {
-  const [logs, setLogs] = useState<string[]>([
-    'Open Code Interactive Terminal initialized.',
-    `Workspace root: projects/${projectId}`,
-    'Type any shell command (e.g. npm test, cargo check, ls, git status) and press Enter.\n'
+  const [isMaximized, setIsMaximized] = useState(false);
+  const [logs, setLogs] = useState<LogEntry[]>([
+    {
+      id: 'init-1',
+      type: 'info',
+      text: 'PowerShell 7.5.0',
+    },
+    {
+      id: 'init-2',
+      type: 'info',
+      text: `Loading personal and system profiles took 220ms.`,
+    },
+    {
+      id: 'init-3',
+      type: 'info',
+      text: `PS C:\\${projectId.toUpperCase()}>`,
+    },
   ]);
   const [commandInput, setCommandInput] = useState('');
   const [executing, setExecuting] = useState(false);
+  const [lastDuration, setLastDuration] = useState<number | null>(null);
+  const [lastCode, setLastCode] = useState<number | null>(null);
+  const [copied, setCopied] = useState(false);
   const [history, setHistory] = useState<string[]>([]);
   const [historyIdx, setHistoryIdx] = useState<number>(-1);
 
@@ -44,7 +69,13 @@ export default function TerminalPanel({ projectId, onClose }: TerminalPanelProps
     setHistory((prev) => [cmd, ...prev.filter((c) => c !== cmd)]);
     setHistoryIdx(-1);
 
-    setLogs((prev) => [...prev, `$ ${cmd}`]);
+    const cmdId = 'cmd_' + Date.now();
+    setLogs((prev) => [
+      ...prev,
+      { id: cmdId, type: 'cmd', text: `$ ${cmd}` },
+    ]);
+
+    const startTime = performance.now();
 
     try {
       const res = await fetch('/api/command', {
@@ -52,7 +83,12 @@ export default function TerminalPanel({ projectId, onClose }: TerminalPanelProps
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ command: cmd, projectId }),
       });
+      const durationMs = Math.round(performance.now() - startTime);
+      setLastDuration(durationMs);
+
       const data = await res.json();
+      const exitCode = res.ok && data.success ? 0 : 1;
+      setLastCode(exitCode);
 
       let out = '';
       if (data.stdout) out += data.stdout;
@@ -60,10 +96,31 @@ export default function TerminalPanel({ projectId, onClose }: TerminalPanelProps
       if (data.error) out += (out ? '\n' : '') + `Error: ${data.error}`;
       if (!out) out = 'Process exited with code 0 (no output)';
 
-      setLogs((prev) => [...prev, out]);
+      setLogs((prev) => [
+        ...prev,
+        {
+          id: 'out_' + Date.now(),
+          type: exitCode === 0 ? 'output' : 'error',
+          text: out,
+          durationMs,
+          exitCode,
+        },
+      ]);
     } catch (err: unknown) {
+      const durationMs = Math.round(performance.now() - startTime);
+      setLastDuration(durationMs);
+      setLastCode(1);
       const msg = err instanceof Error ? err.message : String(err);
-      setLogs((prev) => [...prev, `Execution error: ${msg}`]);
+      setLogs((prev) => [
+        ...prev,
+        {
+          id: 'err_' + Date.now(),
+          type: 'error',
+          text: `Execution error: ${msg}`,
+          durationMs,
+          exitCode: 1,
+        },
+      ]);
     } finally {
       setExecuting(false);
       setTimeout(() => inputRef.current?.focus(), 50);
@@ -91,61 +148,98 @@ export default function TerminalPanel({ projectId, onClose }: TerminalPanelProps
         setHistoryIdx(-1);
         setCommandInput('');
       }
+    } else if (e.ctrlKey && e.key === 'l') {
+      e.preventDefault();
+      setLogs([]);
     }
   };
 
+  const copyTerminalOutput = () => {
+    const text = logs.map((l) => l.text).join('\n');
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
   return (
-    <div className="terminal-panel-root">
+    <div className={`terminal-panel-root ${isMaximized ? 'terminal-panel-root--maximized' : ''}`}>
       {/* Header Bar */}
       <div className="terminal-header">
         <div className="terminal-header-left">
-          <svg className="term-prompt-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" width={14} height={14} aria-hidden="true">
-            <polyline points="4 17 10 11 4 5" />
-            <line x1="12" y1="19" x2="20" y2="19" />
-          </svg>
-          <span className="term-title">Terminal</span>
-          <span className="term-pill">node:20</span>
-          {executing && (
+          <div className="term-tab-active">
+            <span className="term-tab-title">Terminal</span>
+            <button
+              type="button"
+              className="term-tab-add"
+              onClick={() => {
+                setLogs((prev) => [
+                  ...prev,
+                  { id: 'tab_' + Date.now(), type: 'info', text: `PS C:\\${projectId.toUpperCase()}>` },
+                ]);
+              }}
+              title="New terminal tab"
+            >
+              +
+            </button>
+          </div>
+          {executing ? (
             <span className="term-exec-indicator">
               <span className="term-spin" />
               Running…
             </span>
-          )}
+          ) : lastDuration !== null ? (
+            <span className="text-[11px] text-[#8b877c]">
+              {lastDuration}ms {lastCode === 0 ? '✓' : `(exit ${lastCode})`}
+            </span>
+          ) : null}
         </div>
         <div className="terminal-header-right">
           <button
             type="button"
-            className="term-tool-btn"
-            onClick={() => runCommand('git status')}
-            title="Run git status"
+            className="term-action-icon"
+            onClick={copyTerminalOutput}
+            title={copied ? "Copied!" : "Copy output (Ctrl+C)"}
+            aria-label={copied ? "Copied" : "Copy output"}
           >
-            git status
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13}>
+              <circle cx="12" cy="5" r="1.5" fill="currentColor" />
+              <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+              <circle cx="12" cy="19" r="1.5" fill="currentColor" />
+            </svg>
           </button>
           <button
             type="button"
-            className="term-tool-btn"
-            onClick={() => runCommand('ls -la')}
-            title="List files"
+            className="term-action-icon"
+            onClick={() => setIsMaximized((m) => !m)}
+            title={isMaximized ? 'Restore size' : 'Maximize terminal'}
+            aria-label={isMaximized ? 'Restore size' : 'Maximize terminal'}
           >
-            ls
-          </button>
-          <button
-            type="button"
-            className="term-tool-btn"
-            onClick={() => setLogs([])}
-            title="Clear terminal output"
-          >
-            Clear
+            {isMaximized ? (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13}>
+                <polyline points="4 14 10 14 10 20" />
+                <polyline points="20 10 14 10 14 4" />
+                <line x1="14" y1="10" x2="21" y2="3" />
+                <line x1="3" y1="21" x2="10" y2="14" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13}>
+                <polyline points="15 3 21 3 21 9" />
+                <polyline points="9 21 3 21 3 15" />
+                <line x1="21" y1="3" x2="14" y2="10" />
+                <line x1="3" y1="21" x2="10" y2="14" />
+              </svg>
+            )}
           </button>
           {onClose && (
             <button
               type="button"
-              className="term-close-btn"
+              className="term-action-icon"
               onClick={onClose}
               title="Close terminal"
               aria-label="Close"
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" width={12} height={12} aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" width={13} height={13}>
                 <path d="M18 6L6 18M6 6l12 12" />
               </svg>
             </button>
@@ -155,17 +249,42 @@ export default function TerminalPanel({ projectId, onClose }: TerminalPanelProps
 
       {/* Terminal Output */}
       <div className="terminal-body" onClick={() => inputRef.current?.focus()}>
-        {logs.map((log, idx) => (
-          <div key={idx} className={`term-line ${log.startsWith('$') ? 'term-line--cmd' : ''}`}>
-            {log}
-          </div>
-        ))}
+        {logs.map((log) => {
+          if (log.type === 'cmd') {
+            return (
+              <div key={log.id} className="term-line term-line--cmd">
+                {log.text}
+              </div>
+            );
+          }
+
+          const spans = parseAnsi(log.text);
+          return (
+            <div
+              key={log.id}
+              className={`term-line ${log.type === 'error' ? 'term-line--err' : ''}`}
+            >
+              {spans.map((s, idx) => (
+                <span
+                  key={idx}
+                  style={{
+                    color: s.color,
+                    fontWeight: s.bold ? 600 : 'normal',
+                    opacity: s.dim ? 0.75 : 1,
+                  }}
+                >
+                  {s.text}
+                </span>
+              ))}
+            </div>
+          );
+        })}
         <div ref={logsEndRef} />
       </div>
 
       {/* Input row */}
       <div className="terminal-input-bar">
-        <span className="term-cursor-prompt">$</span>
+        <span className="term-cursor-prompt">PS C:\{projectId.toUpperCase()}&gt;</span>
         <input
           ref={inputRef}
           type="text"
@@ -173,7 +292,7 @@ export default function TerminalPanel({ projectId, onClose }: TerminalPanelProps
           onChange={(e) => setCommandInput(e.target.value)}
           onKeyDown={handleKeyDown}
           disabled={executing}
-          placeholder={executing ? 'Command is running…' : 'Type shell command… (Enter to run, ↑/↓ for history)'}
+          placeholder=""
           className="term-input"
           spellCheck={false}
           autoComplete="off"
@@ -199,12 +318,21 @@ export default function TerminalPanel({ projectId, onClose }: TerminalPanelProps
           flex-direction: column;
           height: 100%;
           min-height: 0;
-          background: var(--bg-base);
-          color: var(--text-primary);
-          font-family: var(--font-mono);
+          background: #181816;
+          color: #ede8de;
+          font-family: var(--font-mono, monospace);
           font-size: 12px;
           border-top: 1px solid var(--border-subtle);
           overflow: hidden;
+        }
+
+        .terminal-panel-root--maximized {
+          position: fixed;
+          inset: 52px 16px 16px 16px;
+          z-index: 50;
+          border-radius: 16px;
+          border: 1px solid #383632;
+          box-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
         }
 
         .terminal-header {
@@ -212,8 +340,8 @@ export default function TerminalPanel({ projectId, onClose }: TerminalPanelProps
           align-items: center;
           justify-content: space-between;
           padding: 6px 12px;
-          background: var(--bg-surface);
-          border-bottom: 1px solid var(--border-subtle);
+          background: #201f1c;
+          border-bottom: 1px solid #2e2d29;
           flex-shrink: 0;
           user-select: none;
           font-family: var(--font-sans);
@@ -225,39 +353,53 @@ export default function TerminalPanel({ projectId, onClose }: TerminalPanelProps
           gap: 8px;
         }
 
-        .term-prompt-icon {
-          color: var(--text-muted);
-        }
-
-        .term-title {
-          font-weight: 500;
+        .term-tab-active {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 3px 8px;
+          border-radius: 6px;
+          background: #2a2926;
+          color: #ede8de;
           font-size: 12px;
-          color: var(--text-primary);
+          font-weight: 500;
         }
 
-        .term-pill {
-          font-family: var(--font-mono);
-          font-size: 11px;
-          padding: 1px 6px;
-          border-radius: var(--radius-sm);
-          background: var(--bg-elevated);
-          color: var(--text-muted);
-          border: 1px solid var(--border-subtle);
+        .term-tab-title {
+          font-size: 12px;
+          font-weight: 500;
+          color: #ede8de;
+        }
+
+        .term-tab-add {
+          background: transparent;
+          border: none;
+          color: #9c978b;
+          cursor: pointer;
+          font-size: 14px;
+          line-height: 1;
+          padding: 0 2px;
+          border-radius: 4px;
+          transition: color 0.15s;
+        }
+
+        .term-tab-add:hover {
+          color: #ede8de;
         }
 
         .term-exec-indicator {
           display: flex;
           align-items: center;
           gap: 5px;
-          font-size: 12px;
-          color: var(--text-secondary);
+          font-size: 11.5px;
+          color: #9c978b;
         }
 
         .term-spin {
           width: 8px;
           height: 8px;
-          border: 1.5px solid var(--border-strong);
-          border-top-color: var(--text-secondary);
+          border: 1.5px solid #737067;
+          border-top-color: #ede8de;
           border-radius: 50%;
           animation: spin 0.8s linear infinite;
         }
@@ -272,39 +414,22 @@ export default function TerminalPanel({ projectId, onClose }: TerminalPanelProps
           gap: 4px;
         }
 
-        .term-tool-btn {
-          background: transparent;
-          color: var(--text-secondary);
-          border: 1px solid var(--border-base);
-          border-radius: var(--radius-md);
-          padding: 2px 8px;
-          font-size: 12px;
-          cursor: pointer;
-          font-family: var(--font-mono);
-          transition: background var(--transition-fast), color var(--transition-fast);
-        }
-
-        .term-tool-btn:hover {
-          color: var(--text-primary);
-          background: var(--bg-hover);
-        }
-
-        .term-close-btn {
+        .term-action-icon {
           display: flex;
           align-items: center;
           justify-content: center;
           background: transparent;
           border: none;
-          color: var(--text-muted);
+          color: #9c978b;
           cursor: pointer;
-          padding: 4px;
-          border-radius: var(--radius-md);
-          transition: background var(--transition-fast), color var(--transition-fast);
+          padding: 5px;
+          border-radius: 5px;
+          transition: background 0.15s, color 0.15s;
         }
 
-        .term-close-btn:hover {
-          color: var(--text-primary);
-          background: var(--bg-hover);
+        .term-action-icon:hover {
+          color: #ede8de;
+          background: #2e2d29;
         }
 
         .terminal-body {
@@ -330,18 +455,22 @@ export default function TerminalPanel({ projectId, onClose }: TerminalPanelProps
           margin-top: 4px;
         }
 
+        .term-line--err {
+          color: #fca5a5;
+        }
+
         .terminal-input-bar {
           display: flex;
           align-items: center;
           padding: 6px 12px;
-          background: var(--bg-surface);
-          border-top: 1px solid var(--border-subtle);
+          background: #201f1c;
+          border-top: 1px solid #2e2d29;
           gap: 8px;
           flex-shrink: 0;
         }
 
         .term-cursor-prompt {
-          color: var(--text-muted);
+          color: #9c978b;
           font-weight: 600;
           font-size: 12px;
         }
@@ -350,7 +479,7 @@ export default function TerminalPanel({ projectId, onClose }: TerminalPanelProps
           flex: 1;
           background: transparent;
           border: none;
-          color: var(--text-primary);
+          color: #ede8de;
           font-family: inherit;
           font-size: 12px;
           outline: none;

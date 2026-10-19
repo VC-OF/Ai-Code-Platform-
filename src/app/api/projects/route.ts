@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getProjects, createProject, createBuildModeProject, deleteProject } from "@/lib/projects";
 import { ensureSchedulerStarted } from "@/lib/scheduler";
+import { getCurrentUser } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
   // The UI lists projects on load — a cheap place to start the cron runner
@@ -15,7 +16,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ project });
     }
 
-    const projects = await getProjects();
+    const user = await getCurrentUser(req);
+    const projects = await getProjects(user?.id);
     // sort by updatedAt descending
     projects.sort((a, b) => b.updatedAt - a.updatedAt);
     return NextResponse.json({ projects });
@@ -27,10 +29,11 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
+    const user = await getCurrentUser(req);
 
     if (body.mode === "build") {
       try {
-        const project = await createBuildModeProject(body.path, body.title);
+        const project = await createBuildModeProject(body.path, body.title, user?.id);
         return NextResponse.json({ project });
       } catch (error) {
         // Bad/forbidden path is a client error, not a server fault
@@ -41,7 +44,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const project = await createProject(body.title, body.template);
+    const project = await createProject(body.title, body.template, user?.id);
     return NextResponse.json({ project });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });

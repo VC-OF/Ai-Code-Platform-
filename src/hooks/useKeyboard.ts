@@ -41,13 +41,16 @@ export function useHotkey(
   opts: { global?: boolean; enabled?: boolean } = {}
 ) {
   const actionRef = useRef(action);
+  const modifiersKey = modifiers.join(',');
+  const isGlobal = opts.global;
+  const isEnabled = opts.enabled;
 
   useEffect(() => {
     actionRef.current = action;
   });
 
   useEffect(() => {
-    if (opts.enabled === false) return;
+    if (isEnabled === false) return;
 
     const handler = (e: KeyboardEvent) => {
       const isInput =
@@ -55,7 +58,7 @@ export function useHotkey(
         e.target instanceof HTMLTextAreaElement ||
         (e.target as HTMLElement)?.isContentEditable;
 
-      if (isInput && !opts.global) return;
+      if (isInput && !isGlobal) return;
 
       const matches =
         e.key.toLowerCase() === key.toLowerCase() &&
@@ -75,5 +78,6 @@ export function useHotkey(
 
     window.addEventListener('keydown', handler, { capture: true });
     return () => window.removeEventListener('keydown', handler, { capture: true });
-  }, [key, modifiers.join(','), opts.global, opts.enabled]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, modifiersKey, isGlobal, isEnabled]);
 }

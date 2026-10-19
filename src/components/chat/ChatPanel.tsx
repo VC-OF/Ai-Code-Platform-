@@ -1350,6 +1350,24 @@ export default function ChatPanel({
         </div>
         )}
 
+        {/* Suggestion pill (Image 3) */}
+        <div className="suggestion-pill-row">
+          <button
+            type="button"
+            className="suggestion-pill"
+            onClick={() => {
+              setInput('Pass reviewer findings to the repair agent');
+              setTimeout(() => {
+                const textarea = document.querySelector('.input-textarea') as HTMLTextAreaElement;
+                textarea?.focus();
+              }, 50);
+            }}
+            title="Click to insert suggestion"
+          >
+            Pass reviewer findings to the repair agent
+          </button>
+        </div>
+
         <div className="prompt-chips-track">
           {PROMPT_TEMPLATES.map((tpl) => (
             <button
@@ -1382,6 +1400,36 @@ export default function ChatPanel({
           projectId={projectId}
           voice={voice}
         />
+
+        {/* Claude Code status sub-bar (Image 3) */}
+        <div className="prompt-status-line">
+          <div className="prompt-status-left">
+            <span className="status-item">
+              <span className="status-item-icon">💻</span>
+              <span>This computer</span>
+            </span>
+            <span className="status-item">
+              <span className="status-item-icon">📁</span>
+              <span>{projectName || (projectId ? projectId.toUpperCase() : 'KD')}</span>
+            </span>
+            <button
+              type="button"
+              className="status-item status-item--clickable"
+              onClick={() => handleModeChange(executionMode === 'auto' ? 'manual' : executionMode === 'manual' ? 'plan' : 'auto')}
+              title="Click to toggle execution mode"
+            >
+              <span>{executionMode === 'auto' ? 'Auto' : executionMode === 'manual' ? 'Manual' : 'Plan'}</span>
+              <span className="status-chevron">∨</span>
+            </button>
+          </div>
+          <div className="prompt-status-right">
+            <span className="status-item font-medium">
+              {selectedModel?.includes('claude') ? 'Sonnet 5.5' : (selectedModel?.split(':').pop() || 'Sonnet 5.5')}
+            </span>
+            <span className="status-item text-muted">Medium</span>
+            <span className={`status-indicator-circle ${loading ? 'status-indicator-circle--running' : ''}`} title={loading ? 'Working…' : 'Ready'}>○</span>
+          </div>
+        </div>
       </div>
 
       {/* Astra-style immersive voice canvas (full screen / collapsed bubble) */}
@@ -1430,9 +1478,10 @@ export default function ChatPanel({
           padding: 32px 16px;
         }
         .chat-empty-title {
-          font-family: var(--font-serif);
-          font-size: 26px;
-          font-weight: 400;
+          font-family: var(--font-sans);
+          font-size: 24px;
+          font-weight: 600;
+          letter-spacing: -0.025em;
           line-height: 1.25;
           color: var(--text-primary);
           margin: 0;
@@ -1998,29 +2047,138 @@ export default function ChatPanel({
         }
         .prompt-chips-track {
           display: flex;
-          gap: 4px;
+          gap: 6px;
           overflow-x: auto;
           scrollbar-width: none;
+          padding: 2px 2px 6px 2px;
         }
         .prompt-chips-track::-webkit-scrollbar {
           display: none;
         }
         .prompt-chip-btn {
           flex-shrink: 0;
-          padding: 2px 10px;
+          padding: 4px 12px;
           font-size: 12px;
+          font-weight: 500;
           color: var(--text-secondary);
           background: transparent;
-          border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-full);
+          border: 1px solid var(--border-base);
+          border-radius: var(--radius-md);
           cursor: pointer;
           white-space: nowrap;
-          transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+          transition: all var(--transition-fast);
         }
         .prompt-chip-btn:hover {
           color: var(--text-primary);
           background: var(--bg-hover);
+          border-color: var(--accent-border);
+        }
+
+        .suggestion-pill-row {
+          display: flex;
+          justify-content: center;
+          margin-bottom: 6px;
+        }
+
+        .suggestion-pill {
+          display: inline-flex;
+          align-items: center;
+          padding: 5px 14px;
+          border-radius: 9999px;
+          background: transparent;
+          border: 1px solid var(--border-base);
+          color: var(--text-secondary);
+          font-size: 12px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.15s ease;
+        }
+
+        :global(html:not([data-theme="light"])) .suggestion-pill,
+        :global(html[data-theme="dark"]) .suggestion-pill {
+          background: transparent;
           border-color: var(--border-base);
+          color: var(--text-secondary);
+        }
+
+        .suggestion-pill:hover {
+          color: var(--text-primary);
+          border-color: var(--border-strong);
+          background: var(--bg-hover);
+        }
+
+        :global(html:not([data-theme="light"])) .suggestion-pill:hover,
+        :global(html[data-theme="dark"]) .suggestion-pill:hover {
+          color: var(--text-primary);
+          border-color: var(--border-strong);
+          background: var(--bg-hover);
+        }
+
+        .prompt-status-line {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 6px 4px 2px;
+          font-size: 11px;
+          color: #737067;
+          user-select: none;
+        }
+
+        :global(.dark) .prompt-status-line {
+          color: #9c978b;
+        }
+
+        .prompt-status-left,
+        .prompt-status-right {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .status-item {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+        }
+
+        .status-item-icon {
+          font-size: 11px;
+        }
+
+        .status-item--clickable {
+          cursor: pointer;
+          border: none;
+          background: transparent;
+          border-radius: 4px;
+          padding: 1px 4px;
+          transition: background 0.15s;
+          color: inherit;
+          font-size: inherit;
+        }
+
+        .status-item--clickable:hover {
+          color: #1f1e1d;
+          background: #f0eee6;
+        }
+
+        :global(.dark) .status-item--clickable:hover {
+          color: #f7f4ee;
+          background: #31302c;
+        }
+
+        .status-chevron {
+          font-size: 8px;
+          color: #9c978b;
+        }
+
+        .status-indicator-circle {
+          font-size: 11px;
+          color: #9c978b;
+        }
+
+        .status-indicator-circle--running {
+          color: #da7756;
+          animation: spin 1.5s linear infinite;
         }
 
         /* Focus */

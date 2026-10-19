@@ -226,6 +226,46 @@ export function normalizeToolArgs(toolName: string, input: unknown): unknown {
       rename(args, 'base', ['ref', 'against', 'since']);
       rename(args, 'path', PATH_ALIASES);
       break;
+    case 'ast_grep_search':
+    case 'ast_grep_replace':
+      rename(args, 'path', PATH_ALIASES);
+      rename(args, 'pattern', ['query', 'search', 'expr', 'target']);
+      rename(args, 'rewrite', ['replacement', 'replace', 'template']);
+      args.max_matches = toInt(args.max_matches);
+      if (args.max_matches === undefined) delete args.max_matches;
+      break;
+    case 'git_blame':
+      rename(args, 'path', PATH_ALIASES);
+      rename(args, 'start_line', ['startLine', 'start', 'from']);
+      rename(args, 'end_line', ['endLine', 'end', 'to']);
+      args.start_line = toInt(args.start_line);
+      args.end_line = toInt(args.end_line);
+      if (args.start_line === undefined) delete args.start_line;
+      if (args.end_line === undefined) delete args.end_line;
+      break;
+    case 'git_worktree_create':
+    case 'git_worktree_remove':
+      rename(args, 'name', ['worktree', 'id', 'identifier']);
+      break;
+    case 'database_sidecar_start':
+      rename(args, 'type', ['engine', 'service', 'db']);
+      args.port = toInt(args.port);
+      if (args.port === undefined) delete args.port;
+      break;
+    case 'schedule_timer':
+      rename(args, 'duration_seconds', ['duration', 'seconds', 'timeout']);
+      rename(args, 'cron_expression', ['cron', 'schedule']);
+      args.duration_seconds = toInt(args.duration_seconds);
+      if (args.duration_seconds === undefined) delete args.duration_seconds;
+      break;
+    case 'agent_send_message':
+      rename(args, 'recipient', ['to', 'target', 'agent']);
+      rename(args, 'message', ['content', 'text', 'body']);
+      break;
+    case 'open_webhook_tunnel':
+      args.port = toInt(args.port);
+      if (args.port === undefined) delete args.port;
+      break;
     case 'spawn_agent': {
       rename(args, 'task', ['prompt', 'instructions', 'description', 'goal']);
       rename(args, 'kind', ['type', 'agent_type', 'subagent_type', 'role']);

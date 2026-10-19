@@ -8,6 +8,7 @@ import ChatHeader from './ChatHeader';
 import ChatTimeline from './ChatTimeline';
 import ChatComposer from './ChatComposer';
 import ArtifactsCanvas from './ArtifactsCanvas';
+import ApiKeyModal from '@/components/ApiKeyModal';
 
 interface OpenChatAppProps {
   onSwitchToCode?: () => void;
@@ -45,6 +46,7 @@ export default function OpenChatApp({ onSwitchToCode, onOpenProject }: OpenChatA
   const [streamingText, setStreamingText] = useState('');
   const [selectedArtifact, setSelectedArtifact] = useState<ExtractedArtifact | null>(null);
   const [isCanvasOpen, setIsCanvasOpen] = useState(false);
+  const [showKeyModal, setShowKeyModal] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const isSendingRef = useRef(false);
 
@@ -272,18 +274,19 @@ export default function OpenChatApp({ onSwitchToCode, onOpenProject }: OpenChatA
   };
 
   // Handle Send Message (Streamed)
-  const handleSendMessage = async (prompt: string) => {
+  const handleSendMessage = async (prompt: string, attachments?: ChatAttachment[]) => {
     isSendingRef.current = true;
     let convoId = activeConversationId;
 
     // If no active conversation, create one first
     if (!convoId) {
       try {
+        const titleSource = prompt || (attachments && attachments[0]?.name ? `Attachment: ${attachments[0].name}` : 'New Chat');
         const createRes = await fetch('/api/conversations', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            title: prompt.slice(0, 36) + (prompt.length > 36 ? '…' : ''),
+            title: titleSource.slice(0, 36) + (titleSource.length > 36 ? '…' : ''),
             model: selectedModel,
           }),
         });
@@ -308,15 +311,17 @@ export default function OpenChatApp({ onSwitchToCode, onOpenProject }: OpenChatA
       id: `temp-${Date.now()}`,
       conversation_id: convoId!,
       role: 'user',
-      content: prompt,
+      content: prompt || (attachments && attachments.length > 0 ? `[Sent ${attachments.length} attachment${attachments.length > 1 ? 's' : ''}]` : ''),
+      attachments: attachments ? JSON.stringify(attachments) : null,
       created_at: Date.now(),
     };
 
     setActiveConversation((prev) => {
       if (!prev) {
+        const titleSource = prompt || (attachments && attachments[0]?.name ? `Attachment: ${attachments[0].name}` : 'New Chat');
         return {
           id: convoId!,
-          title: prompt.slice(0, 36) + (prompt.length > 36 ? '…' : ''),
+          title: titleSource.slice(0, 36) + (titleSource.length > 36 ? '…' : ''),
           model: selectedModel,
           pinned: 0,
           created_at: Date.now(),
@@ -347,6 +352,7 @@ export default function OpenChatApp({ onSwitchToCode, onOpenProject }: OpenChatA
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           content: prompt,
+          attachments,
           model: selectedModel,
         }),
         signal: controller.signal,
@@ -530,6 +536,7 @@ export default function OpenChatApp({ onSwitchToCode, onOpenProject }: OpenChatA
           isCanvasOpen={isCanvasOpen}
           onToggleCanvas={() => setIsCanvasOpen(!isCanvasOpen)}
           onSwitchToCode={onSwitchToCode}
+          onOpenKeyModal={() => setShowKeyModal(true)}
         />
 
         {/* Message Stream */}
@@ -550,7 +557,10 @@ export default function OpenChatApp({ onSwitchToCode, onOpenProject }: OpenChatA
                 onSendMessage={handleSendMessage}
                 isStreaming={isStreaming}
                 onStopStreaming={handleStopStreaming}
-                className="w-full px-0 pb-2 pt-0 max-w-2xl mx-auto"
+                selectedModel={selectedModel}
+                onModelChange={handleModelChange}
+                onOpenProject={onSwitchToCode}
+                className="w-full px-0 pb-0 pt-0"
               />
             ) : undefined
           }
@@ -558,11 +568,20 @@ export default function OpenChatApp({ onSwitchToCode, onOpenProject }: OpenChatA
 
         {/* Input Composer (bottom docked when chat is active) */}
         {!isChatEmpty && (
-          <ChatComposer
-            onSendMessage={handleSendMessage}
-            isStreaming={isStreaming}
-            onStopStreaming={handleStopStreaming}
-          />
+          <div className="w-full max-w-[760px] mx-auto px-4 pb-1">
+            <ChatComposer
+              onSendMessage={handleSendMessage}
+              isStreaming={isStreaming}
+              onStopStreaming={handleStopStreaming}
+              selectedModel={selectedModel}
+              onModelChange={handleModelChange}
+              onOpenProject={onSwitchToCode}
+              lastAssistantMessage={
+                activeConversation?.messages?.filter((m) => m.role === 'assistant')?.slice(-1)[0]?.content
+              }
+              className="w-full px-0 pb-0 pt-0"
+            />
+          </div>
         )}
       </div>
 
@@ -576,6 +595,9 @@ export default function OpenChatApp({ onSwitchToCode, onOpenProject }: OpenChatA
           />
         </div>
       )}
+
+      {/* API Key Modal */}
+      {showKeyModal && <ApiKeyModal onClose={() => setShowKeyModal(false)} />}
     </div>
   );
 }

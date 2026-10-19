@@ -299,15 +299,21 @@ const OLLAMA_MODEL_PATTERN = /:(cloud|latest|\d+b.*)$|-cloud$|^(nemotron|gemma4|
  *
  * `keys` lets callers overlay decrypted settings-store keys over env vars.
  */
+export function getDefaultModel(keys: Record<string, string> = {}): string {
+  const envModel = typeof process !== 'undefined' ? (process.env?.LLM_MODEL || process.env?.OPENAI_MODEL) : undefined;
+  return envModel || detectDefaultModel(keys);
+}
+
 function detectDefaultModel(keys: Record<string, string>): string {
-  const keyFor = (env: string | null) => (env ? keys[env] || process.env[env] || '' : '');
+  const keyFor = (env: string | null) => (env && typeof process !== 'undefined' ? keys[env] || process.env?.[env] || '' : '');
+  if (keyFor('ANTHROPIC_API_KEY')) return 'claude-3-7-sonnet';
   if (keyFor('GEMINI_API_KEY')) return 'gemini-flash-latest';
   if (keyFor('OPENAI_API_KEY') || keyFor('LLM_API_KEY')) return 'gpt-4o-mini';
+  if (keyFor('DEEPSEEK_API_KEY')) return 'deepseek-r1';
+  if (keyFor('OPENROUTER_API_KEY')) return 'openrouter:anthropic/claude-3.7-sonnet';
   if (keyFor('GROQ_API_KEY')) return 'llama-3.3-70b-versatile';
-  if (keyFor('OPENROUTER_API_KEY')) return 'openrouter:anthropic/claude-3-5-sonnet';
-  if (keyFor('DEEPSEEK_API_KEY')) return 'deepseek-chat';
   if (keyFor('TOGETHER_API_KEY')) return 'together:meta-llama/Llama-3.3-70B-Instruct-Turbo';
-  return 'nemotron-3-ultra:cloud';
+  return 'claude-3-7-sonnet';
 }
 
 export function resolveProvider(

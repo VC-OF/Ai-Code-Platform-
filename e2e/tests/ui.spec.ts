@@ -26,11 +26,33 @@ async function deleteProjectViaApi(page: Page, id: string) {
 }
 
 test.describe('UI', () => {
+  test('Open Chat remains usable at half-window and phone widths', async ({ page }) => {
+    await page.setViewportSize({ width: 760, height: 900 });
+    await page.goto('/?mode=chat');
+    await expect(page.getByRole('textbox', { name: 'Message' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Send message' })).toBeVisible();
+
+    const halfWidth = await page.evaluate(() => ({
+      viewport: document.documentElement.clientWidth,
+      content: document.documentElement.scrollWidth,
+    }));
+    expect(halfWidth.content).toBeLessThanOrEqual(halfWidth.viewport + 1);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.getByRole('textbox', { name: 'Message' })).toBeVisible();
+    await expect(page.getByRole('combobox', { name: 'Select model' })).toBeVisible();
+    const phoneWidth = await page.evaluate(() => ({
+      viewport: document.documentElement.clientWidth,
+      content: document.documentElement.scrollWidth,
+    }));
+    expect(phoneWidth.content).toBeLessThanOrEqual(phoneWidth.viewport + 1);
+  });
+
   test('welcome screen shows template choices', async ({ page }) => {
     await page.goto('/');
     await expect(page.locator('.welcome-card')).toBeVisible();
     const chips = page.locator('.template-chip');
-    await expect(chips).toHaveCount(3);
+      await expect(chips).toHaveCount(7);
     await expect(chips.filter({ hasText: 'React app' })).toBeVisible();
   });
 
@@ -43,7 +65,7 @@ test.describe('UI', () => {
       // Chat input ready
       await expect(page.getByRole('combobox', { name: 'Message' })).toBeEnabled();
       // Panel toggles in the top bar
-      for (const label of ['Toggle code editor', 'Toggle live preview', 'Toggle settings']) {
+      for (const label of ['Toggle code editor', 'Toggle live browser preview', 'Toggle settings']) {
         await expect(page.getByRole('button', { name: label }).first()).toBeVisible();
       }
       // Prompt template shortcuts (short label, description in the title)
@@ -86,13 +108,72 @@ test.describe('UI', () => {
   test('preview panel shows honest offline state and sub-tabs', async ({ page }) => {
     const id = await createProjectViaUi(page, `e2e-preview-ui-${Date.now()}`);
     try {
-      await page.getByRole('button', { name: 'Toggle live preview' }).first().click();
+      await page.getByRole('button', { name: 'Toggle live browser preview' }).first().click();
       await expect(page.locator('.preview-offline-title')).toContainText('Preview server offline');
       // Sub-tab switch hides the browser layout
       await page.getByRole('tab', { name: 'Database' }).click();
       await expect(page.locator('.preview-layout')).toHaveCount(0);
     } finally {
       await deleteProjectViaApi(page, id);
+    }
+  });
+
+  test('workspace stays usable at half-window and phone widths', async ({ page }) => {
+    const { project } = await page.request
+      .post('/api/projects', {
+        data: { title: `e2e-responsive-${Date.now()}`, template: 'blank' },
+      })
+      .then((res) => res.json());
+
+    try {
+      await page.setViewportSize({ width: 760, height: 900 });
+      await page.goto(`/?projectId=${encodeURIComponent(project.id)}`);
+      await expect(page.getByRole('combobox', { name: 'Message' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Toggle code editor' })).toBeVisible();
+
+      const halfWidth = await page.evaluate(() => ({
+        viewport: document.documentElement.clientWidth,
+        content: document.documentElement.scrollWidth,
+      }));
+      expect(halfWidth.content).toBeLessThanOrEqual(halfWidth.viewport + 1);
+
+      await page.setViewportSize({ width: 390, height: 844 });
+      await expect(page.getByRole('button', { name: 'Open menu' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Code', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Preview', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible();
+
+      const phoneWidth = await page.evaluate(() => ({
+        viewport: document.documentElement.clientWidth,
+        content: document.documentElement.scrollWidth,
+      }));
+      expect(phoneWidth.content).toBeLessThanOrEqual(phoneWidth.viewport + 1);
+    } finally {
+      await deleteProjectViaApi(page, project.id);
+    }
+  });
+
+  test('scaffolded project opens a source file and reaches preview', async ({ page }) => {
+    const created = await page.request.post('/api/projects', {
+      data: { title: `e2e-journey-${Date.now()}`, template: 'static-site' },
+    });
+    expect(created.ok()).toBeTruthy();
+    const { project } = await created.json();
+
+    try {
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.goto(`/?projectId=${encodeURIComponent(project.id)}`);
+      const sourceFile = page.locator('.file-explorer .fe-row--file').filter({ hasText: 'index.html' });
+      await expect(sourceFile).toBeVisible({ timeout: 15_000 });
+      await sourceFile.click();
+
+      await expect(page.locator('.monaco-editor')).toBeVisible({ timeout: 20_000 });
+      await expect(page.locator('.vscode-tabs-bar')).toContainText('index.html');
+
+      await page.getByRole('button', { name: 'Toggle live browser preview' }).click();
+      await expect(page.locator('.preview-offline-title')).toBeVisible({ timeout: 15_000 });
+    } finally {
+      await deleteProjectViaApi(page, project.id);
     }
   });
 });

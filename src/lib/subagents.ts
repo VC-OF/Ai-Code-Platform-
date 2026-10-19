@@ -31,6 +31,8 @@ const READ_ONLY_TOOLS = new Set([
   'mcp_list_resources', 'mcp_read_resource',
   'browser_open', 'browser_snapshot', 'browser_scroll', 'browser_console', 'browser_wait', 'browser_close',
   'github_list_prs', 'github_get_pr', 'github_list_issues', 'github_get_issue',
+  'ast_grep_search', 'git_worktree_list', 'git_stash_list', 'git_blame',
+  'database_sidecar_status', 'list_timers', 'agent_list_messages', 'tunnel_status',
 ]);
 
 const VERIFY_TOOLS = new Set([

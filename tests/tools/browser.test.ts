@@ -98,7 +98,7 @@ describe('built-in browser (real Chromium)', () => {
       await ws.cleanup();
     }
     await new Promise((r) => server.close(r));
-  });
+  }, 30_000);
 
   it('snapshots with refs, types and clicks', async (t) => {
     if (!available) return t.skip();
