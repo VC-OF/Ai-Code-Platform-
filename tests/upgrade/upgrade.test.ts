@@ -4,9 +4,9 @@ import os from 'os';
 import path from 'path';
 import { execFileSync } from 'child_process';
 import { isProtectedPath, upgradeToolGuard, upgradeWorktreeRoot, findSkipMarkers, isTestFile } from '@/lib/upgrade/guard';
-import { combine, compareTests, parseVitestJson, countTsErrors, runFile, runCmd } from '@/lib/upgrade/gate';
+import { combine, compareTests, parseVitestJson, countTsErrors, runFile, runCmd, isInvestigativeGoal, checkE2E } from '@/lib/upgrade/gate';
 import { parseAnalysis, parseReview } from '@/lib/upgrade/parse';
-import { createCandidateWorktree, candidateDiff, removeWorktree } from '@/lib/upgrade/worktree';
+import { createCandidateWorktree, candidateDiff, removeWorktree, isDependencyMode, enableDependencyMode } from '@/lib/upgrade/worktree';
 
 const MAIN = path.resolve('/repo/main');
 const WT = path.join(MAIN, '.claude', 'worktrees', 'upgrade-upg-20260927-001');
@@ -208,5 +208,53 @@ describe('upgrade worktrees (real git)', () => {
     await removeWorktree(main, dir);
     expect(fs.existsSync(dir)).toBe(false);
     expect(fs.readFileSync(path.join(main, 'node_modules', 'marker'), 'utf8')).toBe('keep me');
+  });
+});
+
+describe('investigative goals and decision-only resolutions', () => {
+  it('detects investigative phrasing in upgrade goals', () => {
+    expect(isInvestigativeGoal('Read Agent Lightning and decide whether the technique would improve OpenCode')).toBe(true);
+    expect(isInvestigativeGoal('Evaluate whether we need library X; if not make no change')).toBe(true);
+    expect(isInvestigativeGoal('Investigate feasibility of WebSockets for terminal streaming')).toBe(true);
+    expect(isInvestigativeGoal('Add a new tool for image generation')).toBe(false);
+  });
+
+  it('parses investigative conclusions with no change required', () => {
+    const a = parseAnalysis('```json\n{"analysis":"Evaluated and not needed","investigative":true,"no_change_reason":"Current solution is faster","risk":"low"}\n```');
+    expect(a.investigative).toBe(true);
+    expect(a.no_change_reason).toBe('Current solution is faster');
+  });
+});
+
+describe('dependency mode permissions and isolation', () => {
+  it('allows package.json when allowDependencies is enabled while still protecting core code', () => {
+    expect(isProtectedPath('package.json', { allowDependencies: true })).toBe(false);
+    expect(isProtectedPath('package-lock.json', { allowDependencies: true })).toBe(false);
+    expect(isProtectedPath('package.json')).toBe(true);
+    expect(isProtectedPath('src/lib/upgrade/gate.ts', { allowDependencies: true })).toBe(true);
+    expect(isProtectedPath('src/lib/permissionRules.ts', { allowDependencies: true })).toBe(true);
+  });
+
+  it('sets and reads dependency mode marker in a worktree', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-deps-test-'));
+    try {
+      expect(isDependencyMode(tmp)).toBe(false);
+      enableDependencyMode(tmp);
+      expect(isDependencyMode(tmp)).toBe(true);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('E2E interface check', () => {
+  it('gracefully handles directories without an e2e suite', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-e2e-test-'));
+    try {
+      const res = await checkE2E(tmp);
+      expect(res.result).toBe('PASS');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });

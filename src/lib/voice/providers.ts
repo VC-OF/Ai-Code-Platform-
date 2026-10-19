@@ -75,6 +75,17 @@ export function isBlockingTtsError(status: number, code?: string): boolean {
 export const VOICE_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 export const MAX_TTS_CHARS = 4000;
 
+// ── Server-side speech-to-text (OpenAI audio API) ──────────────────────────
+/** Providers that can transcribe server-side today (OpenAI's audio API). */
+export const SERVER_TRANSCRIBE_PROVIDERS: readonly ServerSttProviderId[] = ['openai'];
+export type ServerSttProviderId = 'openai';
+/** Whisper-class transcription endpoint; works with any OpenAI-compatible key. */
+export const TRANSCRIBE_MODEL = 'whisper-1';
+/** OPENAI_API_KEY (the shared one) — OPENAI_TTS_KEY_ENV is the dedicated voice key. */
+export const OPENAI_KEY_ENV = 'OPENAI_API_KEY';
+/** 25 MB is OpenAI's per-request upload cap. */
+export const TRANSCRIBE_MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+
 // ── OpenAI ────────────────────────────────────────────────────────────────
 export const OPENAI_SPEECH_URL = 'https://api.openai.com/v1/audio/speech';
 export const OPENAI_TTS_MODEL = 'gpt-4o-mini-tts';

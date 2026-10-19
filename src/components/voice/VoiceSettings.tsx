@@ -260,6 +260,16 @@ export default function VoiceSettings({ voice, onClose }: VoiceSettingsProps) {
         <div className={s.fieldError}>This browser cannot speak. Pick a server voice or use Chrome, Edge or Safari.</div>
       )}
 
+      {/* How the microphone is recognized */}
+      {voice.listening.mode === 'server' && (
+        <div className={s.fieldHint}>
+          Speech input uses server transcription (recorded snippets sent to OpenAI&apos;s audio API) because this browser has no live recognizer.
+        </div>
+      )}
+      {voice.listening.mode === 'recognizer' && (
+        <div className={s.fieldHint}>Speech input uses this browser&apos;s live recognizer (Chrome / Edge).</div>
+      )}
+
       <label className={s.check}>
         <input
           type="checkbox"

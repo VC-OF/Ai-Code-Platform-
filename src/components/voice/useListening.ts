@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { getSpeechRecognition, type SpeechRecognitionLike } from './speechRecognition';
+import { MediaRecorderTranscriber, isRecorderSupported } from './serverTranscriber';
 
 export interface ListeningOptions {
   enabled: boolean;
@@ -19,7 +20,7 @@ export const MIC_BLOCKED_MESSAGE =
 const NO_MIC_MESSAGE = 'No microphone was found. Connect one, then turn voice mode off and on.';
 
 const subscribeNothing = () => () => {};
-const recognitionSupported = () => getSpeechRecognition() !== null;
+const recognitionSupported = () => getSpeechRecognition() !== null || isRecorderSupported();
 
 /**
  * Continuous speech recognition with interim results. Restarts itself when
@@ -32,6 +33,7 @@ export function useListening({ enabled, paused = false, lang, onFinal, onInterim
   const [capturing, setCapturing] = useState(false);
   const [interim, setInterim] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const transcriberRef = useRef<MediaRecorderTranscriber | null>(null);
 
   const handlers = useRef({ onFinal, onInterim });
   useLayoutEffect(() => {
@@ -159,14 +161,66 @@ export function useListening({ enabled, paused = false, lang, onFinal, onInterim
     };
   }, [active, lang]);
 
+  // ── Server transcription fallback (no Web Speech API) ────────────────────
+  // Records with MediaRecorder, then POSTs the clip to /api/voice/stt.
+  // Utterances arrive as final text only; there is no live partial.
+  // The engine is derived during render (recognizer when present, recorder
+  // otherwise), so the effect body never calls setState synchronously.
+  const hasRecognizer = getSpeechRecognition() !== null;
+  useEffect(() => {
+    if (!active || hasRecognizer || !isRecorderSupported()) return;
+    let disposed = false;
+    let transcriber: MediaRecorderTranscriber | null = null;
+
+    const run = async () => {
+      transcriber = new MediaRecorderTranscriber();
+      transcriberRef.current = transcriber;
+      try {
+        await transcriber.start(
+          (text) => {
+            if (!disposed) handlers.current.onFinal(text);
+          },
+          (err) => {
+            if (disposed) return;
+            setError(err);
+          }
+        );
+        setCapturing(true);
+      } catch (err) {
+        if (!disposed) {
+          setError(err instanceof Error ? err.message : String(err));
+          setCapturing(false);
+        }
+      }
+    };
+    void run();
+
+    return () => {
+      disposed = true;
+      transcriberRef.current = null;
+      transcriber?.stop();
+      setCapturing(false);
+    };
+  }, [active, hasRecognizer]);
+
   const pause = useCallback(() => setManualPaused(true), []);
   const resume = useCallback(() => setManualPaused(false), []);
 
+  // Derived input engine: the live browser recognizer when available, the
+  // server transcriber otherwise, null when neither exists (unsupported).
+  const mode: 'recognizer' | 'server' | null = !supported
+    ? null
+    : hasRecognizer
+      ? 'recognizer'
+      : 'server';
+
   return {
     supported,
+    /** How the microphone input is recognized: live browser recognizer or recorded clips sent to a server */
+    mode,
     /** The microphone is open right now */
     listening: active && capturing,
-    interim: active ? interim : '',
+    interim: active && mode === 'recognizer' ? interim : '',
     error,
     pause,
     resume,

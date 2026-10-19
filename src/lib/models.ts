@@ -45,16 +45,43 @@ const MODELS: Record<string, Partial<ModelInfo>> = {
   // DeepSeek
   'deepseek-r1':               { contextWindow: 128_000, costPer1kIn: 0.00055, costPer1kOut: 0.00219},
   'deepseek-chat':             { contextWindow: 128_000, costPer1kIn: 0.00014, costPer1kOut: 0.00028},
+  // Google Gemini
+  'gemini-flash-latest':       { contextWindow: 1_000_000, costPer1kIn: 0.0001,   costPer1kOut: 0.0004, vision: true },
+  'gemini-pro-latest':         { contextWindow: 2_000_000, costPer1kIn: 0.00125,  costPer1kOut: 0.005,  vision: true },
+  'gemini-3.8-flash':          { contextWindow: 1_000_000, costPer1kIn: 0.000075, costPer1kOut: 0.0003, vision: true },
+  'gemini-3.1-pro-preview':    { contextWindow: 2_000_000, costPer1kIn: 0.00125,  costPer1kOut: 0.005,  vision: true },
+  'gemini-2.5-flash':          { contextWindow: 1_000_000, costPer1kIn: 0.000075, costPer1kOut: 0.0003, vision: true },
+  'gemini-2.0-flash':          { contextWindow: 1_000_000, costPer1kIn: 0.0001,   costPer1kOut: 0.0004, vision: true },
+  'gemini-2.0-flash-lite':     { contextWindow: 1_000_000, costPer1kIn: 0.000075, costPer1kOut: 0.0003, vision: true },
+  'gemini-flash-lite-latest':  { contextWindow: 1_000_000, costPer1kIn: 0.000075, costPer1kOut: 0.0003, vision: true },
+  'gemini-2.5-pro':            { contextWindow: 2_000_000, costPer1kIn: 0.00125,  costPer1kOut: 0.005,  vision: true },
+  'gemini-1.5-pro':            { contextWindow: 2_000_000, costPer1kIn: 0.00125,  costPer1kOut: 0.005,  vision: true },
+  'gemini-1.5-flash':          { contextWindow: 1_000_000, costPer1kIn: 0.000075, costPer1kOut: 0.0003, vision: true },
+  // Moonshot AI / Kimi (via OpenRouter)
+  'moonshotai/kimi-k3':          { contextWindow: 1_048_576, costPer1kIn: 0.003,    costPer1kOut: 0.015,  vision: true },
+  'moonshotai/kimi-latest':     { contextWindow: 1_048_576, costPer1kIn: 0.00036,  costPer1kOut: 0.00913, vision: true },
+  'moonshotai/kimi-k2.7-code':   { contextWindow: 262_144,   costPer1kIn: 0.00067,  costPer1kOut: 0.00335 },
+  'moonshotai/kimi-k2.6':        { contextWindow: 262_144,   costPer1kIn: 0.00065,  costPer1kOut: 0.00341 },
+  'moonshotai/kimi-k2.5':        { contextWindow: 262_144,   costPer1kIn: 0.00045,  costPer1kOut: 0.00225 },
+  'moonshotai/kimi-k2-thinking': { contextWindow: 262_144,   costPer1kIn: 0.0006,   costPer1kOut: 0.0025 },
+  'moonshotai/kimi-k2-0905':     { contextWindow: 262_144,   costPer1kIn: 0.0006,   costPer1kOut: 0.0025 },
+  'moonshotai/kimi-k2':          { contextWindow: 131_072,   costPer1kIn: 0.00057,  costPer1kOut: 0.0023 },
+  // OpenRouter Free Models
+  'openrouter/free':                              { contextWindow: 200_000, costPer1kIn: 0, costPer1kOut: 0 },
+  'qwen/qwen3.8-27b:free':                        { contextWindow: 262_144, costPer1kIn: 0, costPer1kOut: 0 },
+  'nvidia/nemotron-3-ultra-550b-a55b:free':       { contextWindow: 1_000_000, costPer1kIn: 0, costPer1kOut: 0 },
+  'google/gemma-4-31b-it:free':                   { contextWindow: 262_144, costPer1kIn: 0, costPer1kOut: 0 },
+  'meta-llama/llama-3.3-70b-instruct:free':       { contextWindow: 128_000, costPer1kIn: 0, costPer1kOut: 0 },
   // Groq-hosted
-  'llama-3.3-70b-versatile':   { contextWindow: 128_000 },
-  'llama-3.1-8b-instant':      { contextWindow: 128_000 },
-  'meta-llama/llama-4-scout-17b-16e-instruct': { contextWindow: 128_000, vision: true },
-  'qwen/qwen3-32b':            { contextWindow: 128_000 },
-  'qwen/qwen3.6-27b':          { contextWindow: 128_000 },
-  'openai/gpt-oss-120b':       { contextWindow: 128_000 },
-  'openai/gpt-oss-20b':        { contextWindow: 128_000 },
-  'qwen/qwen3.8-27b':          { contextWindow: 128_000 },
-  'allam-2-7b':                { contextWindow: 128_000 },
+  'llama-3.3-70b-versatile':   { contextWindow: 128_000, costPer1kIn: 0.00059, costPer1kOut: 0.00079 },
+  'llama-3.1-8b-instant':      { contextWindow: 128_000, costPer1kIn: 0.00005, costPer1kOut: 0.00008 },
+  'meta-llama/llama-4-scout-17b-16e-instruct': { contextWindow: 128_000, costPer1kIn: 0.0003, costPer1kOut: 0.0006, vision: true },
+  'qwen/qwen3-32b':            { contextWindow: 128_000, costPer1kIn: 0.0005,  costPer1kOut: 0.0005 },
+  'qwen/qwen3.6-27b':          { contextWindow: 128_000, costPer1kIn: 0.0002,  costPer1kOut: 0.0004 },
+  'openai/gpt-oss-120b':       { contextWindow: 128_000, costPer1kIn: 0.0006,  costPer1kOut: 0.0012 },
+  'openai/gpt-oss-20b':        { contextWindow: 128_000, costPer1kIn: 0.0001,  costPer1kOut: 0.0002 },
+  'qwen/qwen3.8-27b':          { contextWindow: 128_000, costPer1kIn: 0.0002,  costPer1kOut: 0.0004 },
+  'allam-2-7b':                { contextWindow: 128_000, costPer1kIn: 0.0001,  costPer1kOut: 0.0001 },
   // Ollama cloud
   // Ollama Cloud serves these with a 262,144-token window ("model maximum
   // context length: 262144"), not the 1M+ the model cards advertise
@@ -92,6 +119,37 @@ export function getModelInfo(rawModel: string): ModelInfo {
     }
   }
   if (bestPrefix) return { ...DEFAULT_MODEL_INFO, ...MODELS[bestPrefix] };
+
+  // Strip org namespace, e.g. "anthropic/claude-3-5-sonnet" -> "claude-3-5-sonnet",
+  // "openai/gpt-4o" -> "gpt-4o", "google/gemini-2.5-flash" -> "gemini-2.5-flash"
+  const slash = model.indexOf('/');
+  if (slash > 0) {
+    const stripped = model.slice(slash + 1);
+    const exactStripped = MODELS[stripped];
+    if (exactStripped) return { ...DEFAULT_MODEL_INFO, ...exactStripped };
+
+    let bestStrippedPrefix = '';
+    for (const key of Object.keys(MODELS)) {
+      if (stripped.startsWith(key) && key.length > bestStrippedPrefix.length) {
+        bestStrippedPrefix = key;
+      }
+    }
+    if (bestStrippedPrefix) return { ...DEFAULT_MODEL_INFO, ...MODELS[bestStrippedPrefix] };
+  } else {
+    // If model has no slash (e.g. "kimi-k3"), check if an org-prefixed key in MODELS matches
+    for (const [key, info] of Object.entries(MODELS)) {
+      if (key.endsWith(`/${model}`)) {
+        return { ...DEFAULT_MODEL_INFO, ...info };
+      }
+    }
+  }
+
+  // Also check Gemini aliases if applicable
+  const geminiAliased = GEMINI_MODEL_ALIASES[model.toLowerCase()];
+  if (geminiAliased && MODELS[geminiAliased]) {
+    return { ...DEFAULT_MODEL_INFO, ...MODELS[geminiAliased] };
+  }
+
   return DEFAULT_MODEL_INFO;
 }
 
@@ -123,7 +181,7 @@ export function getContextWindow(model: string): number {
 
 // Model names that advertise image input without being in the registry
 const VISION_NAME_PATTERN =
-  /vision|-vl\b|llava|gemma[34]|pixtral|gpt-4o|gpt-4\.1|gpt-5|claude|gemini|llama-4|llama4|minicpm-v|qwen[\w.-]*-?vl|kimi-vl|mistral-small-3|mistral-medium|nemotron-3-(ultra|super)/i;
+  /vision|-vl\b|llava|gemma[34]|pixtral|gpt-4o|gpt-4\.1|gpt-5|claude|gemini|llama-4|llama4|minicpm-v|qwen[\w.-]*-?vl|kimi|mistral-small-3|mistral-medium|nemotron-3-(ultra|super)/i;
 
 /**
  * Whether requests should carry Anthropic `cache_control` breakpoints:
@@ -201,7 +259,8 @@ export interface ProviderInfo {
  * (see resolveKeys in llmClient) so keys added in the UI work immediately.
  */
 export const PROVIDERS: ProviderInfo[] = [
-  { id: 'groq',       label: 'Groq',        kind: 'cloud', baseURL: 'https://api.groq.com/openai/v1',      keyEnv: 'GROQ_API_KEY',        prefix: null },
+  { id: 'gemini',     label: 'Google Gemini', kind: 'cloud', baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/', keyEnv: 'GEMINI_API_KEY',    prefix: 'gemini' },
+  { id: 'groq',       label: 'Groq',        kind: 'cloud', baseURL: 'https://api.groq.com/openai/v1',      keyEnv: 'GROQ_API_KEY',        prefix: 'groq' },
   { id: 'openrouter', label: 'OpenRouter',  kind: 'cloud', baseURL: 'https://openrouter.ai/api/v1',        keyEnv: 'OPENROUTER_API_KEY',  prefix: 'openrouter' },
   { id: 'deepseek',   label: 'DeepSeek',    kind: 'cloud', baseURL: 'https://api.deepseek.com/v1',          keyEnv: 'DEEPSEEK_API_KEY',    prefix: 'deepseek' },
   { id: 'together',   label: 'Together AI', kind: 'cloud', baseURL: 'https://api.together.xyz/v1',         keyEnv: 'TOGETHER_API_KEY',    prefix: 'together' },
@@ -214,25 +273,48 @@ export function providerBaseURL(p: ProviderInfo): string {
   return process.env[`${p.id.toUpperCase()}_BASE_URL`] || p.baseURL;
 }
 
-const GROQ_MODEL_PATTERN  = /^(llama-3\.|meta-llama\/|qwen\/|openai\/|groq\/|allam)/;
+export const GEMINI_MODEL_ALIASES: Record<string, string> = {
+  'gemini-2.0-flash': 'gemini-flash-latest',
+  'gemini-2.5-flash': 'gemini-flash-latest',
+  'gemini-flash': 'gemini-flash-latest',
+  'gemini-2.0-flash-lite': 'gemini-flash-lite-latest',
+  'gemini-2.5-pro': 'gemini-pro-latest',
+  'gemini-1.5-pro': 'gemini-pro-latest',
+  'gemini-pro': 'gemini-pro-latest',
+};
+
+const GEMINI_MODEL_PATTERN = /^gemini-/i;
+const GROQ_MODEL_PATTERN   = /^(llama-3\.|meta-llama\/|qwen\/|openai\/|groq\/|allam)/;
 const OLLAMA_MODEL_PATTERN = /:(cloud|latest|\d+b.*)$|-cloud$|^(nemotron|gemma4|gpt-oss)/;
 
 /**
  * Decide which OpenAI-compatible endpoint serves the given model.
  *
  * Routing rules, in order:
- * 1. Explicit prefix — "openrouter:x", "together:x", "lmstudio:x", "localai:x"
- * 2. Groq-shaped model names (llama-3.*, qwen/*, …)
- * 3. Ollama-shaped tags (*:cloud, *:latest, *:8b)
- * 4. The LLM_BASE_URL / OPENAI_API_BASE default
+ * 1. Explicit prefix — "gemini:x", "openrouter:x", "together:x", "lmstudio:x", "localai:x"
+ * 2. Gemini-shaped model names (gemini-2.5-flash, gemini-2.0-flash, …)
+ * 3. Groq-shaped model names (llama-3.*, qwen/*, …)
+ * 4. Ollama-shaped tags (*:cloud, *:latest, *:8b)
+ * 5. The LLM_BASE_URL / OPENAI_API_BASE default
  *
  * `keys` lets callers overlay decrypted settings-store keys over env vars.
  */
+function detectDefaultModel(keys: Record<string, string>): string {
+  const keyFor = (env: string | null) => (env ? keys[env] || process.env[env] || '' : '');
+  if (keyFor('GEMINI_API_KEY')) return 'gemini-flash-latest';
+  if (keyFor('OPENAI_API_KEY') || keyFor('LLM_API_KEY')) return 'gpt-4o-mini';
+  if (keyFor('GROQ_API_KEY')) return 'llama-3.3-70b-versatile';
+  if (keyFor('OPENROUTER_API_KEY')) return 'openrouter:anthropic/claude-3-5-sonnet';
+  if (keyFor('DEEPSEEK_API_KEY')) return 'deepseek-chat';
+  if (keyFor('TOGETHER_API_KEY')) return 'together:meta-llama/Llama-3.3-70B-Instruct-Turbo';
+  return 'nemotron-3-ultra:cloud';
+}
+
 export function resolveProvider(
   model?: string,
   keys: Record<string, string> = {}
 ): ProviderConfig {
-  const targetModel = model || process.env.LLM_MODEL || process.env.OPENAI_MODEL || 'nemotron-3-ultra:cloud';
+  const targetModel = model || process.env.LLM_MODEL || process.env.OPENAI_MODEL || detectDefaultModel(keys);
   const keyFor = (env: string | null) =>
     env ? keys[env] || process.env[env] || '' : '';
 
@@ -245,11 +327,13 @@ export function resolveProvider(
       if (provider) {
         const apiKey = keyFor(provider.keyEnv);
         const needsKey = provider.kind === 'cloud';
+        const rawModel = targetModel.slice(colon + 1);
+        const resolvedModel = provider.id === 'gemini' ? (GEMINI_MODEL_ALIASES[rawModel.toLowerCase()] || rawModel) : rawModel;
         return {
           name: provider.id,
           baseURL: providerBaseURL(provider),
           apiKey: apiKey || (needsKey ? '' : 'local'),
-          model: targetModel.slice(colon + 1),
+          model: resolvedModel,
           missingKeyError:
             needsKey && !apiKey
               ? `${provider.keyEnv} is not set. Add it in Settings → Environment Variables (global) or .env.local.`
@@ -259,7 +343,23 @@ export function resolveProvider(
     }
   }
 
-  // 2. Groq heuristics
+  // 2. Gemini heuristics
+  if (targetModel && GEMINI_MODEL_PATTERN.test(targetModel)) {
+    const apiKey = keyFor('GEMINI_API_KEY');
+    const provider = PROVIDERS.find((p) => p.id === 'gemini')!;
+    const resolvedModel = GEMINI_MODEL_ALIASES[targetModel.toLowerCase()] || targetModel;
+    return {
+      name: 'gemini',
+      baseURL: providerBaseURL(provider),
+      apiKey,
+      model: resolvedModel,
+      missingKeyError: apiKey
+        ? undefined
+        : 'GEMINI_API_KEY is not set. Add it in Keys (top bar) or .env.local.',
+    };
+  }
+
+  // 3. Groq heuristics
   if (targetModel && GROQ_MODEL_PATTERN.test(targetModel)) {
     const apiKey = keyFor('GROQ_API_KEY');
     return {
@@ -298,7 +398,7 @@ export function resolveProvider(
     name: 'default',
     baseURL,
     apiKey: apiKey || (isLocal ? 'ollama' : ''),
-    model: model || process.env.LLM_MODEL || process.env.OPENAI_MODEL || 'nemotron-3-ultra:cloud',
+    model: targetModel,
     missingKeyError:
       apiKey || isLocal
         ? undefined

@@ -2,15 +2,39 @@ import type { Risk } from './store';
 
 /** Parsers for the structured JSON blocks agent stages end with. */
 
-export function parseAnalysis(text: string): { analysis: string; affected_areas: string[]; proposed_plan: string[]; risk: Risk } {
+export function parseAnalysis(text: string): {
+  analysis: string;
+  affected_areas: string[];
+  proposed_plan: string[];
+  risk: Risk;
+  investigative?: boolean;
+  no_change_reason?: string;
+} {
   const blocks = [...text.matchAll(/```json\s*([\s\S]*?)```/g)];
   for (const b of blocks.reverse()) {
     try {
       const j = JSON.parse(b[1]);
-      if (j && typeof j === 'object' && (j.analysis || j.proposed_plan)) {
+      if (j && typeof j === 'object' && (j.analysis || j.proposed_plan || j.no_change_reason)) {
         const risk: Risk = ['low', 'medium', 'high'].includes(j.risk) ? j.risk : 'medium';
         const arr = (v: unknown) => (Array.isArray(v) ? v.map(String) : typeof v === 'string' ? [v] : []);
-        return { analysis: String(j.analysis ?? ''), affected_areas: arr(j.affected_areas), proposed_plan: arr(j.proposed_plan), risk };
+        const investigative = Boolean(j.investigative || j.no_change_needed || j.recommendation === 'no_change');
+        const noChangeReason = j.no_change_reason ? String(j.no_change_reason) : undefined;
+        const res: {
+          analysis: string;
+          affected_areas: string[];
+          proposed_plan: string[];
+          risk: Risk;
+          investigative?: boolean;
+          no_change_reason?: string;
+        } = {
+          analysis: String(j.analysis ?? j.no_change_reason ?? ''),
+          affected_areas: arr(j.affected_areas),
+          proposed_plan: arr(j.proposed_plan),
+          risk,
+        };
+        if (investigative) res.investigative = true;
+        if (noChangeReason) res.no_change_reason = noChangeReason;
+        return res;
       }
     } catch {}
   }

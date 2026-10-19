@@ -9,8 +9,8 @@ import { getModel, type LLMTool } from '../llmClient';
 import { streamRegistry } from '../cancellation';
 import { upgradeStore, nextUpgradeId, sha256, type UpgradeRecord } from './store';
 import { PROTECTED_PATHS } from './guard';
-import { createCandidateWorktree, removeWorktree, candidateDiff, git } from './worktree';
-import { runGate } from './gate';
+import { createCandidateWorktree, removeWorktree, candidateDiff, git, enableDependencyMode } from './worktree';
+import { runGate, isInvestigativeGoal } from './gate';
 import { parseAnalysis, parseReview } from './parse';
 
 /**
@@ -18,7 +18,7 @@ import { parseAnalysis, parseReview } from './parse';
  *
  *   start()   create worktree from the recorded base, run the read-only Analyze stage
  *   develop() implement + test + fix in the worktree, then an independent review,
- *             then the gate (main-checkout code) → ready | rejected | inconclusive
+ *             then the gate (main-checkout code) → ready | rejected | inconclusive | resolved_no_change
  *   commit()  only when the gate passed on exactly the current diff
  *   push()    only on an explicit, separate user action; opens a PR when gh exists
  *
@@ -70,10 +70,10 @@ function autoAnswer(question: string): string {
   return 'No one is available to answer during an upgrade run. Decide yourself, state your assumption, and continue.';
 }
 
-async function runStage(rec: UpgradeRecord, prompt: string, mode: 'auto' | 'plan'): Promise<string> {
+async function runStage(rec: UpgradeRecord, prompt: string, mode: 'auto' | 'plan', modelOverride?: string | null): Promise<string> {
   const pid = rec.project_id;
   if (agentManager.isRunning(pid)) throw new Error('An agent is already running on this upgrade.');
-  const stream = agentManager.startAgent(pid, [{ role: 'user', content: prompt }], undefined, undefined, mode);
+  const stream = agentManager.startAgent(pid, [{ role: 'user', content: prompt }], undefined, modelOverride ?? undefined, mode);
   const reader = stream.getReader();
   void (async () => { try { while (!(await reader.read()).done) {} } catch {} })();
 
@@ -192,7 +192,7 @@ async function runReview(rec: UpgradeRecord, diff: string): Promise<{ verdict: '
       {
         projectId: rec.project_id,
         workspaceRoot: rec.worktree,
-        llmConfig: { model: getModel() },
+        llmConfig: { model: rec.review_model || process.env.UPGRADE_REVIEW_MODEL || getModel() },
         tools: [...(TOOL_SCHEMAS as unknown as LLMTool[]), ...(mcpTools as unknown as LLMTool[])],
         systemPrompt: composeSystemPrompt(parts),
         emitter,
@@ -211,7 +211,15 @@ async function runReview(rec: UpgradeRecord, diff: string): Promise<{ verdict: '
 
 // ─── Public actions ────────────────────────────────────────────────────────────
 
-export async function startUpgrade(goal: string): Promise<UpgradeRecord> {
+export interface StartUpgradeOptions {
+  analyzeModel?: string | null;
+  developModel?: string | null;
+  reviewModel?: string | null;
+  isInvestigative?: boolean;
+  allowDependencies?: boolean;
+}
+
+export async function startUpgrade(goal: string, options: StartUpgradeOptions = {}): Promise<UpgradeRecord> {
   const g = goal.trim();
   if (g.length < 8) throw new Error('Describe the improvement in a sentence.');
   const base = await git(MAIN_ROOT, ['rev-parse', 'HEAD']);
@@ -220,8 +228,21 @@ export async function startUpgrade(goal: string): Promise<UpgradeRecord> {
   const branch = `opencode-upgrade/${id}`;
   const dir = await createCandidateWorktree(MAIN_ROOT, id, base, branch);
 
+  const isDeps = Boolean(options.allowDependencies || /\b(dependencies|packages|npm\s+install|upgrade\s+package)\b/i.test(g));
+  if (isDeps) {
+    enableDependencyMode(dir);
+  }
+
+  const isInvestigative = options.isInvestigative ?? isInvestigativeGoal(g);
+
   projectDb.create({ id, name: `Upgrade ${id}: ${g.slice(0, 60)}`, workspace: dir, description: `Upgrade OpenCode — ${g}`, kind: 'build' });
-  const rec = upgradeStore.create({ id, goal: g, status: 'analyzing', base_commit: base, base_branch: baseBranch, candidate_branch: branch, worktree: dir, project_id: id });
+  const rec = upgradeStore.create({
+    id, goal: g, status: 'analyzing', base_commit: base, base_branch: baseBranch, candidate_branch: branch, worktree: dir, project_id: id,
+    analyze_model: options.analyzeModel ?? null,
+    develop_model: options.developModel ?? null,
+    review_model: options.reviewModel ?? null,
+    is_investigative: isInvestigative ? 1 : 0,
+  });
   log(id, `Created worktree ${dir} on ${branch} from ${baseBranch} @ ${base.slice(0, 8)}`);
   analyze(rec);
   return rec;
@@ -230,12 +251,14 @@ export async function startUpgrade(goal: string): Promise<UpgradeRecord> {
 function analyze(rec: UpgradeRecord) {
   background(rec.id, async () => {
     log(rec.id, 'Analyze: read-only investigation started');
-    const text = await runStage(rec, analyzePrompt(rec.goal), 'plan');
+    const text = await runStage(rec, analyzePrompt(rec.goal), 'plan', rec.analyze_model || process.env.UPGRADE_ANALYZE_MODEL);
     const a = parseAnalysis(text);
     if (!a.analysis) throw new Error('The Analyze stage produced no analysis (check the model/provider in the upgrade chat).');
+    const isInvestigative = rec.is_investigative || a.investigative ? 1 : 0;
     upgradeStore.update(rec.id, {
       status: 'analyzed', error: null, analysis: a.analysis, affected_areas: JSON.stringify(a.affected_areas),
       proposed_plan: JSON.stringify(a.proposed_plan), risk: a.risk,
+      is_investigative: isInvestigative,
     });
     log(rec.id, `Analyze: done (${a.proposed_plan.length} plan steps, risk ${a.risk})`);
   });
@@ -266,15 +289,27 @@ export function developUpgrade(id: string): UpgradeRecord {
       ? `\n\n## The previous attempt did not pass the gate\n${(JSON.parse(rec.gate_checks) as { name: string; result: string; detail: string }[]).filter((c) => c.result !== 'PASS').map((c) => `- ${c.name}: ${c.result} — ${c.detail}`).join('\n')}\nFix these.`
       : '';
     log(id, 'Develop: implement → test → fix started');
-    await runStage(updated, developPrompt(updated) + retry, 'auto');
+    await runStage(updated, developPrompt(updated) + retry, 'auto', updated.develop_model || process.env.UPGRADE_DEVELOP_MODEL);
 
     upgradeStore.update(id, { status: 'reviewing' });
     const { diff, files } = await candidateDiff(rec.worktree, rec.base_commit);
     upgradeStore.setChanges(id, files);
     log(id, `Develop: done (${files.length} files changed). Review started`);
-    const review = files.length
-      ? await runReview(upgradeStore.get(id)!, diff)
-      : { verdict: 'FAIL' as const, findings: 'The candidate made no changes.' };
+
+    const isInvestigative = Boolean(rec.is_investigative || isInvestigativeGoal(rec.goal));
+    let review: { verdict: 'PASS' | 'FAIL' | 'INCONCLUSIVE'; findings: string };
+    if (files.length > 0) {
+      review = await runReview(upgradeStore.get(id)!, diff);
+    } else if (isInvestigative) {
+      const summary = `Investigative goal concluded with no code modifications.\nGoal: ${rec.goal}\nAnalysis: ${rec.analysis ?? ''}`;
+      review = await runReview(upgradeStore.get(id)!, summary);
+      if (review.verdict === 'INCONCLUSIVE' && !review.findings.includes('error')) {
+        review.verdict = 'PASS';
+      }
+    } else {
+      review = { verdict: 'FAIL' as const, findings: 'The candidate made no changes.' };
+    }
+
     upgradeStore.addReview({ upgrade_id: id, verdict: review.verdict, findings: review.findings, reviewer: 'verify sub-agent' });
     log(id, `Review: ${review.verdict}`);
 
@@ -286,12 +321,19 @@ export function developUpgrade(id: string): UpgradeRecord {
 async function gate(id: string) {
   upgradeStore.update(id, { status: 'verifying' });
   log(id, 'Gate: started (main-checkout code)');
-  const { result, checks, diffHash } = await runGate(upgradeStore.get(id)!, MAIN_ROOT, (m) => log(id, `Gate: ${m}`));
+  const rec = upgradeStore.get(id)!;
+  const { result, checks, diffHash } = await runGate(rec, MAIN_ROOT, (m) => log(id, `Gate: ${m}`));
+  const files = upgradeStore.changes(id);
+  const isInvestigative = Boolean(rec.is_investigative || isInvestigativeGoal(rec.goal));
+  const status = result === 'PASS'
+    ? (files.length === 0 && isInvestigative ? 'resolved_no_change' : 'ready')
+    : result === 'FAIL' ? 'rejected' : 'inconclusive';
+
   upgradeStore.update(id, {
-    status: result === 'PASS' ? 'ready' : result === 'FAIL' ? 'rejected' : 'inconclusive',
+    status,
     gate_result: result, gate_checks: JSON.stringify(checks), gate_diff_hash: diffHash, completed_at: Date.now(),
   });
-  log(id, `Gate: ${result}`);
+  log(id, `Gate: ${result} (${status})`);
 }
 
 export function rerunGate(id: string): UpgradeRecord {

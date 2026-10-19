@@ -32,6 +32,8 @@ interface TopBarProps {
   changedFiles?:     string[];
   activeTab?:        ActiveTab;
   onTabChange?:      (t: ActiveTab) => void;
+  liveOpen?:         boolean;
+  onLiveToggle?:     () => void;
 }
 
 export default function TopBar({
@@ -53,6 +55,8 @@ export default function TopBar({
   onExplorerToggle,
   showPreview = true,
   changedFiles = [],
+  liveOpen = false,
+  onLiveToggle,
 }: TopBarProps) {
   const [isDark, setIsDark] = useState(false);
   const [healthy, setHealthy] = useState<boolean | null>(null);
@@ -337,6 +341,7 @@ export default function TopBar({
           </button>
         )}
 
+        {/* Private Mode Toggle */}
         <button
           type="button"
           className={`icon-btn ${privateMode ? 'icon-btn--private-on' : ''}`}
@@ -369,6 +374,21 @@ export default function TopBar({
               PVT
             </span>
           )}
+        </button>
+
+        {/* Gemini Live Button */}
+        <button
+          type="button"
+          className={`icon-btn icon-btn--gemini-live ${liveOpen ? 'icon-btn--on' : ''}`}
+          onClick={onLiveToggle}
+          title={liveOpen ? 'Close Gemini Live' : 'Open Gemini Live (real-time voice & screen pair programming)'}
+          aria-label="Toggle Gemini Live"
+          aria-pressed={liveOpen}
+        >
+          <svg viewBox="0 0 24 24" fill="currentColor" width={14} height={14}>
+            <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z" />
+          </svg>
+          <span className="live-btn-label">Live</span>
         </button>
 
         <button
@@ -590,6 +610,25 @@ export default function TopBar({
         .icon-btn--on {
           color: var(--text-primary);
           background: var(--bg-overlay);
+        }
+        .icon-btn--gemini-live {
+          width: auto;
+          padding: 0 8px;
+          gap: 5px;
+          background: linear-gradient(135deg, rgba(2, 132, 199, 0.15), rgba(139, 92, 246, 0.15));
+          border: 1px solid rgba(56, 189, 248, 0.35);
+          color: #38bdf8;
+        }
+        .icon-btn--gemini-live:hover {
+          background: linear-gradient(135deg, rgba(2, 132, 199, 0.25), rgba(139, 92, 246, 0.25));
+          border-color: rgba(56, 189, 248, 0.6);
+          color: #7dd3fc;
+          box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+        }
+        .live-btn-label {
+          font-size: 11px;
+          font-weight: 600;
+          letter-spacing: 0.3px;
         }
         .logo-badge {
           position: absolute;

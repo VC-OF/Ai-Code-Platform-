@@ -6,7 +6,7 @@ import s from './upgrade.module.css';
 
 type Status =
   | 'analyzing' | 'analyzed' | 'developing' | 'reviewing' | 'verifying'
-  | 'ready' | 'rejected' | 'inconclusive' | 'committed' | 'pushed' | 'failed' | 'discarded';
+  | 'ready' | 'rejected' | 'inconclusive' | 'committed' | 'pushed' | 'resolved_no_change' | 'failed' | 'discarded';
 
 interface Upgrade {
   id: string; goal: string; status: Status; base_commit: string; base_branch: string;
@@ -34,7 +34,7 @@ function stageState(st: Status): { at: number; running: boolean; bad: boolean } 
     case 'rejected': case 'inconclusive': return { at: 2, running: false, bad: true };
     case 'ready': return { at: 3, running: false, bad: false };
     case 'committed': return { at: 4, running: false, bad: false };
-    case 'pushed': return { at: 5, running: false, bad: false };
+    case 'pushed': case 'resolved_no_change': return { at: 5, running: false, bad: false };
     default: return { at: 0, running: false, bad: true };
   }
 }
@@ -42,12 +42,12 @@ function stageState(st: Status): { at: number; running: boolean; bad: boolean } 
 const STATUS_LABEL: Record<Status, string> = {
   analyzing: 'Analyzing', analyzed: 'Analyzed', developing: 'Developing', reviewing: 'Reviewing',
   verifying: 'Verifying', ready: 'Ready', rejected: 'Rejected', inconclusive: 'Inconclusive',
-  committed: 'Committed', pushed: 'Pushed', failed: 'Failed', discarded: 'Discarded',
+  committed: 'Committed', pushed: 'Pushed', resolved_no_change: 'Resolved (No Changes)', failed: 'Failed', discarded: 'Discarded',
 };
 
 function tone(st: Status | string | null): string {
   if (!st) return s.toneMuted;
-  if (['ready', 'committed', 'pushed', 'PASS'].includes(st)) return s.toneGood;
+  if (['ready', 'committed', 'pushed', 'resolved_no_change', 'PASS'].includes(st)) return s.toneGood;
   if (['rejected', 'failed', 'FAIL'].includes(st)) return s.toneBad;
   if (['inconclusive', 'INCONCLUSIVE'].includes(st)) return s.toneWarn;
   if (ACTIVE.includes(st as Status)) return s.toneActive;
@@ -91,6 +91,10 @@ export default function UpgradePanel({ onClose }: { onClose: () => void }) {
   const [diff, setDiff] = useState<string | null>(null);
   const [confirmPush, setConfirmPush] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [allowDeps, setAllowDeps] = useState(false);
+  const [isInvestigative, setIsInvestigative] = useState(false);
+  const [reviewModel, setReviewModel] = useState('');
 
   const loadList = useCallback(async () => {
     const r = await fetch('/api/upgrade').then((x) => x.json()).catch(() => null);
@@ -242,7 +246,16 @@ export default function UpgradePanel({ onClose }: { onClose: () => void }) {
             {error && <div className={s.error} role="alert">{error}</div>}
 
             {selected === null ? (
-              <form className={s.form} onSubmit={(e) => { e.preventDefault(); void act({ action: 'start', goal }); }}>
+              <form className={s.form} onSubmit={(e) => {
+                e.preventDefault();
+                void act({
+                  action: 'start',
+                  goal,
+                  allowDependencies: allowDeps,
+                  isInvestigative,
+                  reviewModel: reviewModel || undefined,
+                });
+              }}>
                 <label htmlFor="upgrade-goal" className={s.label}>What should OpenCode improve?</label>
                 <textarea id="upgrade-goal" className={s.textarea} rows={4} value={goal} onChange={(e) => setGoal(e.target.value)}
                   placeholder="Improve OpenCode's repository understanding and context selection" />
@@ -257,6 +270,36 @@ export default function UpgradePanel({ onClose }: { onClose: () => void }) {
                   <div><dt>Worktree</dt><dd className={s.mono}>.claude/worktrees/upgrade-{nextId}</dd></div>
                   <div><dt>Branch</dt><dd className={s.mono}>opencode-upgrade/{nextId}</dd></div>
                 </dl>
+
+                <div style={{ marginTop: '8px', marginBottom: '8px' }}>
+                  <button type="button" className={s.btn} style={{ fontSize: '12px', padding: '4px 10px' }} onClick={() => setShowAdvanced(!showAdvanced)}>
+                    {showAdvanced ? 'Hide Advanced Options ▲' : 'Show Advanced Options (Model Roles, Dependencies) ▼'}
+                  </button>
+                  {showAdvanced && (
+                    <div style={{ marginTop: '10px', padding: '12px', background: 'rgba(255, 255, 255, 0.04)', borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
+                        <input type="checkbox" checked={allowDeps} onChange={(e) => setAllowDeps(e.target.checked)} />
+                        <span><b>Enable Dependency Updates</b> (allows isolated package.json modifications and npm installs in worktree)</span>
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
+                        <input type="checkbox" checked={isInvestigative} onChange={(e) => setIsInvestigative(e.target.checked)} />
+                        <span><b>Investigative / Research Goal</b> (allows clean resolution without code changes if evaluation warrants it)</span>
+                      </label>
+                      <div style={{ marginTop: '4px' }}>
+                        <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px', opacity: 0.8 }}>Reviewer Model (Optional override for the verification subagent):</label>
+                        <input
+                          type="text"
+                          className={s.textarea}
+                          style={{ height: '32px', minHeight: '32px', padding: '4px 8px', fontSize: '12px', fontFamily: 'monospace' }}
+                          placeholder="e.g. gemini-2.5-pro, claude-3-7-sonnet"
+                          value={reviewModel}
+                          onChange={(e) => setReviewModel(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <Stepper status="analyzing" idle />
                 <p className={s.note}>Starting runs the <b>Analyze</b> stage only: the agent reads OpenCode&apos;s source and proposes a plan, without changing anything. You review the plan before any code is written.</p>
                 <div className={s.actions}>
@@ -340,6 +383,12 @@ function DetailView(props: {
       </dl>
 
       {u.error && <div className={u.status === 'pushed' ? s.warn : s.error}>{u.error}</div>}
+
+      {u.status === 'resolved_no_change' && (
+        <div style={{ borderLeft: '4px solid #10b981', background: 'rgba(16, 185, 129, 0.1)', padding: '12px 16px', borderRadius: '4px', margin: '12px 0' }}>
+          <b style={{ color: '#10b981' }}>✓ Investigation Complete:</b> Evaluated successfully with no code changes needed. Detailed findings and review are recorded below.
+        </div>
+      )}
 
       {running && (
         <section className={s.section}>

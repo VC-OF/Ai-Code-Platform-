@@ -11,6 +11,7 @@ export type UpgradeStatus =
   | 'developing' | 'reviewing' | 'verifying'
   | 'ready' | 'rejected' | 'inconclusive'
   | 'committed' | 'pushed'
+  | 'resolved_no_change'
   | 'failed' | 'discarded';
 
 export type GateResult = 'PASS' | 'FAIL' | 'INCONCLUSIVE';
@@ -42,6 +43,10 @@ export interface UpgradeRecord {
   candidate_commit: string | null;
   pr_url: string | null;
   error: string | null;
+  analyze_model?: string | null;
+  develop_model?: string | null;
+  review_model?: string | null;
+  is_investigative?: number | null;
   created_at: number;
   updated_at: number;
   completed_at: number | null;
@@ -111,6 +116,10 @@ function db() {
   const d = getDb();
   if (!ready) {
     d.exec(SCHEMA);
+    try { d.exec('ALTER TABLE upgrades ADD COLUMN analyze_model TEXT;'); } catch {}
+    try { d.exec('ALTER TABLE upgrades ADD COLUMN develop_model TEXT;'); } catch {}
+    try { d.exec('ALTER TABLE upgrades ADD COLUMN review_model TEXT;'); } catch {}
+    try { d.exec('ALTER TABLE upgrades ADD COLUMN is_investigative INTEGER DEFAULT 0;'); } catch {}
     ready = true;
   }
   return d;

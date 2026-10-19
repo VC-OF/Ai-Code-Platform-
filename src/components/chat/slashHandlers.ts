@@ -918,6 +918,10 @@ export async function runSlashCommand(
     case 'cost':
     case 'usage': await handleUsage(ctx); return HANDLED;
     case 'config': openSurface('settings'); ctx.say('Opened Settings.'); return HANDLED;
+    case 'live':
+      openSurface('live');
+      ctx.say('Opened **Gemini Live** session. You can now talk in real time and share your screen or camera.');
+      return HANDLED;
     case 'permissions': await handlePermissions(args, ctx); return HANDLED;
     case 'mode': handleMode(args, ctx); return HANDLED;
     case 'mcp': await handleMcp(ctx); return HANDLED;

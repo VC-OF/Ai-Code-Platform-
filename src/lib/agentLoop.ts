@@ -641,9 +641,11 @@ export async function runAgentLoop(
           } else {
             carriedText += textContent;
             messages.push({ role: 'assistant', content: textContent || null } as ContextMessage);
+            const tail = (textContent || '').slice(-120).trim();
+            const tailHint = tail ? ` The last characters you wrote were: "${tail}".` : '';
             messages.push({
               role: 'user' as const,
-              content: 'Your reply was cut off by the output-token limit. Continue exactly where you stopped, without repeating anything.',
+              content: `Your reply was cut off by the output-token limit.${tailHint} Continue immediately and smoothly from that exact point, without repeating anything before it.`,
             } as ContextMessage);
           }
           continue;

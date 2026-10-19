@@ -48,7 +48,15 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   try {
     switch (body.action) {
-      case 'start': return NextResponse.json({ upgrade: await startUpgrade(String(body.goal ?? '')) });
+      case 'start': return NextResponse.json({
+        upgrade: await startUpgrade(String(body.goal ?? ''), {
+          analyzeModel: body.analyzeModel,
+          developModel: body.developModel,
+          reviewModel: body.reviewModel,
+          isInvestigative: body.isInvestigative,
+          allowDependencies: body.allowDependencies,
+        }),
+      });
       case 'analyze': return NextResponse.json({ upgrade: retryAnalysis(String(body.id)) });
       case 'develop': return NextResponse.json({ upgrade: developUpgrade(String(body.id)) });
       case 'gate': return NextResponse.json({ upgrade: rerunGate(String(body.id)) });

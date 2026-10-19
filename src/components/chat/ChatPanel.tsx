@@ -27,6 +27,8 @@ import {
 import { REPLAY_DONE_EVENT } from '@/lib/events';
 import { useVoiceConversation, type SteerOutcome } from '../voice/useVoiceConversation';
 import SpeakButton from '../voice/SpeakButton';
+import ImmersiveVoiceOverlay from '../voice/ImmersiveVoiceOverlay';
+import AgentStatusDots from '../voice/AgentStatusDots';
 
 type Role = 'user' | 'assistant';
 
@@ -293,9 +295,11 @@ export default function ChatPanel({
     } catch {}
   }, [projectId, selectedModel]);
 
+  // Refresh context metrics on mount, on history reloads, and when a turn
+  // starts/ends — not on every streamed event (which fired dozens of fetches)
   useEffect(() => {
     loadContextInfo();
-  }, [loadContextInfo, historyReloadKey, timeline.length]);
+  }, [loadContextInfo, historyReloadKey, loading]);
 
   // Live timer while agent is executing
   useEffect(() => {
@@ -354,6 +358,16 @@ export default function ChatPanel({
   }, []);
 
   const endRef = useRef<HTMLDivElement>(null);
+  const timelineRef = useRef<HTMLDivElement>(null);
+  // Only autoscroll while the user is already near the bottom — scrolling up
+  // to read must not be yanked back down by the live stream
+  const stickToBottomRef = useRef(true);
+
+  const handleTimelineScroll = () => {
+    const el = timelineRef.current;
+    if (!el) return;
+    stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  };
 
   // Live "thinking" text from reasoning models (never part of the reply)
   const [streamingReasoning, setStreamingReasoning] = useState('');
@@ -686,8 +700,14 @@ export default function ChatPanel({
   }, [projectId, historyReloadKey, initialPrompt]);
 
   useEffect(() => {
+    if (!stickToBottomRef.current) return;
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [timeline, streamingText, agentStatus, loading]);
+
+  // A fresh project always starts pinned to the bottom
+  useEffect(() => {
+    stickToBottomRef.current = true;
+  }, [projectId]);
 
   // "Clear Chat Timeline" from the command palette
   useEffect(() => {
@@ -972,9 +992,10 @@ export default function ChatPanel({
 
   return (
     <div className={`chat-panel ${isFullWidth ? 'chat-panel--full' : ''}`}>
-      <div className="chat-timeline">
+      <div className="chat-timeline" ref={timelineRef} onScroll={handleTimelineScroll}>
           {timeline.length === 0 && !loading && (
             <div className="chat-empty-state">
+              <AgentStatusDots status="idle" variant="hero" />
               <h2 className="chat-empty-title">What should we build or solve?</h2>
               <p className="chat-empty-desc">Describe a feature, a bug, a question about the code — or a problem to work through: a derivation, a simulation, a data analysis.</p>
             </div>
@@ -1015,7 +1036,7 @@ export default function ChatPanel({
                     {isUser ? (
                       <span className="msg-text">{textContent}</span>
                     ) : (
-                      <Markdown text={textContent ?? ''} projectId={projectId} />
+                      <Markdown text={textContent ?? ''} projectId={projectId} onFileSelect={onFileSelect} />
                     )}
                     {!isUser && textContent?.trim() && (
                       <div className={`msg-actions ${voice.speech.currentTag === `msg-${i}` ? 'msg-actions--active' : ''}`}>
@@ -1061,7 +1082,7 @@ export default function ChatPanel({
           {/* Live agent activity while a turn is running */}
           {loading && (
             <div className="agent-live-row" role="status">
-              <span className="agent-live-dot" aria-hidden="true" />
+              <AgentStatusDots status={agentStatus} />
               <StatusIndicator status={agentStatus} elapsedSeconds={elapsedSeconds} />
               <span className="agent-live-desc">
                 {currentToolInfo ? (
@@ -1362,6 +1383,9 @@ export default function ChatPanel({
           voice={voice}
         />
       </div>
+
+      {/* Astra-style immersive voice canvas (full screen / collapsed bubble) */}
+      <ImmersiveVoiceOverlay voice={voice} />
 
       <style jsx>{`
         .chat-panel {

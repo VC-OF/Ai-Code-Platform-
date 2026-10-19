@@ -52,9 +52,14 @@ function globToRe(glob: string): RegExp {
 
 const PROTECTED_RES = PROTECTED_PATHS.map(globToRe);
 
+import { isDependencyMode } from './worktree';
+
 /** Is this repo-relative path protected? (case-insensitive — Windows) */
-export function isProtectedPath(repoRelative: string): boolean {
+export function isProtectedPath(repoRelative: string, opts?: { allowDependencies?: boolean }): boolean {
   const p = norm(repoRelative);
+  if (opts?.allowDependencies && (p === 'package.json' || p === 'package-lock.json')) {
+    return false;
+  }
   return PROTECTED_RES.some((re) => re.test(p) || re.test(p + '/'));
 }
 
@@ -83,7 +88,7 @@ const FORBIDDEN_COMMANDS: { re: RegExp; why: string }[] = [
     why: 'git history and branches are managed by the Upgrade controller — leave your changes uncommitted in the worktree' },
   { re: /\bgh\s+/i, why: 'pull requests are created by the Upgrade controller after the user authorizes a push' },
   { re: /\b(npm|pnpm|yarn|bun)\s+(i|install|ci|add|remove|rm|uninstall|update|up|upgrade|link)\b/i,
-    why: 'dependency changes are not supported in this milestone (node_modules is shared with the main checkout)' },
+    why: 'dependency changes are not supported unless dependency upgrade mode is enabled for this upgrade' },
   { re: /node_modules/i, why: 'node_modules is shared with the main checkout and must not be touched' },
   { re: /\bmanaged-settings\b/i, why: 'managed settings are part of the protected core' },
 ];
@@ -102,13 +107,21 @@ export function upgradeToolGuard(
 ): GuardVerdict {
   const root = upgradeWorktreeRoot(workspace, mainRoot);
   if (!root) return { allowed: true };
+  const depsAllowed = isDependencyMode(root);
 
   if (toolName === 'run_command' || toolName === 'run_background') {
     const cmd = String(args.command ?? '');
     for (const f of FORBIDDEN_COMMANDS) {
-      if (f.re.test(cmd)) return { allowed: false, reason: `Upgrade mode: ${f.why}` };
+      if (f.re.test(cmd)) {
+        if (depsAllowed && /\b(npm|pnpm|yarn|bun)\s+(i|install|add|update)\b/i.test(cmd) && !/--unsafe-perm|sudo/i.test(cmd)) {
+          // Permitted under isolated dependency mode
+          continue;
+        }
+        return { allowed: false, reason: `Upgrade mode: ${f.why}` };
+      }
     }
     for (const g of PROTECTED_PATHS) {
+      if (depsAllowed && (g === 'package.json' || g === 'package-lock.json')) continue;
       const literal = g.replace(/\/\*\*$/, '');
       if (cmd.replace(/\\/g, '/').toLowerCase().includes(literal.toLowerCase()) && /(>|\b(rm|del|mv|cp|sed\s+-i|tee|Set-Content|Out-File|Remove-Item|Move-Item|Copy-Item|touch|echo)\b)/i.test(cmd)) {
         return { allowed: false, reason: `Upgrade mode: \`${g}\` is part of the protected core and cannot be modified` };
@@ -139,7 +152,7 @@ export function upgradeToolGuard(
     if (rel === 'node_modules' || rel.startsWith('node_modules/')) {
       return { allowed: false, reason: 'Upgrade mode: node_modules is shared with the main checkout and must not be touched' };
     }
-    if (isProtectedPath(rel)) {
+    if (isProtectedPath(rel, { allowDependencies: depsAllowed })) {
       return { allowed: false, reason: `Upgrade mode: ${rel} is part of the protected core (${PROTECTED_PATHS.join(', ')}) and cannot be modified` };
     }
   }

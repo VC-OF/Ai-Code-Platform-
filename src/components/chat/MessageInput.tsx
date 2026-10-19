@@ -86,6 +86,10 @@ export default function MessageInput({
 }: MessageInputProps) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Latest composer text for event callbacks that would otherwise capture a
+  // stale `value` closure (dictation appends must see prior results)
+  const valueRef = useRef(value);
+  useEffect(() => { valueRef.current = value; }, [value]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
@@ -371,7 +375,7 @@ export default function MessageInput({
         .map((_, index) => event.results[index]?.[0]?.transcript ?? '')
         .join(' ')
         .trim();
-      if (transcript) onChange(`${value}${value ? ' ' : ''}${transcript}`);
+      if (transcript) onChange(`${valueRef.current}${valueRef.current ? ' ' : ''}${transcript}`);
     };
     recognition.onerror = () => setIsListening(false);
     recognition.onend = () => setIsListening(false);
@@ -393,10 +397,24 @@ export default function MessageInput({
       const video = document.createElement('video');
       video.srcObject = stream;
       video.muted = true;
+      video.setAttribute('playsinline', '');
       await video.play();
+      // Wait for real frame data, or the canvas below paints a black frame
+      if (video.readyState < 2) {
+        await new Promise<void>((resolve) => {
+          const done = () => resolve();
+          video.onloadeddata = done;
+          setTimeout(done, 1500);
+        });
+      }
       const canvas = document.createElement('canvas');
       canvas.width = settings.width || video.videoWidth;
       canvas.height = settings.height || video.videoHeight;
+      if (!canvas.width || !canvas.height) {
+        track.stop();
+        triggerFileInput();
+        return;
+      }
       canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
       setAttachments((prev) => [
         ...prev,
@@ -423,7 +441,7 @@ export default function MessageInput({
         setAttachments((prev) => [
           ...prev,
           {
-            id: Math.random().toString(36).substr(2, 9),
+            id: Math.random().toString(36).slice(2, 11),
             name: file.name,
             type: file.type,
             content: reader.result as string,
@@ -639,6 +657,18 @@ export default function MessageInput({
             <path d="M5 11a7 7 0 0014 0M12 18v4M8 22h8" />
           </svg>
         </button>
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent('oc-open-live'))}
+          className="btn-attach btn-attach--live"
+          title="Open Gemini Live (real-time voice & screen pair programming)"
+          aria-label="Open Gemini Live"
+          disabled={disabled}
+        >
+          <svg viewBox="0 0 24 24" fill="currentColor" width={14} height={14}>
+            <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z" />
+          </svg>
+        </button>
         {voice && (
           <VoiceControls
             voice={voice}
@@ -825,6 +855,15 @@ export default function MessageInput({
         .btn-attach--active {
           color: var(--text-primary);
           background: var(--bg-overlay);
+        }
+
+        .btn-attach--live {
+          color: #38bdf8;
+        }
+
+        .btn-attach--live:hover:not(:disabled) {
+          color: #7dd3fc;
+          background: rgba(56, 189, 248, 0.15);
         }
 
         .btn-send,

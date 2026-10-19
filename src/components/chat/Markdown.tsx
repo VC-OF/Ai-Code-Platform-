@@ -8,7 +8,16 @@ import { mathBlockLanguage, resolveMarkdownImageSrc, splitMathSegments } from '@
 // Builds React elements directly (no innerHTML), so model output can't inject markup.
 // The single exception is KaTeX output (see renderMath below).
 
-type Ctx = { projectId?: string };
+type Ctx = { projectId?: string; onFileSelect?: (path: string) => void };
+
+/** Workspace-file-looking inline code (e.g. `src/lib/db.ts`, `package.json`). */
+function looksLikeFilePath(s: string): boolean {
+  if (!s || s.length > 200 || /\s/.test(s)) return false;
+  const dot = s.lastIndexOf('.');
+  if (dot <= 0 || dot === s.length - 1) return false;
+  const ext = s.slice(dot + 1);
+  return /^[A-Za-z][A-Za-z0-9]{0,7}$/.test(ext);
+}
 
 // KaTeX is the one sanctioned use of dangerouslySetInnerHTML in this renderer:
 // katex.renderToString HTML-escapes every character of the input, and `trust: false`
@@ -64,7 +73,24 @@ function renderInline(text: string, keyBase: string, ctx: Ctx): ReactNode[] {
   while ((m = re.exec(text))) {
     if (m.index > last) out.push(text.slice(last, m.index));
     const k = `${keyBase}-${i++}`;
-    if (m[1]) out.push(<code key={k} className="md-code">{m[1].slice(1, -1)}</code>);
+    if (m[1]) {
+      const codeText = m[1].slice(1, -1);
+      if (ctx.onFileSelect && looksLikeFilePath(codeText)) {
+        out.push(
+          <button
+            key={k}
+            type="button"
+            className="md-code md-code--file"
+            title={`Open ${codeText}`}
+            onClick={() => ctx.onFileSelect?.(codeText)}
+          >
+            {codeText}
+          </button>
+        );
+      } else {
+        out.push(<code key={k} className="md-code">{codeText}</code>);
+      }
+    }
     else if (m[2]) out.push(<strong key={k}>{renderInline(m[2].slice(2, -2), k, ctx)}</strong>);
     else if (m[3]) out.push(<em key={k}>{m[3].slice(1, -1)}</em>);
     else if (m[4]) out.push(renderImage(m[5], m[6], k, ctx, m[4]));
@@ -126,8 +152,16 @@ function matchDisplayBlock(lines: string[], i: number): { tex: string; next: num
   return null; // unterminated → fall through to normal paragraph handling
 }
 
-export default function Markdown({ text, projectId }: { text: string; projectId?: string }) {
-  const ctx: Ctx = { projectId };
+export default function Markdown({
+  text,
+  projectId,
+  onFileSelect,
+}: {
+  text: string;
+  projectId?: string;
+  onFileSelect?: (path: string) => void;
+}) {
+  const ctx: Ctx = { projectId, onFileSelect };
   const lines = text.replace(/\r\n/g, '\n').split('\n');
   const blocks: ReactNode[] = [];
   let i = 0;
@@ -246,6 +280,8 @@ export default function Markdown({ text, projectId }: { text: string; projectId?
         .md :global(.md-list) { margin: 0 0 8px; padding-left: 20px; }
         .md :global(.md-list li) { margin: 2px 0; }
         .md :global(.md-code) { font-family: var(--font-mono); font-size: 12px; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 4px; padding: 0 4px; }
+        .md :global(button.md-code--file) { cursor: pointer; color: var(--accent); text-decoration: underline dotted; text-underline-offset: 2px; transition: background var(--transition-fast), border-color var(--transition-fast); }
+        .md :global(button.md-code--file:hover) { border-color: var(--border-strong); background: var(--bg-hover); }
         .md :global(.md-pre) { font-family: var(--font-mono); font-size: 12px; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 10px 12px; overflow-x: auto; margin: 0 0 8px; white-space: pre; }
         .md :global(.md-quote) { border-left: 2px solid var(--border-strong); padding-left: 10px; color: var(--text-secondary); margin: 0 0 8px; }
         .md :global(.md-table-wrap) { overflow-x: auto; margin: 0 0 8px; }

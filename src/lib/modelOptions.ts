@@ -6,6 +6,22 @@ export interface ModelOption {
 }
 
 export const MODEL_OPTIONS: ModelOption[] = [
+  { group: 'Google Gemini', value: 'gemini-flash-latest', label: 'Gemini Flash (Recommended)' },
+  { group: 'Google Gemini', value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+  { group: 'Google Gemini', value: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash' },
+  { group: 'Google Gemini', value: 'gemini-pro-latest', label: 'Gemini Pro' },
+  { group: 'Kimi (Moonshot AI)', value: 'openrouter:moonshotai/kimi-k3', label: 'Kimi K3 (1M Context · Multimodal)' },
+  { group: 'Kimi (Moonshot AI)', value: 'openrouter:~moonshotai/kimi-latest', label: 'Kimi Latest (1M Context · Auto-Updated)' },
+  { group: 'Kimi (Moonshot AI)', value: 'openrouter:moonshotai/kimi-k2.7-code', label: 'Kimi K2.7 Code (256k Context · Coding)' },
+  { group: 'Kimi (Moonshot AI)', value: 'openrouter:moonshotai/kimi-k2.6', label: 'Kimi K2.6 (256k Context)' },
+  { group: 'Kimi (Moonshot AI)', value: 'openrouter:moonshotai/kimi-k2.5', label: 'Kimi K2.5 (256k Context)' },
+  { group: 'Kimi (Moonshot AI)', value: 'openrouter:moonshotai/kimi-k2-thinking', label: 'Kimi K2 Thinking (256k Context · Reasoning)' },
+  { group: 'Kimi (Moonshot AI)', value: 'openrouter:moonshotai/kimi-k2-0905', label: 'Kimi K2 0905 (256k Context)' },
+  { group: 'Kimi (Moonshot AI)', value: 'openrouter:moonshotai/kimi-k2', label: 'Kimi K2 (128k Context)' },
+  { group: 'OpenRouter (Free)', value: 'openrouter:openrouter/free', label: 'OpenRouter Free Models Router' },
+  { group: 'OpenRouter (Free)', value: 'openrouter:qwen/qwen3.8-27b:free', label: 'Qwen 3.8 27B (Free · 256k Context)' },
+  { group: 'OpenRouter (Free)', value: 'openrouter:google/gemma-4-31b-it:free', label: 'Gemma 4 31B (Free · 262k Context)' },
+  { group: 'OpenRouter (Free)', value: 'openrouter:meta-llama/llama-3.3-70b-instruct:free', label: 'Llama 3.3 70B (Free · 128k Context)' },
   { group: 'Ollama Cloud', value: 'nemotron-3-ultra:cloud', label: 'nemotron-3-ultra:cloud (default)' },
   { group: 'Ollama Cloud', value: 'nemotron-3-super:cloud', label: 'nemotron-3-super:cloud' },
   { group: 'Anthropic', value: 'openrouter:anthropic/claude-3.7-sonnet', label: 'Claude 3.7 Sonnet' },

@@ -18,6 +18,14 @@ interface KeyConfig {
 
 const SUPPORTED_KEYS: KeyConfig[] = [
   {
+    id: 'gemini',
+    name: 'Google Gemini API Key',
+    envKey: 'GEMINI_API_KEY',
+    placeholder: 'AQ.... or AIzaSy...',
+    description: 'Enables Gemini models (Gemini 2.5 Flash, 2.0 Flash, 2.5 Pro) in the model dropdown, plus Gemini Live pair programming.',
+    docUrl: 'https://aistudio.google.com/apikey',
+  },
+  {
     id: 'openrouter',
     name: 'OpenRouter API Key',
     envKey: 'OPENROUTER_API_KEY',

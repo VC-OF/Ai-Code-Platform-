@@ -47,6 +47,7 @@ function fakeVoice(overrides: {
     },
     listening: {
       supported: overrides.phase !== 'unsupported',
+      mode: 'recognizer',
       listening: overrides.phase === 'listening' || overrides.phase === 'thinking',
       interim: overrides.interim ?? '',
       error: overrides.listeningError ?? null,

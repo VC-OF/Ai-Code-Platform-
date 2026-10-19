@@ -12,6 +12,20 @@ fs.mkdirSync(PLATFORM_DIR, { recursive: true });
 
 // ─── Singleton ───────────────────────────────────────────────────────────────
 let _db: Database.Database | null = null;
+let _shutdownRegistered = false;
+
+export function closeDb(): void {
+  if (_db && _db.open) {
+    try {
+      _db.pragma('wal_checkpoint(TRUNCATE)');
+      _db.close();
+    } catch {
+      // Ignore errors during exit
+    } finally {
+      _db = null;
+    }
+  }
+}
 
 export function getDb(): Database.Database {
   if (_db) return _db;
@@ -27,6 +41,13 @@ export function getDb(): Database.Database {
 
   _db.exec(SCHEMA);
   runMigrations(_db);
+
+  if (!_shutdownRegistered) {
+    _shutdownRegistered = true;
+    process.once('SIGINT', () => { closeDb(); });
+    process.once('SIGTERM', () => { closeDb(); });
+    process.once('beforeExit', () => { closeDb(); });
+  }
 
   return _db;
 }

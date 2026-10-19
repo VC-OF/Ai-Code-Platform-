@@ -34,12 +34,26 @@ function linkNodeModules(mainRoot: string, dir: string): void {
 }
 
 /** Remove the node_modules link without following it into the main checkout. */
-function unlinkNodeModules(dir: string): void {
+export function unlinkNodeModules(dir: string): void {
   const link = path.join(dir, 'node_modules');
   try {
     const st = fs.lstatSync(link);
     if (st.isSymbolicLink()) fs.unlinkSync(link);
     // A real directory here was not created by us — leave it; removal below uses git
+  } catch {}
+}
+
+const DEPS_MARKER = '.open-code-allow-deps';
+
+export function isDependencyMode(dir: string): boolean {
+  return fs.existsSync(path.join(dir, DEPS_MARKER));
+}
+
+export function enableDependencyMode(dir: string): void {
+  try {
+    fs.writeFileSync(path.join(dir, DEPS_MARKER), '1');
+    // Once dependency mode is enabled, unlink the shared junction so local installs do not mutate the main checkout
+    unlinkNodeModules(dir);
   } catch {}
 }
 
@@ -82,7 +96,7 @@ export interface CandidateDiff {
 
 /** Per-workspace data the platform itself writes into any project folder
  *  (knowledge seeds, saved outputs, job logs) — never part of a candidate. */
-export const PLATFORM_DATA_DIRS = ['.knowledge', '.open-code'];
+export const PLATFORM_DATA_DIRS = ['.knowledge', '.open-code', '.platform'];
 
 /** Stage everything in the worktree (index only) and diff it against `base`. */
 export async function candidateDiff(dir: string, base: string): Promise<CandidateDiff> {

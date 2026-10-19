@@ -112,9 +112,23 @@ export function safeResolve(
     ? resolvedBase
     : resolvedBase + path.sep;
 
+  const isPrefixMatch = (target: string, prefix: string): boolean => {
+    if (process.platform === 'win32') {
+      return target.toLowerCase().startsWith(prefix.toLowerCase());
+    }
+    return target.startsWith(prefix);
+  };
+
+  const isExactMatch = (a: string, b: string): boolean => {
+    if (process.platform === 'win32') {
+      return a.toLowerCase() === b.toLowerCase();
+    }
+    return a === b;
+  };
+
   if (
-    resolved !== resolvedBase &&
-    !resolved.startsWith(baseWithSep)
+    !isExactMatch(resolved, resolvedBase) &&
+    !isPrefixMatch(resolved, baseWithSep)
   ) {
     throw new SecurityError(
       `Path traversal detected: '${userPath}' escapes workspace`
@@ -125,7 +139,7 @@ export function safeResolve(
   if (fs.existsSync(resolved)) {
     try {
       const real = fs.realpathSync(resolved);
-      if (!real.startsWith(baseWithSep) && real !== resolvedBase) {
+      if (!isPrefixMatch(real, baseWithSep) && !isExactMatch(real, resolvedBase)) {
         throw new SecurityError(
           `Symlink escape detected: '${userPath}'`
         );

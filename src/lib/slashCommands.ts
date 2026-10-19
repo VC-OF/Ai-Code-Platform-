@@ -39,6 +39,7 @@ export const SLASH_COMMANDS: SlashCommandDefinition[] = [
   { name: 'rewind', aliases: ['checkpoint'], group: 'Session', kind: 'local', args: '[n or hash]', description: 'List checkpoints or restore one' },
   { name: 'export', group: 'Session', kind: 'local', args: '[filename]', description: 'Download the conversation as Markdown' },
   { name: 'copy', group: 'Session', kind: 'local', description: 'Copy the last assistant reply to the clipboard' },
+  { name: 'live', aliases: ['gemini-live'], group: 'Session', kind: 'local', description: 'Start Gemini Live real-time voice & screen pair programming' },
   { name: 'exit', aliases: ['quit'], group: 'Session', kind: 'local', description: 'Close the project and return to the welcome screen' },
 
   // ── Context ────────────────────────────────────────────────────────────────

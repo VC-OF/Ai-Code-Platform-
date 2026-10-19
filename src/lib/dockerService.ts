@@ -83,6 +83,11 @@ export async function getDockerStatus(forceRefresh = false): Promise<DockerInfo>
       sandboxHint: isPolyglotImageBuilt() ? undefined : SANDBOX_BUILD_HINT,
     };
 
+    if (!cachedStatus?.info.available) {
+      // Background prune leftover containers from aborted sessions
+      pruneOrphanContainers().catch(() => {});
+    }
+
     cachedStatus = { info, timestamp: now };
     return info;
   } catch (err) {
@@ -101,6 +106,25 @@ export async function getDockerStatus(forceRefresh = false): Promise<DockerInfo>
     };
     cachedStatus = { info, timestamp: now };
     return info;
+  }
+}
+
+/**
+ * Prune any orphan sandbox containers (e.g. from previous aborted runs)
+ */
+export async function pruneOrphanContainers(): Promise<number> {
+  try {
+    const { stdout } = await execFileAsync(
+      'docker',
+      ['ps', '-aq', '--filter', 'name=opencode_exec_', '--filter', 'name=open-code-sandbox-'],
+      { timeout: 5000 }
+    );
+    const ids = stdout.trim().split(/\s+/).filter(Boolean);
+    if (ids.length === 0) return 0;
+    await execFileAsync('docker', ['rm', '-f', ...ids], { timeout: 10000 });
+    return ids.length;
+  } catch {
+    return 0;
   }
 }
 

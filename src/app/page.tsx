@@ -16,6 +16,7 @@ import FileExplorer     from '@/components/FileExplorer';
 import CompletionDialog from '@/components/CompletionDialog';
 import ToolModal        from '@/components/ToolModal';
 import ChangesReviewModal from '@/components/editor/ChangesReviewModal';
+import GeminiLiveModal  from '@/components/live/GeminiLiveModal';
 import PublicApiGallery, { type BuildProductSpec } from '@/components/PublicApiGallery';
 import { collectSpecKeys } from '@/lib/publicApis/buildSpec';
 import { useIsMobile }  from '@/hooks/useMobile';
@@ -61,6 +62,7 @@ export default function App() {
   const [settingsOpen,  setSettingsOpen]  = useState(false);
   const [upgradeOpen,   setUpgradeOpen]   = useState(false);
   const [terminalOpen,  setTerminalOpen]  = useState(false);
+  const [liveOpen,      setLiveOpen]      = useState(false);
   const [isResizing,    setIsResizing]    = useState(false);
   const workspaceColumnsRef = useRef<HTMLDivElement | null>(null);
 
@@ -144,6 +146,8 @@ export default function App() {
         setTerminalOpen(true);
       } else if (target === 'upgrade') {
         setUpgradeOpen(true);
+      } else if (target === 'live') {
+        setLiveOpen(true);
       }
     };
     window.addEventListener('oc-open', onOpen);
@@ -155,6 +159,13 @@ export default function App() {
     const handleToggle = () => setTerminalOpen((p) => !p);
     window.addEventListener('oc-toggle-terminal', handleToggle);
     return () => window.removeEventListener('oc-toggle-terminal', handleToggle);
+  }, []);
+
+  // Listen for external Gemini Live toggle events
+  useEffect(() => {
+    const handleToggleLive = () => setLiveOpen((p) => !p);
+    window.addEventListener('oc-open-live', handleToggleLive);
+    return () => window.removeEventListener('oc-open-live', handleToggleLive);
   }, []);
 
   // Media query mobile detector
@@ -384,6 +395,8 @@ export default function App() {
         changedFiles={filesChanged}
         activeTab={activeTab}
         onTabChange={setActiveTab}
+        liveOpen={liveOpen}
+        onLiveToggle={() => setLiveOpen((p) => !p)}
       />
 
       <div className="app-body">
@@ -700,6 +713,14 @@ export default function App() {
           }}
         />
       )}
+
+      {/* Gemini Live Multimodal Session Modal */}
+      <GeminiLiveModal
+        isOpen={liveOpen}
+        onClose={() => setLiveOpen(false)}
+        projectName={activeProject?.title}
+        activeFile={activeFile}
+      />
 
       <style jsx>{`
         .app-shell {
