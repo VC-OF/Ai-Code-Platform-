@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { use, useState, useCallback, useEffect, useRef } from 'react';
 import Sidebar          from '@/components/layout/Sidebar';
 import TopBar           from '@/components/layout/TopBar';
 import ChatPanel        from '@/components/chat/ChatPanel';
@@ -42,7 +42,12 @@ function crossPlatform(
 
 export type ActiveTab = 'editor' | 'preview' | 'settings';
 
-export default function App() {
+type SearchParams = Record<string, string | string[] | undefined>;
+
+export default function App({ searchParams }: { searchParams: Promise<SearchParams> }) {
+  // From the route props (same on server and client), not window.location,
+  // so /?mode=chat server-renders the chat view instead of mismatching
+  const initialParams = use(searchParams);
   const [activeProject,  setActiveProject]  = useState<Project | null>(null);
   const [activeTab,      setActiveTab]      = useState<ActiveTab>('editor');
   const [activeFile,     setActiveFile]     = useState<string | null>(null);
@@ -65,11 +70,9 @@ export default function App() {
   const [upgradeOpen,   setUpgradeOpen]   = useState(false);
   const [terminalOpen,  setTerminalOpen]  = useState(false);
   const [openChatOpen,  setOpenChatOpen]  = useState(false);
-  const [mainView,      setMainView]      = useState<'code' | 'chat'>(() => {
-    if (typeof window === 'undefined') return 'code';
-    const params = new URLSearchParams(window.location.search);
-    return params.get('mode') === 'chat' || params.get('view') === 'chat' ? 'chat' : 'code';
-  });
+  const [mainView,      setMainView]      = useState<'code' | 'chat'>(
+    initialParams.mode === 'chat' || initialParams.view === 'chat' ? 'chat' : 'code'
+  );
   const [liveOpen,      setLiveOpen]      = useState(false);
   const [isResizing,    setIsResizing]    = useState(false);
   const workspaceColumnsRef = useRef<HTMLDivElement | null>(null);

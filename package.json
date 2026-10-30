@@ -31,7 +31,7 @@
     "exceljs": "^4.4.0",
     "fast-glob": "^3.3.3",
     "katex": "^0.18.9",
-    "next": "^16.3.6",
+    "next": "^16.4.3",
     "openai": "^6.45.0",
     "pdfkit": "^0.20.2",
     "playwright-core": "^1.61.1",
@@ -57,10 +57,13 @@
     "@types/uuid": "^10.0.0",
     "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^9",
-    "eslint-config-next": "16.2.10",
+    "eslint-config-next": "^16.4.3",
     "prettier": "^3.9.4",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.9"
+  },
+  "overrides": {
+    "dompurify": "^3.4.17"
   }
 }
