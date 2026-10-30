@@ -3,6 +3,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
+import { workspaceGitEnv } from '../workspace';
 
 const execFileAsync = promisify(execFile);
 
@@ -35,7 +36,11 @@ export function ensureCheckpointExcludes(workspace: string): void {
 
 // Async so a large `git add -A` doesn't block the server's event loop
 export async function gitCheckpoint(workspace: string, turnIndex: number, phase = 'start'): Promise<string> {
-  const git = (args: string[]) => execFileAsync('git', args, { cwd: workspace, maxBuffer: 10 * 1024 * 1024 });
+  const git = (args: string[]) =>
+    execFileAsync('git', args, { cwd: workspace, env: workspaceGitEnv(workspace), maxBuffer: 10 * 1024 * 1024 });
+  // A workspace without its own repo (e.g. workspaces/default) gets one here;
+  // otherwise these commands would commit into whatever repo encloses it
+  if (!fs.existsSync(path.join(workspace, '.git'))) await git(['init']);
   ensureCheckpointExcludes(workspace);
   await git(['add', '-A']);
   // Explicit identity so checkpoints work without global git config

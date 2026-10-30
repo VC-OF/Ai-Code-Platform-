@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { platformDir } from "./dataRoot";
 
 const execFileAsync = promisify(execFile);
 
@@ -23,7 +24,7 @@ const HTTPS_GIT_RE = /^https:\/\/[a-z0-9.-]+(:\d{1,5})?\/[\w./~%-]+$/i;
 const CLONE_TIMEOUT_MS = 120_000;
 
 export function pluginsDir(): string {
-  return process.env.OPEN_CODE_PLUGINS_DIR || path.join(process.cwd(), ".platform", "plugins");
+  return process.env.OPEN_CODE_PLUGINS_DIR || platformDir("plugins");
 }
 
 export interface PluginInfo {

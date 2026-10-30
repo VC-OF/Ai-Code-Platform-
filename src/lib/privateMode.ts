@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { platformDir } from './dataRoot';
 
 /**
  * OpenCode Private Mode & Private Tools Architecture
@@ -49,7 +50,7 @@ const DEFAULT_PRIVATE_TOOLS: PrivateToolDefinition[] = [
 ];
 
 // Persistent state storage path
-const PLATFORM_DIR = path.join(process.cwd(), '.platform');
+const PLATFORM_DIR = platformDir();
 const STATE_FILE = path.join(PLATFORM_DIR, 'private_mode.json');
 
 let _inMemoryEnabled: boolean | null = null;

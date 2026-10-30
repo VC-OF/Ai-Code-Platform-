@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { getWorkspaceRoot, safeResolve, ensureWorkspace } from "@/lib/workspace";
+import { getWorkspaceRoot, safeResolve, ensureWorkspace, workspaceGitEnv } from "@/lib/workspace";
 
 const execFileAsync = promisify(execFile);
 
@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     const normalizedPath = filePath.replace(/\\/g, "/");
 
     await execFileAsync("git", ["checkout", "HEAD", "--", normalizedPath], {
-      cwd: root,
+      cwd: root, env: workspaceGitEnv(root),
     });
 
     return NextResponse.json({ success: true, path: filePath });

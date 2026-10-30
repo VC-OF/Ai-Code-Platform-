@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 import fs from 'fs/promises';
 import crypto from 'crypto';
+import { platformDir } from '@/lib/dataRoot';
 
 export const runtime = 'nodejs';
 
-const ATTACHMENTS_DIR = path.join(process.cwd(), '.platform', 'attachments');
+const ATTACHMENTS_DIR = platformDir('attachments');
 
 export async function POST(req: NextRequest) {
   try {

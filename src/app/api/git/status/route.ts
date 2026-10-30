@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { ensureWorkspace, getWorkspaceRoot } from '@/lib/workspace';
+import { ensureWorkspace, getWorkspaceRoot, workspaceGitEnv } from '@/lib/workspace';
 
 const execFileAsync = promisify(execFile);
 const MAX_MESSAGE_LENGTH = 200;
@@ -9,7 +9,7 @@ const MAX_MESSAGE_LENGTH = 200;
 export const runtime = 'nodejs';
 
 async function git(root: string, args: string[]) {
-  return execFileAsync('git', args, { cwd: root, timeout: 20_000, maxBuffer: 2 * 1024 * 1024 });
+  return execFileAsync('git', args, { cwd: root, env: workspaceGitEnv(root), timeout: 20_000, maxBuffer: 2 * 1024 * 1024 });
 }
 
 export async function GET(req: NextRequest) {

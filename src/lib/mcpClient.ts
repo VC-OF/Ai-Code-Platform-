@@ -7,6 +7,7 @@ import {
   type McpTransport,
   type McpTransportKind,
 } from "./mcpTransports";
+import { platformDir } from "./dataRoot";
 
 /**
  * Minimal MCP (Model Context Protocol) client.
@@ -93,7 +94,7 @@ export interface McpPromptInfo {
 function configPath(): string {
   return (
     process.env.MCP_CONFIG_PATH ||
-    path.join(process.cwd(), ".platform", "mcp.json")
+    platformDir("mcp.json")
   );
 }
 

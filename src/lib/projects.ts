@@ -6,6 +6,7 @@ import { promisify } from "util";
 import { getWorkspaceRoot, ensureWorkspace } from "./workspace";
 import { getTemplate } from "./templates";
 import { projectDb, messageDb, type DbProject } from "./db";
+import { platformDir } from "./dataRoot";
 
 const execFileAsync = promisify(execFile);
 
@@ -26,7 +27,7 @@ export interface Project {
  * .platform/projects.json store is migrated in once and renamed away.
  */
 
-const LEGACY_JSON = path.join(process.cwd(), ".platform", "projects.json");
+const LEGACY_JSON = platformDir("projects.json");
 let migrated = false;
 
 async function migrateLegacyJson(): Promise<void> {

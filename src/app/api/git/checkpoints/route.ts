@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { getWorkspaceRoot, ensureWorkspace } from "@/lib/workspace";
+import { getWorkspaceRoot, ensureWorkspace, workspaceGitEnv } from "@/lib/workspace";
 
 const execFileAsync = promisify(execFile);
 
@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
     const { stdout } = await execFileAsync(
       "git",
       ["log", "--max-count=30", "--format=%H|%at|%s"],
-      { cwd: root }
+      { cwd: root, env: workspaceGitEnv(root) }
     ).catch(() => ({ stdout: "" }));
 
     const checkpoints = stdout

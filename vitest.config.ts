@@ -1,8 +1,18 @@
 import { defineConfig } from 'vitest/config';
 import path from 'path';
+import os from 'os';
+import fs from 'fs';
+
+// Tests get their own .platform/ and workspaces/ so they never write projects,
+// settings or Private Mode state into the developer's real database
+const dataRoot = process.env.OPEN_CODE_DATA_ROOT ?? fs.mkdtempSync(path.join(os.tmpdir(), 'open-code-test-'));
+// Also visible to tests/globalSetup.ts, which deletes it after the run
+process.env.OPEN_CODE_DATA_ROOT = dataRoot;
 
 export default defineConfig({
   test: {
+    env: { OPEN_CODE_DATA_ROOT: dataRoot },
+    globalSetup: ['./tests/globalSetup.ts'],
     alias: {
       '@': path.resolve(__dirname, './src'),
     },

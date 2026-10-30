@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { ensureWorkspace, getWorkspaceRoot } from '@/lib/workspace';
+import { ensureWorkspace, getWorkspaceRoot, workspaceGitEnv } from '@/lib/workspace';
 
 const execFileAsync = promisify(execFile);
 const MAX_ENTRIES = 20;
@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
     const { stdout } = await execFileAsync(
       'git',
       ['log', `--max-count=${limit}`, '--format=%h|%an|%ar|%s'],
-      { cwd: root, timeout: 20_000, maxBuffer: 1024 * 1024 }
+      { cwd: root, env: workspaceGitEnv(root), timeout: 20_000, maxBuffer: 1024 * 1024 }
     ).catch(() => ({ stdout: '' }));
 
     const commits = stdout

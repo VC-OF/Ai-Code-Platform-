@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { getWorkspaceRoot, ensureWorkspace } from "@/lib/workspace";
+import { getWorkspaceRoot, ensureWorkspace, workspaceGitEnv } from "@/lib/workspace";
 import { checkpointDb, messageDb } from "@/lib/db";
 
 const execFileAsync = promisify(execFile);
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     const root = getWorkspaceRoot(projectId);
 
     // Reset hard to checkpoint sha
-    await execFileAsync("git", ["reset", "--hard", sha], { cwd: root });
+    await execFileAsync("git", ["reset", "--hard", sha], { cwd: root, env: workspaceGitEnv(root) });
 
     // Rewind chat history alongside the files so the agent's memory stays
     // in sync with the restored workspace state

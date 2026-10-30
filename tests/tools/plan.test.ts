@@ -3,9 +3,10 @@ import path from 'path';
 import { executeTool, createTurnContext } from '@/lib/tools';
 import { validateTool } from '@/lib/toolValidator';
 import { planDb, projectDb } from '@/lib/db';
+import { dataRoot } from '@/lib/dataRoot';
 
 const PROJECT_ID = `test-plan-${Date.now()}`;
-const WORKSPACE = path.join(process.cwd(), 'workspaces', PROJECT_ID);
+const WORKSPACE = path.join(dataRoot(), 'workspaces', PROJECT_ID);
 
 describe('update_plan tool', () => {
   beforeAll(() => {

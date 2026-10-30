@@ -15,6 +15,7 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "test:cover": "vitest run --coverage",
+    "cleanup:test-data": "node scripts/cleanup-test-data.mjs",
     "test:sec": "vitest run tests/security",
     "e2e": "playwright test -c e2e/playwright.config.ts",
     "test:e2e": "playwright test -c e2e/playwright.config.ts",

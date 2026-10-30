@@ -3,9 +3,10 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import { computeCostUsd } from './models';
+import { platformDir } from './dataRoot';
 
 // ─── Setup ───────────────────────────────────────────────────────────────────
-const PLATFORM_DIR = path.join(process.cwd(), '.platform');
+const PLATFORM_DIR = platformDir();
 const DB_PATH = path.join(PLATFORM_DIR, 'open-code.db');
 
 fs.mkdirSync(PLATFORM_DIR, { recursive: true });

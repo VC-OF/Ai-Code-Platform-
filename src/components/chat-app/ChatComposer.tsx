@@ -280,14 +280,16 @@ export default function ChatComposer({
     }
   };
 
+  const canSend = prompt.trim().length > 0 || attachments.length > 0;
+
   const handleSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (isStreaming) {
       onStopStreaming?.();
       return;
     }
+    if (!canSend) return;
     const trimmed = prompt.trim();
-    if (!trimmed && attachments.length === 0) return;
 
     onSendMessage(trimmed, attachments);
     setPrompt('');
@@ -499,18 +501,20 @@ export default function ChatComposer({
               >
                 <span className="w-2.5 h-2.5 rounded-[2px] bg-white"></span>
               </button>
-            ) : (prompt.trim() || attachments.length > 0) ? (
+            ) : (
+              // Always rendered (like Claude) so the control doesn't jump in; disabled until there's input
               <button
                 type="submit"
                 aria-label="Send message"
-                className="flex items-center justify-center w-7 h-7 rounded-full bg-[#da7756] hover:bg-[#c96c4d] text-white shadow-xs transition-transform active:scale-95 cursor-pointer ml-1"
+                disabled={!canSend}
+                className="flex items-center justify-center w-7 h-7 rounded-full bg-[#da7756] hover:bg-[#c96c4d] text-white shadow-xs transition-transform active:scale-95 cursor-pointer ml-1 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[#da7756] disabled:active:scale-100"
                 title="Send message (Enter)"
               >
                 <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5M5 12l7-7 7 7" />
                 </svg>
               </button>
-            ) : null}
+            )}
           </div>
         </div>
       </form>

@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
+import { platformDir } from "./dataRoot";
 
 /**
  * Simple at-rest encryption for project env vars / secrets.
@@ -14,7 +15,7 @@ import path from "path";
  */
 
 const LEGACY_SECRET = "dev-only-insecure-default-key-change-me";
-const KEY_FILE = path.join(process.cwd(), ".platform", "settings.key");
+const KEY_FILE = platformDir("settings.key");
 
 let cachedKey: Buffer | null = null;
 

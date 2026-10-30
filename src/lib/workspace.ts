@@ -31,7 +31,7 @@ export function getWorkspaceRoot(projectId: string = "default"): string {
     // DB unavailable or row not found yet — fall through to the default
   }
 
-  return path.join(/* turbopackIgnore: true */ process.cwd(), "workspaces", projectId);
+  return path.join(/* turbopackIgnore: true */ dataRoot(), "workspaces", projectId);
 }
 
 export async function ensureWorkspace(projectId: string = "default") {
@@ -45,6 +45,7 @@ export async function ensureWorkspace(projectId: string = "default") {
  * (blocks things like "../../etc/passwd" or absolute paths).
  */
 import { safeResolve as coreSafeResolve } from "./safeResolve";
+import { dataRoot } from "./dataRoot";
 
 export function safeResolve(
   relativePath: string,
@@ -60,4 +61,11 @@ export function toRelative(
 ): string {
   const root = getWorkspaceRoot(projectId);
   return path.relative(root, absolutePath) || ".";
+}
+
+/** Env for git commands run in a workspace: stops git from searching parent
+ *  folders, so a workspace without its own .git (e.g. workspaces/default)
+ *  can't read from or commit/reset into the platform's own repository. */
+export function workspaceGitEnv(root: string): NodeJS.ProcessEnv {
+  return { ...process.env, GIT_CEILING_DIRECTORIES: path.dirname(path.resolve(root)) };
 }

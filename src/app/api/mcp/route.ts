@@ -3,11 +3,12 @@ import fs from "fs/promises";
 import path from "path";
 import { getMcpStatus, loadMcpConfig, pendingProjectMcpServers } from "@/lib/mcpClient";
 import { mcpWorkspaceFor } from "./workspace";
+import { platformDir } from "@/lib/dataRoot";
 
 export const runtime = "nodejs";
 
 function platformConfigPath(): string {
-  return process.env.MCP_CONFIG_PATH || path.join(process.cwd(), ".platform", "mcp.json");
+  return process.env.MCP_CONFIG_PATH || platformDir("mcp.json");
 }
 
 /**

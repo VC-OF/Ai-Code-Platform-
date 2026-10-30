@@ -1,4 +1,6 @@
 import path from 'path';
+import os from 'os';
+import fs from 'fs';
 import { defineConfig, devices } from '@playwright/test';
 
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:3000';
@@ -45,6 +47,8 @@ export default defineConfig({
         reuseExistingServer: !IS_CI,
         timeout: 120_000,
         stdout: 'pipe',
+        // A server started here gets throwaway data; a reused dev server keeps its own
+        env: { OPEN_CODE_DATA_ROOT: fs.mkdtempSync(path.join(os.tmpdir(), 'open-code-e2e-')) },
       },
 
   outputDir: 'results/artifacts',
