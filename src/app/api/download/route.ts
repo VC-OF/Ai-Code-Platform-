@@ -4,6 +4,15 @@ import { ZipArchive } from "archiver";
 import { getWorkspaceRoot } from "@/lib/workspace";
 import { getProject } from "@/lib/projects";
 import fs from "fs/promises";
+import path from "path";
+import { safeResolve } from "@/lib/safeResolve";
+
+const DOWNLOAD_TYPES: Record<string, string> = {
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".pdf": "application/pdf",
+};
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -20,6 +29,27 @@ export async function GET(req: NextRequest) {
         { error: "Project workspace not found" },
         { status: 404 }
       );
+    }
+
+    // ?path= downloads one workspace file (e.g. a document the agent created)
+    const filePath = searchParams.get("path");
+    if (filePath) {
+      let file: string;
+      try {
+        file = safeResolve(root, filePath);
+      } catch {
+        return NextResponse.json({ error: "Invalid path" }, { status: 400 });
+      }
+      const data = await fs.readFile(file).catch(() => null);
+      if (!data) return NextResponse.json({ error: "File not found" }, { status: 404 });
+      const name = path.basename(file).replace(/["\r\n]/g, "_");
+      return new NextResponse(new Uint8Array(data), {
+        headers: {
+          "Content-Type": DOWNLOAD_TYPES[path.extname(name).toLowerCase()] ?? "application/octet-stream",
+          "Content-Disposition": `attachment; filename="${name}"`,
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
     }
 
     const project = await getProject(projectId);

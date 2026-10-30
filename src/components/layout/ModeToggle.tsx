@@ -67,6 +67,23 @@ export default function ModeToggle({
         <span className="mode-toggle-label">Open Code</span>
       </button>
 
+      {/* Plain link: delegated tasks live on their own page, not a mode */}
+      <a href="/tasks" className="mode-toggle-btn" title="Tasks: delegated goals running in the background">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2.2}
+          width={13}
+          height={13}
+          className="mode-toggle-icon"
+          aria-hidden="true"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 11l3 3 8-8M20 12v7a2 2 0 01-2 2H6a2 2 0 01-2-2V5a2 2 0 012-2h9" />
+        </svg>
+        <span className="mode-toggle-label">Tasks</span>
+      </a>
+
       <style jsx>{`
         .mode-toggle-segment {
           display: inline-flex;

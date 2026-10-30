@@ -16,6 +16,7 @@ import { isGitAdvancedTool, executeGitAdvancedTool } from "./gitAdvancedTools";
 import { isSidecarTool, executeSidecarTool } from "./sidecarTools";
 import { isScheduleTool, executeScheduleTool } from "./scheduleTools";
 import { isTunnelTool, executeTunnelTool } from "./tunnelTools";
+import { isDocumentTool, executeDocumentTool } from "./documentTools";
 import { parseNotebook, formatNotebook } from "./notebooks";
 import { directoryMemoryFor, formatDirectoryMemory } from "./memoryFiles";
 import { generateImage } from "./imageGen";
@@ -136,6 +137,9 @@ async function runTool(
     }
     if (isTunnelTool(name)) {
       return await executeTunnelTool(name, args, workspace);
+    }
+    if (isDocumentTool(name)) {
+      return await executeDocumentTool(name, args, workspace, projectIdForWorkspace(workspace));
     }
     if (name === "spawn_agent") {
       // Needs the loop's model/emitter/cancellation — handled in agentLoop.ts

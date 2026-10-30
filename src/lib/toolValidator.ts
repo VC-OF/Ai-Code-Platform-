@@ -11,6 +11,7 @@ import { GIT_ADVANCED_ZOD_SCHEMAS } from './gitAdvancedTools';
 import { SIDECAR_ZOD_SCHEMAS } from './sidecarTools';
 import { SCHEDULE_ZOD_SCHEMAS } from './scheduleTools';
 import { TUNNEL_ZOD_SCHEMAS } from './tunnelTools';
+import { DOCUMENT_ZOD_SCHEMAS } from './documentTools';
 
 const toolSchemas = {
   read_file: z.object({
@@ -186,6 +187,7 @@ const toolSchemas = {
   ...SIDECAR_ZOD_SCHEMAS,
   ...SCHEDULE_ZOD_SCHEMAS,
   ...TUNNEL_ZOD_SCHEMAS,
+  ...DOCUMENT_ZOD_SCHEMAS,
 };
 
 export type ToolName = keyof typeof toolSchemas;

@@ -10,6 +10,7 @@ import { GIT_ADVANCED_TOOL_SCHEMAS } from "../gitAdvancedTools";
 import { SIDECAR_TOOL_SCHEMAS } from "../sidecarTools";
 import { SCHEDULE_TOOL_SCHEMAS } from "../scheduleTools";
 import { TUNNEL_TOOL_SCHEMAS } from "../tunnelTools";
+import { DOCUMENT_TOOL_SCHEMAS } from "../documentTools";
 import { SPAWN_AGENT_SCHEMA } from "../subagents";
 
 
@@ -631,6 +632,7 @@ export const TOOL_SCHEMAS = [
   ...SIDECAR_TOOL_SCHEMAS,
   ...SCHEDULE_TOOL_SCHEMAS,
   ...TUNNEL_TOOL_SCHEMAS,
+  ...DOCUMENT_TOOL_SCHEMAS,
   SPAWN_AGENT_SCHEMA,
   ...BROWSER_TOOL_SCHEMAS,
 ] as const;

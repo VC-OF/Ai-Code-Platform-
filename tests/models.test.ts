@@ -83,3 +83,19 @@ describe('Gemini model support', () => {
   });
 });
 
+
+describe('current-generation models', () => {
+  it.each([
+    ['openrouter:openai/gpt-6-astra', 1_050_000, 0.01, 0.05],
+    ['openrouter:anthropic/claude-opus-5.5', 1_000_000, 0.004, 0.02],
+    ['openrouter:anthropic/claude-sonnet-5.5', 1_000_000, 0.002, 0.01],
+    ['openrouter:anthropic/claude-haiku-5.5', 1_000_000, 0.0001, 0.0005],
+    ['openrouter:anthropic/claude-fable-5.1', 1_000_000, 0.01, 0.05],
+  ])('%s resolves to its registry entry', (id, ctx, inCost, outCost) => {
+    const info = getModelInfo(id);
+    expect(info.contextWindow).toBe(ctx);
+    expect(info.costPer1kIn).toBe(inCost);
+    expect(info.costPer1kOut).toBe(outCost);
+    expect(info.vision).toBe(true);
+  });
+});

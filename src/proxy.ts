@@ -58,6 +58,7 @@ const ROUTE_LIMITS: Record<
   { limit: number; windowMs: number; reads?: number }
 > = {
   '/api/chat':        { limit: 20,  windowMs: 60_000, reads: 300 }, // POST starts LLM turns
+  '/api/tasks':       { limit: 20,  windowMs: 60_000, reads: 300 }, // POST starts an agent run
   // Sub-routes get their own buckets (the longest matching prefix wins):
   // status and context are polled, and stop/steer/answer must still work
   // when the turn bucket is spent

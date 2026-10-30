@@ -3,6 +3,8 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: "standalone",
   devIndicators: false,
+  // pdfkit reads its font metrics (.afm) from its package folder at runtime
+  serverExternalPackages: ["pdfkit"],
   // Turbopack's file watcher otherwise walks .platform/ (SQLite WAL files,
   // locked exclusively on Windows by better-sqlite3 while open) and
   // workspaces/ (agent-managed project files that change outside any

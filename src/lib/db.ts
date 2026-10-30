@@ -97,6 +97,12 @@ function runMigrations(db: Database.Database) {
     db.exec('ALTER TABLE usage_log ADD COLUMN cached_tokens INTEGER');
   }
 
+  // Delegated tasks: live URL of a deployed result (table predates the column)
+  const taskCols = db.prepare(`PRAGMA table_info(tasks)`).all() as { name: string }[];
+  if (taskCols.length && !taskCols.some((c) => c.name === 'result_url')) {
+    db.exec('ALTER TABLE tasks ADD COLUMN result_url TEXT');
+  }
+
   // Open Chat: conversations and conversation messages
   db.exec(`
     CREATE TABLE IF NOT EXISTS conversations (
@@ -241,6 +247,22 @@ const SCHEMA = `
     last_run_at INTEGER,
     next_run_at INTEGER,
     created_at  INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
+  );
+
+  -- Delegated tasks: a goal handed to the agent to run unattended
+  CREATE TABLE IF NOT EXISTS tasks (
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    goal        TEXT NOT NULL,
+    model       TEXT,
+    status      TEXT NOT NULL DEFAULT 'running',
+    question    TEXT,
+    summary     TEXT,
+    timeline    TEXT NOT NULL DEFAULT '[]',
+    files_changed INTEGER NOT NULL DEFAULT 0,
+    result_url  TEXT,
+    created_at  INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+    finished_at INTEGER
   );
 
   -- Conversations (Open Chat)
@@ -953,6 +975,64 @@ export const scheduleDb = {
 
   delete(id: string): boolean {
     return getDb().prepare('DELETE FROM schedules WHERE id = ?').run(id).changes > 0;
+  },
+};
+
+// ─── Delegated task queries ──────────────────────────────────────────────────
+export type TaskStatus = 'running' | 'needs_input' | 'done' | 'failed' | 'cancelled';
+
+export interface TaskTimelineEntry {
+  ts: number;
+  kind: 'status' | 'tool' | 'checkpoint' | 'verification' | 'question' | 'error' | 'done';
+  text: string;
+  ok?: boolean;
+}
+
+export interface DbTask {
+  id: string;
+  project_id: string;
+  goal: string;
+  model: string | null;
+  status: TaskStatus;
+  question: string | null;
+  summary: string | null;
+  timeline: string;
+  files_changed: number;
+  /** Live URL when the task deployed its result */
+  result_url: string | null;
+  created_at: number;
+  finished_at: number | null;
+}
+
+export const taskDb = {
+  list(limit = 50): DbTask[] {
+    return getDb().prepare('SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?').all(limit) as DbTask[];
+  },
+
+  get(id: string): DbTask | undefined {
+    return getDb().prepare('SELECT * FROM tasks WHERE id = ?').get(id) as DbTask | undefined;
+  },
+
+  create(t: Pick<DbTask, 'id' | 'project_id' | 'goal' | 'model'>): void {
+    getDb()
+      .prepare('INSERT INTO tasks (id, project_id, goal, model, created_at) VALUES (@id, @project_id, @goal, @model, @created_at)')
+      .run({ ...t, created_at: Date.now() });
+  },
+
+  update(id: string, fields: Partial<Pick<DbTask, 'status' | 'question' | 'summary' | 'files_changed' | 'result_url' | 'finished_at'>>): void {
+    const keys = Object.keys(fields) as (keyof typeof fields)[];
+    if (!keys.length) return;
+    getDb()
+      .prepare(`UPDATE tasks SET ${keys.map((k) => `${k} = @${k}`).join(', ')} WHERE id = @id`)
+      .run({ ...fields, id });
+  },
+
+  /** Append to the timeline, keeping the newest 200 entries */
+  appendTimeline(id: string, entry: TaskTimelineEntry): void {
+    const row = taskDb.get(id);
+    if (!row) return;
+    const timeline = (JSON.parse(row.timeline) as TaskTimelineEntry[]).concat(entry).slice(-200);
+    getDb().prepare('UPDATE tasks SET timeline = ? WHERE id = ?').run(JSON.stringify(timeline), id);
   },
 };
 

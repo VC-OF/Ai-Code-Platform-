@@ -32,13 +32,21 @@ const DEFAULT_MODEL_INFO: ModelInfo = {
  * (so "llama-3.1-8b-instant" matches the "llama-3.1" prefix entry).
  */
 const MODELS: Record<string, Partial<ModelInfo>> = {
-  // OpenAI
+  // OpenAI (GPT-6 Astra: agentic/computer-use flagship, 2026-09; reached via OpenRouter)
+  'gpt-6-astra':               { contextWindow: 1_050_000, costPer1kIn: 0.01,  costPer1kOut: 0.05, vision: true },
+  'gpt-6-astra-pro':           { contextWindow: 1_050_000, costPer1kIn: 0.01,  costPer1kOut: 0.05, vision: true },
+  'gpt-6.1-sol':               { contextWindow: 1_050_000, costPer1kIn: 0.002, costPer1kOut: 0.01, vision: true },
   'gpt-4o':                    { contextWindow: 128_000, costPer1kIn: 0.0025,  costPer1kOut: 0.01,   vision: true },
   'gpt-4o-mini':               { contextWindow: 128_000, costPer1kIn: 0.00015, costPer1kOut: 0.0006, vision: true },
   'gpt-4-turbo':               { contextWindow: 128_000, costPer1kIn: 0.01,    costPer1kOut: 0.03,   vision: true },
   'o3-mini':                   { contextWindow: 200_000, costPer1kIn: 0.0011,  costPer1kOut: 0.0044 },
   'o1':                        { contextWindow: 200_000, costPer1kIn: 0.015,   costPer1kOut: 0.06,   vision: true },
-  // Anthropic
+  // Anthropic (current generation; OpenRouter ids use dots, e.g. anthropic/claude-opus-5.5)
+  'claude-opus-5.5':           { contextWindow: 1_000_000, costPer1kIn: 0.004,  costPer1kOut: 0.02,   vision: true },
+  'claude-sonnet-5.5':         { contextWindow: 1_000_000, costPer1kIn: 0.002,  costPer1kOut: 0.01,   vision: true },
+  // Haiku 5.5 doubles to $0.50/$2.50 per MTok above 100K prompt tokens
+  'claude-haiku-5.5':          { contextWindow: 1_000_000, costPer1kIn: 0.0001, costPer1kOut: 0.0005, vision: true },
+  'claude-fable-5.1':          { contextWindow: 1_000_000, costPer1kIn: 0.01,   costPer1kOut: 0.05,   vision: true },
   'claude-3-7-sonnet':         { contextWindow: 200_000, costPer1kIn: 0.003,   costPer1kOut: 0.015,  vision: true },
   'claude-3-5-sonnet':         { contextWindow: 200_000, costPer1kIn: 0.003,   costPer1kOut: 0.015,  vision: true },
   'claude-3-haiku':            { contextWindow: 200_000, costPer1kIn: 0.00025, costPer1kOut: 0.00125, vision: true },
@@ -310,7 +318,7 @@ function detectDefaultModel(keys: Record<string, string>): string {
   if (keyFor('GEMINI_API_KEY')) return 'gemini-flash-latest';
   if (keyFor('OPENAI_API_KEY') || keyFor('LLM_API_KEY')) return 'gpt-4o-mini';
   if (keyFor('DEEPSEEK_API_KEY')) return 'deepseek-r1';
-  if (keyFor('OPENROUTER_API_KEY')) return 'openrouter:anthropic/claude-3.7-sonnet';
+  if (keyFor('OPENROUTER_API_KEY')) return 'openrouter:anthropic/claude-opus-5.5';
   if (keyFor('GROQ_API_KEY')) return 'llama-3.3-70b-versatile';
   if (keyFor('TOGETHER_API_KEY')) return 'together:meta-llama/Llama-3.3-70B-Instruct-Turbo';
   return 'claude-3-7-sonnet';
