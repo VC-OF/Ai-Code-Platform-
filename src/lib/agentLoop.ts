@@ -1,31 +1,13 @@
 import { APPROVAL_REQUIRED_TOOLS, PLAN_MODE_TOOLS, PLAN_MODE_SUBAGENT_KINDS, PLAN_MODE_REFUSAL } from './permissions';
 import { loadPermissionRules, decide as decidePermission, EMPTY_PERMISSION_RULES, type PermissionRules } from './permissionRules';
 import { upgradeToolGuard } from './upgrade/guard';
-import { execSync } from 'child_process';
-import {
-  callLLM,
-  callLLMStream,
-  getContextWindow,
-  parseContextLengthError,
-  type LLMConfig,
-  type LLMMessage,
-  type LLMTool,
-} from './llmClient';
+import { callLLM, callLLMStream, getContextWindow, parseContextLengthError, type LLMConfig, type LLMMessage, type LLMTool } from './llmClient';
 import { recordContextWindow } from './models';
-import { EventEmitter, type AgentStatus, type DoneReason } from './events';
-import {
-  compactMessages,
-  shouldCompact,
-  estimateTokens,
-  estimateMessageTokens,
-  splitForCompaction,
-  serializeForSummary,
-  SUMMARIZE_SYSTEM_PROMPT,
-  type ContextMessage,
-} from './contextManager';
+import { EventEmitter, type DoneReason } from './events';
+import { compactMessages, shouldCompact, estimateTokens, estimateMessageTokens, splitForCompaction, serializeForSummary, SUMMARIZE_SYSTEM_PROMPT, type ContextMessage } from './contextManager';
 import { CancellationSource, CancelledError, cancellableSleep } from './cancellation';
 import { trackUsage } from './usageTracker';
-import { messageDb, checkpointDb, toolLogDb, projectDb, type PlanTask } from './db';
+import { checkpointDb, toolLogDb, projectDb, type PlanTask } from './db';
 import { executeTool, createTurnContext } from './tools';
 import { validateTool } from './toolValidator';
 import { normalizeToolArgs } from './toolArgNormalize';
@@ -33,9 +15,13 @@ import { loadHooks, runHooks, summarizeHookResults, EMPTY_HOOKS, type HookConfig
 import { runSubagent, subagentEdits, type SubagentRunResult, type SubagentKind } from './subagents';
 import { supportsVision } from './models';
 import { autoMemoryEnabled, runAutoMemory, AUTO_MEMORY_MIN_TOOL_CALLS } from './autoMemory';
-import crypto from 'crypto';
-import fs from 'fs';
-import path from 'path';
+import { gitCheckpoint } from './agentLoop/checkpoint';
+import { looksLikeTextToolCall, claimsCompletedWork, closeDanglingToolCalls } from './agentLoop/heuristics';
+import { buildInitialMessages, toolStatusFor, emitHookResults, failedSubagent, persistMessages, buildResult, callWithTimeout } from './agentLoop/helpers';
+
+// Split into ./agentLoop/*; re-exported so `@/lib/agentLoop` keeps its API
+export { CHECKPOINT_EXCLUDES, ensureCheckpointExcludes } from './agentLoop/checkpoint';
+export { looksLikeTextToolCall, claimsCompletedWork, closeDanglingToolCalls } from './agentLoop/heuristics';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 function envPositiveInt(name: string, fallback: number): number {
@@ -1155,7 +1141,7 @@ Stay in plan mode, refine the plan, and call exit_plan_mode again.`;
             (toolName === 'spawn_agent' && subagentEdits(String(toolArgs.kind)))
           )) {
             try {
-              const sha = gitCheckpoint(workspaceRoot, turnIndex);
+              const sha = await gitCheckpoint(workspaceRoot, turnIndex);
               checkpointed = true;
 
               checkpointDb.insert({
@@ -1426,7 +1412,7 @@ Stay in plan mode, refine the plan, and call exit_plan_mode again.`;
     // ── Final checkpoint ───────────────────────────────────────────────────
     if (!nested && ctx.hasEdits) {
       try {
-        const sha = gitCheckpoint(workspaceRoot, turnIndex, 'end');
+        const sha = await gitCheckpoint(workspaceRoot, turnIndex, 'end');
         checkpointDb.insert({
           sha,
           project_id:    projectId,
@@ -1498,263 +1484,3 @@ export const PARALLEL_SAFE_TOOLS = new Set([
   'read_file', 'list_files', 'glob_files', 'grep_files', 'web_search', 'fetch_url',
   'view_image', 'query_data', 'review_changes', 'load_skill', 'job_output', 'list_jobs',
 ]);
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-function buildInitialMessages(
-  systemPrompt: string,
-  agentsMemory: string | undefined,
-  userMessages: LLMMessage[]
-): ContextMessage[] {
-  // Keep the system prompt byte-stable across requests: providers cache the
-  // longest unchanged message prefix, so per-request state (the active file)
-  // is appended to the NEWEST user message instead of the system prompt.
-  const system = [
-    systemPrompt,
-    agentsMemory ? `\n\n## Project Memory (AGENTS.md)\n${agentsMemory}` : '',
-  ].filter(Boolean).join('');
-
-  return [
-    { role: 'system', content: system },
-    ...userMessages,
-  ] as ContextMessage[];
-}
-
-function toolStatusFor(toolName: string): AgentStatus {
-  const map: Record<string, AgentStatus> = {
-    read_file:    'reading',
-    load_skill:   'reading',
-    list_files:   'reading',
-    glob_files:   'reading',
-    grep_files:   'reading',
-    web_search:   'reading',
-    fetch_url:    'reading',
-    lsp_definition: 'reading', lsp_references: 'reading', lsp_hover: 'reading',
-    lsp_symbols: 'reading', lsp_diagnostics: 'reading',
-    create_file:  'writing',
-    append_file:  'writing',
-    edit_file:    'writing',
-    delete_file:  'writing',
-    replace_lines: 'writing',
-    generate_image: 'writing',
-    create_artifact: 'writing',
-    run_lint:     'linting',
-    run_tests:    'testing',
-    run_command:  'running',
-    read_preview_logs: 'reading',
-    fetch_preview: 'reading',
-    check_preview: 'testing',
-    browser_open: 'testing', browser_snapshot: 'reading', browser_click: 'testing',
-    browser_type: 'testing', browser_press: 'testing', browser_select: 'testing',
-    browser_scroll: 'reading', browser_wait: 'testing', browser_console: 'reading',
-    browser_screenshot: 'testing', browser_close: 'testing',
-    update_plan:  'planning',
-    deploy_app:   'running',
-    ask_user:     'waiting',
-    exit_plan_mode: 'waiting',
-    execute_code: 'running',
-    view_image:   'reading',
-    mcp_list_resources: 'reading',
-    mcp_read_resource:  'reading',
-    notebook_edit: 'writing',
-    run_notebook: 'running',
-    save_memory:  'writing',
-    spawn_agent:  'running',
-    http_request: 'running',
-    query_data:   'reading',
-    plot_data:    'writing',
-    review_changes: 'reading',
-    multi_edit:   'writing',
-    run_background: 'running',
-    job_output:   'reading',
-    kill_job:     'running',
-    list_jobs:    'reading',
-    github_create_pr: 'running', github_comment: 'running',
-    github_list_prs: 'reading', github_get_pr: 'reading',
-    github_list_issues: 'reading', github_get_issue: 'reading',
-  };
-  return map[toolName] ?? 'planning';
-}
-
-function emitHookResults(emitter: EventEmitter, stepIndex: number, results: HookRunResult[]): void {
-  for (const r of results) {
-    emitter.emit({
-      type: 'hook',
-      stepIndex,
-      event: r.event,
-      command: r.command,
-      source: r.source,
-      exitCode: r.exitCode,
-      blocked: r.blocked,
-      timedOut: r.timedOut,
-      durationMs: r.durationMs,
-      output: r.feedback.slice(0, 2_000),
-      error: r.error,
-    });
-  }
-}
-
-function failedSubagent(label: string, message: string): SubagentRunResult {
-  return {
-    success: false,
-    output: `[Sub-agent "${label}" could not run: ${message}]`,
-    summary: `${label}: failed to start`,
-    reason: 'error',
-    filesChanged: [],
-    totalTokens: 0,
-    steps: 0,
-    toolCalls: 0,
-    durationMs: 0,
-  };
-}
-
-/** Build output, dependency and cache dirs never belong in checkpoints —
- *  `git add -A` on target/, node_modules/ or .venv/ made every checkpoint
- *  slow and bloated the repo. Uses .git/info/exclude (local-only), so the
- *  project's own .gitignore is left untouched. */
-export const CHECKPOINT_EXCLUDES = [
-  'node_modules/', '.npm-cache/', '.next/', 'dist/', 'build/', 'coverage/',
-  'target/', '.venv/', 'venv/', '__pycache__/', '.pytest_cache/', '.ruff_cache/',
-  '.mypy_cache/', '*.egg-info/', '.local/', '.cache/', '.gradle/', '*.class',
-  '.open-code/',
-];
-const EXCLUDE_MARKER = '# open-code checkpoint excludes';
-
-export function ensureCheckpointExcludes(workspace: string): void {
-  try {
-    const file = path.join(workspace, '.git', 'info', 'exclude');
-    const current = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
-    if (current.includes(EXCLUDE_MARKER)) return;
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    const sep = current && !current.endsWith('\n') ? '\n' : '';
-    fs.writeFileSync(file, `${current}${sep}${EXCLUDE_MARKER}\n${CHECKPOINT_EXCLUDES.join('\n')}\n`);
-  } catch {
-    // Not fatal: the checkpoint just includes more files
-  }
-}
-
-function gitCheckpoint(workspace: string, turnIndex: number, phase = 'start'): string {
-  // Explicit identity so checkpoints work without global git config
-  const identity =
-    '-c user.name="Open Code Agent" -c user.email="agent@opencode.local"';
-  ensureCheckpointExcludes(workspace);
-  execSync('git add -A', { cwd: workspace, stdio: 'pipe' });
-  execSync(
-    `git ${identity} commit -m "checkpoint: turn ${turnIndex} ${phase}" --allow-empty`,
-    { cwd: workspace, stdio: 'pipe' }
-  );
-  return execSync('git rev-parse HEAD', { cwd: workspace }).toString().trim();
-}
-
-/** Heuristic: does `text` contain tool invocations written as plain text
- *  (e.g. `<tool_call>`, `<function=create_file>`, `## create_file ##`, or a
- *  JSON object naming a known tool) instead of native tool calls? */
-export function looksLikeTextToolCall(text: string, toolNames: string[]): boolean {
-  if (!text) return false;
-  if (/<tool_call>|<\/tool_call>|<function=|<\|tool_call|\[TOOL_CALLS\]/i.test(text)) return true;
-  if (!toolNames.length) return false;
-  const names = toolNames.filter((n) => /^[\w-]+$/.test(n)).join('|');
-  if (!names) return false;
-  const patterns = [
-    new RegExp(`^\\s*#{1,3}\\s*(${names})\\s*#{1,3}\\s*$`, 'm'),
-    new RegExp(`"(?:tool|name|tool_name|function)"\\s*:\\s*"(${names})"`),
-  ];
-  return patterns.some((re) => re.test(text));
-}
-
-/** Does a final reply claim work was done (files written, tests run)? */
-export function claimsCompletedWork(text: string): boolean {
-  return /\b(created|wrote|written|added|implemented|updated|built|generated|ran|executed|tests?\s+(?:all\s+)?pass(?:ed|es)?)\b/i.test(text);
-}
-
-/** Providers reject a history where an assistant tool call has no matching
- *  tool result. A turn cut short mid-tool-batch leaves such calls — answer
- *  them with a placeholder so the saved history stays valid. */
-export function closeDanglingToolCalls(messages: ContextMessage[]): ContextMessage[] {
-  const out: ContextMessage[] = [];
-  for (let i = 0; i < messages.length; i++) {
-    const m = messages[i];
-    out.push(m);
-    const calls = m.tool_calls as { id: string; function?: { name?: string } }[] | undefined;
-    if (m.role !== 'assistant' || !Array.isArray(calls) || calls.length === 0) continue;
-    const answered = new Set<string>();
-    let j = i + 1;
-    while (j < messages.length && messages[j].role === 'tool') {
-      answered.add(String(messages[j].tool_call_id));
-      out.push(messages[j]);
-      j++;
-    }
-    for (const tc of calls) {
-      if (!answered.has(tc.id)) {
-        out.push({
-          role: 'tool',
-          tool_call_id: tc.id,
-          tool_name: tc.function?.name,
-          content: '[Not run: the turn ended before this tool call executed]',
-        } as ContextMessage);
-      }
-    }
-    i = j - 1;
-  }
-  return out;
-}
-
-function persistMessages(
-  projectId: string,
-  messages: ContextMessage[],
-  turnIndex: number
-): void {
-  // The turn is saved in several batches (one per step) — continue the
-  // sequence so the history reads back in order
-  const base = messageDb.getMaxSeq(projectId, turnIndex) + 1;
-  const rows = messages
-    .filter((m) => m.role !== 'system')
-    .map((m, i) => ({
-      id:           crypto.randomUUID(),
-      seq:          base + i,
-      project_id:   projectId,
-      role:         m.role,
-      // Multimodal parts (view_image attachments) are stored as JSON
-      content:      typeof m.content === 'string' ? m.content : m.content == null ? '' : JSON.stringify(m.content),
-      tool_calls:   m.tool_calls ? JSON.stringify(m.tool_calls) : null,
-      tool_call_id: m.tool_call_id ?? null,
-      tool_name:    m.tool_name ?? null,
-      turn_index:   turnIndex,
-      tokens_used:  null,
-    }));
-
-  messageDb.insertMany(rows);
-}
-
-function buildResult(
-  reason: DoneReason,
-  steps: number,
-  filesChanged: string[],
-  totalTokens: number,
-  startTime: number,
-  finalMessage?: string
-): AgentLoopResult {
-  return {
-    success:        reason === 'completed',
-    reason,
-    stepsCompleted: steps,
-    filesChanged,
-    totalTokens,
-    durationMs:     Date.now() - startTime,
-    finalMessage,
-  };
-}
-
-async function callWithTimeout<T>(
-  promise: Promise<T>,
-  ms: number
-): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`Call timed out after ${ms}ms`)), ms);
-  });
-  try {
-    return await Promise.race([promise, timeout]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
