@@ -2,7 +2,26 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import type { ChatAttachment } from '@/lib/db';
-import { MODEL_OPTIONS, groupModelOptions, type ModelOption } from '@/lib/modelOptions';
+import { MODEL_OPTIONS, groupModelOptions } from '@/lib/modelOptions';
+
+interface SpeechRecognitionResultEvent {
+  resultIndex: number;
+  results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }>;
+}
+
+interface SpeechRecognitionLike {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onstart: (() => void) | null;
+  onresult: ((event: SpeechRecognitionResultEvent) => void) | null;
+  onerror: ((event: unknown) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+
+type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
 
 interface ChatComposerProps {
   onSendMessage: (text: string, attachments?: ChatAttachment[]) => void;
@@ -17,7 +36,7 @@ interface ChatComposerProps {
 }
 
 function formatModelLabel(id: string): string {
-  if (!id) return 'Sonnet 5';
+  if (!id) return 'Model';
   const found = MODEL_OPTIONS.find((m) => m.value === id);
   if (found) {
     // Simplify for pill display
@@ -66,7 +85,7 @@ export default function ChatComposer({
   const [isListening, setIsListening] = useState(false);
   const [speechLang, setSpeechLang] = useState('en-US');
   const [showMicMenu, setShowMicMenu] = useState(false);
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
 
   // Audio Waveform / TTS State
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
@@ -169,7 +188,8 @@ export default function ChatComposer({
 
   // Speech Recognition (Dictation)
   const toggleSpeechRecognition = () => {
-    const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const speechWindow = window as unknown as { SpeechRecognition?: SpeechRecognitionCtor; webkitSpeechRecognition?: SpeechRecognitionCtor };
+    const SpeechRec = speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition;
     if (!SpeechRec) {
       alert('Speech recognition is not supported in this browser. Please use Google Chrome, Microsoft Edge, or Safari.');
       return;
@@ -191,7 +211,7 @@ export default function ChatComposer({
         setIsListening(true);
       };
 
-      recognition.onresult = (event: any) => {
+      recognition.onresult = (event: SpeechRecognitionResultEvent) => {
         let transcript = '';
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           if (event.results[i].isFinal) {
@@ -203,7 +223,7 @@ export default function ChatComposer({
         }
       };
 
-      recognition.onerror = (e: any) => {
+      recognition.onerror = (e: unknown) => {
         console.warn('Speech recognition error:', e);
         setIsListening(false);
       };
@@ -314,6 +334,8 @@ export default function ChatComposer({
                 {att.isImage ? (
                   <div className="w-5 h-5 rounded overflow-hidden shrink-0 bg-black/10 flex items-center justify-center">
                     {att.dataUrl || att.url ? (
+                      // 20px thumbnail of a data:/upload URL — next/image adds nothing here
+                      // eslint-disable-next-line @next/next/no-img-element
                       <img src={att.dataUrl || att.url} alt={att.name} className="w-full h-full object-cover" />
                     ) : (
                       <span className="text-[10px]">🖼️</span>

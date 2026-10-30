@@ -426,22 +426,25 @@ export default function App() {
 
   if (mainView === 'chat') {
     return (
-      <OpenChatApp
-        onSwitchToCode={() => handleMainViewChange('code')}
-        onOpenProject={(projectId) => {
-          fetch('/api/projects')
-            .then((r) => r.json())
-            .then((data) => {
-              const list = data.projects || [];
-              const found = list.find((p: Project) => p.id === projectId);
-              if (found) {
-                setActiveProject(found);
-              }
-            })
-            .catch(() => {});
-          handleMainViewChange('code');
-        }}
-      />
+      <>
+        <OpenChatApp
+          onSwitchToCode={() => handleMainViewChange('code')}
+          onOpenProject={(projectId) => {
+            fetch('/api/projects')
+              .then((r) => r.json())
+              .then((data) => {
+                const list = data.projects || [];
+                const found = list.find((p: Project) => p.id === projectId);
+                if (found) {
+                  setActiveProject(found);
+                }
+              })
+              .catch(() => {});
+            handleMainViewChange('code');
+          }}
+        />
+        {upgradeOpen && <UpgradePanel onClose={() => setUpgradeOpen(false)} />}
+      </>
     );
   }
 

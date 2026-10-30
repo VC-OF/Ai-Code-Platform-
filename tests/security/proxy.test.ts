@@ -84,3 +84,28 @@ describe('proxy rate limits', () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe('proxy without AUTH_TOKEN', () => {
+  const savedToken = process.env.AUTH_TOKEN;
+  beforeEach(() => { delete process.env.AUTH_TOKEN; vi.spyOn(console, 'warn').mockImplementation(() => {}); });
+  afterEach(() => {
+    if (savedToken === undefined) delete process.env.AUTH_TOKEN; else process.env.AUTH_TOKEN = savedToken;
+    vi.restoreAllMocks();
+  });
+
+  it.each(['localhost:3000', '127.0.0.1:3000', '[::1]:3000', 'app.localhost'])('allows loopback host %s', async (host) => {
+    const proxy = await loadProxy();
+    expect(proxy(req('GET', '/api/projects', { host })).status).toBe(200);
+  });
+
+  it.each(['192.168.1.20:3000', 'evil.example', 'localhost.evil.example'])('rejects non-loopback host %s', async (host) => {
+    const proxy = await loadProxy();
+    expect(proxy(req('GET', '/api/projects', { host })).status).toBe(401);
+  });
+
+  it('accepts any host once AUTH_TOKEN is set and presented', async () => {
+    process.env.AUTH_TOKEN = 'test-token';
+    const proxy = await loadProxy();
+    expect(proxy(req('GET', '/api/projects', { host: '192.168.1.20:3000', 'x-api-key': 'test-token' })).status).toBe(200);
+  });
+});

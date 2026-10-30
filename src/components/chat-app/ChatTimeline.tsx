@@ -57,7 +57,6 @@ export default function ChatTimeline({
   streamingText,
   selectedArtifact,
   onSelectArtifact,
-  onSendPrompt,
   composer,
 }: ChatTimelineProps) {
   const bottomRef = useRef<HTMLDivElement | null>(null);

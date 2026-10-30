@@ -18,6 +18,13 @@ const nextConfig: NextConfig = {
       ".claude/**",
       ".open-code/**",
       ".settings/**",
+      // Runtime workspace reads (skills, plugins, previewPlan…) make Turbopack
+      // trace the whole project; keep sources and dev-only folders out of it.
+      "src/**",
+      "tests/**",
+      "e2e/**",
+      "test-results/**",
+      "*.md",
     ],
   },
 };

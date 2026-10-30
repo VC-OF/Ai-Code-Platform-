@@ -1,8 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import type { DbConversation, DbConversationMessage, ExtractedArtifact } from '@/lib/db';
-import { getDefaultModel } from '@/lib/models';
+import type { DbConversation, DbConversationMessage, ExtractedArtifact, ChatAttachment } from '@/lib/db';
 import ChatSidebar from './ChatSidebar';
 import ChatHeader from './ChatHeader';
 import ChatTimeline from './ChatTimeline';
@@ -21,15 +20,37 @@ export default function OpenChatApp({ onSwitchToCode, onOpenProject }: OpenChatA
   const [activeConversation, setActiveConversation] = useState<
     (DbConversation & { messages: DbConversationMessage[] }) | null
   >(null);
-  const [selectedModel, setSelectedModel] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('opencode_selected_model') || getDefaultModel();
-    }
-    return getDefaultModel();
-  });
+  // Start from the default so server and client render the same markup, then
+  // restore the saved choice after hydration
+  const [selectedModel, setSelectedModel] = useState<string>('');
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
+
+  useEffect(() => {
+    let saved: string | null = null;
+    try {
+      saved = localStorage.getItem('opencode_selected_model');
+    } catch {
+      // Storage unavailable (private mode) — fall through to the server default
+    }
+    if (saved) {
+      // Runs once after hydration so SSR markup matches; not a render loop
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSelectedModel(saved);
+      return;
+    }
+    let cancelled = false;
+    fetch('/api/providers')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && typeof data?.defaultModel === 'string') setSelectedModel(data.defaultModel);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const media = window.matchMedia('(min-width: 768px)');

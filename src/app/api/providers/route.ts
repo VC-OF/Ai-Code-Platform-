@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { PROVIDERS, providerBaseURL } from "@/lib/models";
+import { PROVIDERS, providerBaseURL, getDefaultModel } from "@/lib/models";
 import { getDecryptedEnv } from "@/lib/settingsStore";
 import { getDb } from "@/lib/db";
 
@@ -80,6 +80,8 @@ export async function GET() {
 
   return NextResponse.json({
     providers,
+    // Server env (LLM_MODEL, keys) decides this; the browser can't see it
+    defaultModel: getDefaultModel(settingsKeys),
     usageByModel,
     fallbacks: (process.env.LLM_FALLBACKS || "")
       .split(",")

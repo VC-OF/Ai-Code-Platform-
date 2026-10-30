@@ -129,16 +129,23 @@ function safeEqual(a: string | null | undefined, b: string): boolean {
 
 let warnedNoAuth = false;
 
+function isLoopbackHost(host: string | null): boolean {
+  if (!host) return false;
+  const name = host.startsWith('[') ? host.slice(0, host.indexOf(']') + 1) : host.split(':')[0];
+  return name === 'localhost' || name === '127.0.0.1' || name === '[::1]' || name.endsWith('.localhost');
+}
+
 function checkAuth(req: NextRequest): boolean {
   const requiredToken = process.env.AUTH_TOKEN;
 
-  // Auth not configured → local dev mode, allow all
+  // Auth not configured → local dev mode: only loopback hosts are allowed, so a
+  // server exposed on the LAN (or reached via DNS rebinding) can't run tools.
   if (!requiredToken) {
     if (!warnedNoAuth) {
       warnedNoAuth = true;
-      console.warn('[proxy] AUTH_TOKEN is not set — API routes are unauthenticated. Set AUTH_TOKEN for any non-local deployment.');
+      console.warn('[proxy] AUTH_TOKEN is not set — API routes only accept localhost requests. Set AUTH_TOKEN for any non-local deployment.');
     }
-    return true;
+    return isLoopbackHost(req.headers.get('host'));
   }
 
   if (safeEqual(req.headers.get('x-api-key'), requiredToken)) return true;
